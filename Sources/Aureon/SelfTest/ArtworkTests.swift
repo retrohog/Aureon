@@ -372,7 +372,11 @@ struct InterfaceTests {
         let cats = Tab.allCases.compactMap(\.libraryCategory)
         expect(Set(cats).count == cats.count, "every library page has its own category")
         expect(Tab.allCases.filter { $0.section == .library }.count == 3 && Tab.allCases.filter { $0.section == .classical }.count == 4)
-        expect(Tab.allCases.filter { $0.section == .listen }.map(\.rawValue) == ["Now Playing", "Search", "Radio", "Podcasts"], "radio and podcasts sit with Now Playing")
+        expect(Tab.allCases.filter { $0.section == .listen }.map(\.rawValue) == ["Home", "Now Playing", "Search", "Radio", "Podcasts"], "radio and podcasts sit with Now Playing")
+        let order = [Tab.Section.listen, .library, .classical, .discover, .sound].flatMap { sec in Tab.allCases.filter { $0.section == sec }.map(\.rawValue) }
+        expect(order.firstIndex(of: "Deep Dive")! < order.firstIndex(of: "Audio")!, "Deep Dive sits above the Sound section")
+        expect(Tab.settings.section == .footer && Tab.allCases.filter { $0.section == .footer } == [.settings], "Settings lives at the foot of the sidebar")
+        expect(SettingsSection.allCases.map(\.rawValue) == ["General", "Connect", "System"], "Connect and System moved into Settings")
         expect(Tab.search.libraryCategory == nil && Tab.player.libraryCategory == nil && Tab.audio.libraryCategory == nil)
         expect(Set(Tab.allCases.map(\.icon)).count == Tab.allCases.count, "no two destinations share an icon")
         expect(Set(Tab.allCases.map(\.rawValue)).count == Tab.allCases.count)
@@ -470,6 +474,26 @@ struct InterfaceTests {
         expect(ViewOptions.defaults(for: .songs).list && !ViewOptions.defaults(for: .albums).list)
         expect(ViewOptions.available(for: .albums).contains(.added) && ViewOptions.available(for: .songs).contains(.quality) && ViewOptions.available(for: .composers) == [.title, .count])
         expect((try? JSONDecoder().decode(ViewOptions.self, from: JSONEncoder().encode(by))) == by, "options persist as JSON")
+    }
+
+    func volumeSliderCannotJump() {
+        // the bug: the volume showed 100 % and a click anywhere near the end set it to 100 %
+        let current = 0.20
+        let far = SliderGrab.begin(press: 0.97, current: current, knobRadius: 0.03)
+        expect(far == .step, "a press far from the knob is not a grab")
+        let v = SliderGrab.value(for: far, pointer: 0.97, current: current, step: 0.04)
+        expect(abs(v - 0.24) < 1e-9, "…and nudges by one step instead of jumping to 97 %: \(v)")
+        expect(abs(SliderGrab.value(for: .step, pointer: 0.0, current: 0.5, step: 0.04) - 0.46) < 1e-9, "downward nudges are the same size")
+        expect(SliderGrab.value(for: .step, pointer: 0.99, current: 0.99, step: 0.04) == 0.99 && SliderGrab.value(for: .step, pointer: 1, current: 0.98, step: 0.04) == 1, "never past the ends")
+        let near = SliderGrab.begin(press: 0.215, current: current, knobRadius: 0.03)
+        guard case .knob(let off) = near else { expect(false, "a press on the knob grabs it"); return }
+        expect(abs(SliderGrab.value(for: near, pointer: 0.215, current: current, step: 0.04) - current) < 1e-9, "grabbing does not move the value (no jump): offset \(off)")
+        expect(abs(SliderGrab.value(for: near, pointer: 0.40, current: current, step: 0.04) - 0.385) < 1e-9, "dragging follows the pointer relative to where it was grabbed")
+        expect(SliderGrab.value(for: near, pointer: 1.5, current: current, step: 0.04) == 1 && SliderGrab.value(for: near, pointer: -2, current: current, step: 0.04) == 0)
+        // a sequence of stray clicks raises the volume slowly, one visible step at a time
+        var x = 0.0
+        for _ in 0..<5 { x = SliderGrab.value(for: .step, pointer: 1, current: x, step: 0.04) }
+        expect(abs(x - 0.20) < 1e-9, "five clicks at the far end give 20 %, not 100 %: \(x)")
     }
 
     func qualityTiers() {

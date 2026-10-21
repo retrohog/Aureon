@@ -37,32 +37,31 @@ struct HostedPlugin: Identifiable {
 }
 
 enum Tab: String, CaseIterable, Identifiable {
-    case player = "Now Playing", search = "Search", radio = "Radio", podcasts = "Podcasts"
+    case home = "Home", player = "Now Playing", search = "Search", radio = "Radio", podcasts = "Podcasts"
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
-    case audio = "Audio", dsp = "DSP"
     case deepDive = "Deep Dive"
-    case connect = "Connect", diagnostics = "System"
+    case audio = "Audio", dsp = "DSP"
+    case settings = "Settings"
     var id: String { rawValue }
 
     var icon: String {
         switch self {
-        case .player: "play.circle"; case .search: "magnifyingglass"; case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"
+        case .home: "house"; case .player: "play.circle"; case .search: "magnifyingglass"; case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
-        case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .deepDive: "sparkle.magnifyingglass"
-        case .connect: "network"; case .diagnostics: "stethoscope"
+        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .settings: "gearshape"
         }
     }
 
-    enum Section: String { case listen = "", library = "Library", classical = "Classical", sound = "Sound", discover = "Discover", system = "Devices" }
+    enum Section: String { case listen = "", library = "Library", classical = "Classical", discover = "Discover", sound = "Sound", footer = "Settings" }
     var section: Section {
         switch self {
-        case .player, .search, .radio, .podcasts: .listen
+        case .home, .player, .search, .radio, .podcasts: .listen
         case .albums, .artists, .songs: .library
         case .composers, .works, .conductors, .ensembles: .classical
-        case .audio, .dsp: .sound
         case .deepDive: .discover
-        case .connect, .diagnostics: .system
+        case .audio, .dsp: .sound
+        case .settings: .footer
         }
     }
 
@@ -73,6 +72,12 @@ enum Tab: String, CaseIterable, Identifiable {
         default: nil
         }
     }
+}
+
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case general = "General", connect = "Connect", system = "System"
+    var id: String { rawValue }
+    var icon: String { switch self { case .general: "gearshape"; case .connect: "network"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -90,7 +95,7 @@ final class PlayerModel: ObservableObject {
     private(set) var status = PlayerStatus()
     let progress = ProgressModel()
     @Published var devices: [OutputDeviceInfo] = []
-    @Published var tab: Tab = .player {
+    @Published var tab: Tab = .home {
         didSet {
             updateAnalysisActivity()
             if tab == .deepDive { loadDeepDiveForCurrent() }
@@ -98,10 +103,32 @@ final class PlayerModel: ObservableObject {
             navigator.visit(place)
         }
     }
+    /// Normal layout, or the two-deck DJ console.
+    @Published var djMode = false {
+        didSet {
+            defaults.set(djMode, forKey: "aureon.djMode")
+            guard djMode != oldValue else { return }
+            if djMode { enterDJ() } else { dj.exit(); updateAnalysisActivity() }
+        }
+    }
+
+    /// The console takes over the output: the normal player stops, and two decks play side by side on the same device.
+    private func enterDJ() {
+        if started { player.stop(); started = false; resetStatus() }
+        player.analysis.setActive(false)
+        library.category = .songs
+        LibraryModelBridge.shared.model = library
+        var o = PlayerOptions(); o.hog = false; o.rateSwitch = false; o.deviceID = deviceID == 0 ? nil : deviceID; o.bufferSeconds = 0.4
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { o.sinkFactory = { _ in NullSink() } }
+        let rate = OutputDevice(id: deviceID == 0 ? nil : deviceID)?.currentRate ?? 48_000
+        dj.enter(options: o, rate: rate > 0 ? rate : 48_000)
+    }
+    @Published var settingsSection: SettingsSection = .general
     let navigator = Navigator()
     let radio = RadioModel()
     let podcasts = PodcastModel()
     let artistArt = ArtistArt()
+    let dj = DJModel()
     @Published var viewOptions: [String: ViewOptions] = [:] { didSet { if let d = try? JSONEncoder().encode(viewOptions), ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(d, forKey: "aureon.viewOptions") } } }
 
     var place: Place { Place(tab: tab, library: library.selectedID, radio: radio.navKey, podcast: podcasts.navKey) }
@@ -128,8 +155,18 @@ final class PlayerModel: ObservableObject {
         didSet { if settings != oldValue { player.settings = settings; persist() } }
     }
 
-    @Published var hasVolume = false
-    @Published var volume: Float = 1 { didSet { if !syncingVolume { volumeDevice?.hardwareVolume = volume } } }
+    /// The device volume, only when the device can report it. `volume` is never written from anywhere but `setVolume`, which only the
+    /// user's own gestures call: nothing in the app (binding a device, switching tracks, laying out a view) can change the volume.
+    @Published private(set) var hasVolume = false
+    @Published private(set) var volume: Float = 0
+    /// A ceiling for the volume controls (Settings → General). 1 = no limit.
+    @Published var volumeLimit: Float = 1 { didSet { defaults.set(volumeLimit, forKey: "aureon.volumeLimit"); if hasVolume, volume > volumeLimit { setVolume(volumeLimit) } } }
+
+    func setVolume(_ v: Float) {
+        guard hasVolume, let dev = volumeDevice else { return }
+        let c = max(0, min(volumeLimit, v.isFinite ? v : 0))
+        if dev.writeVolume(c) { volume = dev.readVolume() ?? c } else { volume = dev.readVolume() ?? volume }
+    }
 
     // plugins
     @Published var availableEffects: [PluginInfo] = [] { didSet { effectGroups = Dictionary(grouping: availableEffects, by: \.manufacturer).map { (maker: $0.key, effects: $0.value) }.sorted { $0.maker < $1.maker } } }
@@ -163,7 +200,6 @@ final class PlayerModel: ObservableObject {
     private var lastDeepDiveID: UUID?
     private let defaults = UserDefaults.standard
     private var volumeDevice: OutputDevice?
-    private var syncingVolume = false
     private var timer: Timer?
     private var started = false
 
@@ -172,6 +208,8 @@ final class PlayerModel: ObservableObject {
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
+        volumeLimit = defaults.object(forKey: "aureon.volumeLimit") as? Float ?? 1
+        LibraryModelBridge.shared.model = library
         if let d = defaults.data(forKey: "aureon.viewOptions"), let v = try? JSONDecoder().decode([String: ViewOptions].self, from: d) { viewOptions = v }
         refreshDevices()
         availableEffects = DSPChain.availableEffects()
@@ -229,8 +267,9 @@ final class PlayerModel: ObservableObject {
 
     private func bindVolumeDevice() {
         volumeDevice = OutputDevice(id: deviceID == 0 ? nil : deviceID)
-        hasVolume = volumeDevice?.hasHardwareVolume ?? false
-        syncingVolume = true; volume = volumeDevice?.hardwareVolume ?? 1; syncingVolume = false
+        let v = volumeDevice?.readVolume()
+        hasVolume = v != nil
+        volume = v ?? 0
     }
 
     var selectedDevice: OutputDeviceInfo? { devices.first { $0.id == deviceID } }

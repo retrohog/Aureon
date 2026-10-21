@@ -19,9 +19,8 @@ struct SectionChips<T: Hashable & Identifiable>: View {
                             Text(label(it)).font(.system(size: 12, weight: on ? .semibold : .medium))
                         }
                         .padding(.horizontal, 13).padding(.vertical, 7)
-                        .foregroundStyle(on ? Color.black.opacity(0.88) : Color.primary.opacity(0.85))
-                        .background { if on { Capsule().fill(Brand.gradient).matchedGeometryEffect(id: "chip", in: ns) } else { Capsule().fill(.white.opacity(0.07)) } }
-                        .overlay(Capsule().strokeBorder(.white.opacity(on ? 0 : 0.08), lineWidth: 0.8))
+                        .foregroundStyle(on ? Color.white : Color.primary.opacity(0.85))
+                        .background { if on { Capsule().fill(Brand.accent).matchedGeometryEffect(id: "chip", in: ns) } else { Capsule().fill(.white.opacity(0.07)) } }
                     }.buttonStyle(.plain)
                 }
             }.padding(.vertical, 2)
@@ -306,7 +305,7 @@ struct EpisodeRow: View {
                 ZStack {
                     Circle().fill(playing ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))).frame(width: 34, height: 34)
                     if let progress { ProgressView(value: progress).progressViewStyle(.circular).controlSize(.small) }
-                    else { Image(systemName: playing && m.status.state == .playing ? "waveform" : "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(playing ? .black : .white) }
+                    else { Image(systemName: playing && m.status.state == .playing ? "waveform" : "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white) }
                 }
             }.buttonStyle(.plain).help(progress != nil ? "Downloading…" : "Play")
             VStack(alignment: .leading, spacing: 2) {

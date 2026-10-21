@@ -9,10 +9,11 @@ struct AureonApp: App {
         WindowGroup("Aureon") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 1040, minHeight: 680)
+                .frame(minWidth: 860, minHeight: 540)
                 .onOpenURL { model.add(urls: [$0]) }
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1080, height: 700)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add Music…") {
@@ -27,7 +28,18 @@ struct AureonApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-    func applicationDidFinishLaunching(_ notification: Notification) { NSApp.activate(ignoringOtherApps: true) }
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.activate(ignoringOtherApps: true)
+        // earlier versions opened large; once per size policy, bring the window to a comfortable default (users can still resize it afterwards)
+        let key = "aureon.windowPolicy", policy = 2
+        if UserDefaults.standard.integer(forKey: key) < policy {
+            UserDefaults.standard.set(policy, forKey: key)
+            DispatchQueue.main.async {
+                guard let w = NSApp.windows.first(where: { $0.canBecomeMain }) else { return }
+                w.setContentSize(NSSize(width: 1080, height: 700)); w.center()
+            }
+        }
+    }
 }
 
 func runGUI() { AureonApp.main() }
@@ -132,6 +144,28 @@ extension DemoData {
 
 @MainActor func runSnapshot(out: String, files: [String]) {
     _ = NSApplication.shared
+    if ProcessInfo.processInfo.environment["AUREON_AVATAR_TEST"] != nil {
+        // portraits are rarely square: render avatars with tall and wide pictures to look for edge artefacts
+        func pic(_ w: Int, _ h: Int, _ top: NSColor) -> NSImage {
+            let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            ctx.setFillColor(NSColor.darkGray.cgColor); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            ctx.setFillColor(top.cgColor); ctx.fill(CGRect(x: 0, y: h - 40, width: w, height: 40))
+            ctx.setFillColor(NSColor.white.cgColor); ctx.fillEllipse(in: CGRect(x: w / 4, y: h / 4, width: w / 2, height: h / 2))
+            let cg = ctx.makeImage()!
+            return NSImage(cgImage: cg, size: NSSize(width: w, height: h))
+        }
+        // the real ArtistsView, with portraits of several shapes preloaded
+        let art = ArtistArt()
+        let shapes: [(Int, Int, NSColor)] = [(300, 480, .red), (480, 300, .green), (400, 400, .yellow), (600, 900, .red), (900, 600, .orange), (480, 480, .cyan)]
+        var rows: [LibraryModel.Row] = []
+        for (i, t) in shapes.enumerated() { rows.append(LibraryModel.Row(id: "a\(i)", title: "Artist \(i)", subtitle: "", count: i + 1)); art.preload(id: "a\(i)", image: pic(t.0, t.1, t.2), portrait: true) }
+        let view = ScrollView { ArtistsView(rows: rows, opts: ViewOptions.defaults(for: .artists), open: { _ in }).padding(24) }.environmentObject(art).background(Color(white: 0.06)).preferredColorScheme(.dark)
+        let host = NSHostingView(rootView: view); host.frame = NSRect(x: 0, y: 0, width: 900, height: 420)
+        let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false); win.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!; host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out)); exit(0)
+    }
     let model = PlayerModel()
     let env = ProcessInfo.processInfo.environment
     if let t = env["AUREON_TAB"], let tab = Tab(rawValue: t) { model.tab = tab }
@@ -146,6 +180,18 @@ extension DemoData {
     if env["AUREON_FAKE_RADIO"] != nil, let aac = RadioTests().aacData(seconds: 6), let srv = try? FakeRadio(audio: aac, mode: .icy(metaint: 4096)) {
         let st = RadioStation(id: "demo", name: "Aurora FM", url: srv.url.absoluteString, favicon: nil, country: "Norway", countryCode: "NO", language: "english", tags: ["ambient"], codec: "AAC", bitrate: 96, votes: 1, homepage: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { MainActor.assumeIsolated { model.play(station: st) } }
+    }
+    if env["AUREON_DJ"] != nil {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { MainActor.assumeIsolated {
+            model.djMode = true
+            model.library.category = .songs
+        } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { MainActor.assumeIsolated {
+            let songs = model.library.songs
+            if songs.count >= 2 { model.dj.load(model.dj.track(songs[0]), into: model.dj.a); model.dj.load(model.dj.track(songs[3]), into: model.dj.b) }
+            model.dj.a.pitch = 0.025; model.dj.b.pitch = -0.012; model.dj.a.low = -8; model.dj.b.high = 3; model.dj.crossfader = -0.25
+        } }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { MainActor.assumeIsolated { model.dj.a.play(); model.dj.a.seek(to: 4) } }
     }
     // radio and podcast pages fetch from the network when they appear; an offscreen snapshot never "appears", so drive them explicitly
     if env["AUREON_TAB"] == "Radio" {

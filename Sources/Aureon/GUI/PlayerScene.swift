@@ -109,9 +109,9 @@ struct NowPlayingView: View {
         return HStack(spacing: 10) {
             Image(systemName: m.hasVolume ? "speaker.wave.3.fill" : "lock.fill", variableValue: m.hasVolume ? v : 1)
                 .font(.system(size: 13)).frame(width: 22).foregroundStyle(.white.opacity(0.6)).symbolRenderingMode(.hierarchical)
-            FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.volume = Float($0) }), tint: .white.opacity(0.92), restingHeight: 3, enabled: m.hasVolume,
-                        bubble: { "\(Int($0 * 100))%" })
-            Text(m.hasVolume ? "\(Int(v * 100))%" : "DAC").font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.5)).frame(width: 34, alignment: .trailing)
+            FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: .white.opacity(0.92), restingHeight: 3, enabled: m.hasVolume,
+                        bubble: { "\(Int($0 * 100))%" }, safe: true)
+            Text(m.hasVolume ? "\(Int(v * 100))%" : "—").font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.5)).frame(width: 34, alignment: .trailing)
         }
         .help(m.hasVolume ? (m.volume > 0.9 ? "High device volume: check your amplifier before playing." : "Applied by the device itself, so the samples stay untouched.") : "This device has no software volume. Use your DAC or amplifier: samples are never scaled here.")
     }

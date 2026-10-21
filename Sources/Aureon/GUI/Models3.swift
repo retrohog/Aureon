@@ -274,6 +274,9 @@ final class ArtistArt: ObservableObject {
     var fetchOnline: () -> Bool = { false }
     let fetcher = ArtistImageFetcher()
 
+    /// Test and snapshot seam: sets a picture directly.
+    func preload(id: String, image: NSImage, portrait: Bool) { info[id] = Info(image: image, portrait: portrait) }
+
     /// First a mosaic of the artist's own album covers (instant, offline), then a portrait from the web when one exists.
     func load(id: String, name: String) {
         let p = (id: id, name: name)

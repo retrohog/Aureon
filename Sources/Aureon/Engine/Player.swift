@@ -74,6 +74,9 @@ final class Player: @unchecked Sendable {
     private let underruns = Counter()
     private let done = DispatchSemaphore(value: 0)
     private var userPaused = false           // engine thread only
+    /// DJ decks: pitch control and output level, set before `start`.
+    var varispeed: VarispeedControl?
+    var deckGain: DeckGain?
     private var heardIndexHint = 0           // engine thread only
 
     let dsp = DSPChain()
@@ -140,7 +143,7 @@ final class Player: @unchecked Sendable {
         stopFlag.store(false, ordering: .relaxed)
         lock.lock(); _status = PlayerStatus(); commands = []; lock.unlock()
         underruns.n.store(0, ordering: .relaxed)
-        userPaused = false
+        userPaused = options.startPaused
         let t = Thread { [self] in
             run(startID: startID, startSeconds: startSeconds, options: options)
             done.signal()
@@ -283,7 +286,8 @@ final class Player: @unchecked Sendable {
             // sample rate
             let rate = chain.info.sampleRate
             var target = upsamplingTarget(source: rate, mode: s.upsampling.mode, deviceRates: rates, maxRate: s.upsampling.maxRate)
-            if isLive, s.radio.upscale, !rates.isEmpty {
+            if let dr = s.deckRate { target = abs(rate - dr) < 0.5 ? nil : dr }
+            if isLive, s.radio.upscale, !rates.isEmpty, s.deckRate == nil {
                 target = upsamplingTarget(source: rate, mode: .deviceMax, deviceRates: rates, maxRate: s.radio.maxRate)
                 if target == nil, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             }
@@ -304,6 +308,7 @@ final class Player: @unchecked Sendable {
                 } else { stages.append("ReplayGain: none applied (\(r.origin == "none" ? "no tag, no measurement" : "0 dB"))") }
             }
             if s.polarityInverted { chain = InvertSource(chain); stages.append("Polarity inverted") }
+            if let v = varispeed { chain = VarispeedSource(chain, control: v); stages.append("Pitch control") }
         }
         return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live)
     }
@@ -402,6 +407,7 @@ final class Player: @unchecked Sendable {
         let ring = RingBuffer(frames: max(8192, Int(fmt.sampleRate * options.bufferSeconds)), channels: fmt.channels)
         ring.paused.store(true, ordering: .relaxed)                       // held until prefilled: no false underruns
         let renderer = Renderer(ring: ring, channels: fmt.channels, dsp: dsp, underruns: underruns, tap: analysisTap)
+        renderer.deckGain = deckGain
         analysisTap.sampleRate.store(Int(fmt.sampleRate), ordering: .relaxed)
         func applyDSP(_ d: DSPSettings) {
             dsp.apply(d.eq)

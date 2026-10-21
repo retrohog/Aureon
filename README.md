@@ -4,7 +4,7 @@ An open-source, audiophile-grade music player for macOS. Aureon keeps your music
 and lets you opt in to processing — upsampling, ReplayGain, EQ, crossfeed, room correction, plugins — only when you want it. The
 signal-path panel always tells you which it is.
 
-> Status: early (0.2). The engine and every service are covered by 220 automated tests; what could not be verified without special
+> Status: early (0.2). The engine and every service are covered by 236 automated tests; what could not be verified without special
 > hardware, accounts or signing is listed under [Limitations](#limitations) — read it before relying on those parts.
 
 ## Features
@@ -20,6 +20,9 @@ signal-path panel always tells you which it is.
 | **Live queue** | Remove, reorder, insert and append while playing; the audible track is never disturbed. |
 | **Headphones** | Bauer **BS2B crossfeed**; **AutoEQ** profiles fetched on demand from the open AutoEQ database (any number of filters, safety pre-amp). |
 | **Room correction** | **Partitioned FFT convolution** (Accelerate) of Room EQ Wizard–style impulse responses (WAV int/float, mono/stereo, any rate), resampled to the stream. 8 s of stereo IR runs ~57× faster than real time. |
+| **DJ mode** | One click turns the layout into a two-deck console: waveform overviews, tempo detection (BPM), pitch fader (±8 / ±16 %) with sync, cue, 3-band EQ with kill, channel faders, a crossfader (smooth / blend / cut) and a library browser with A / B load buttons. Each deck is its own player; decks resample to one shared rate and mix on the same output. |
+| **Volume safety** | The volume controls never invent a reading (an unreadable device volume is shown as unavailable), move only when you grab the knob (a click elsewhere nudges a few per cent) and obey an optional ceiling in Settings. |
+| **Home & Settings** | A Home page with what you were playing, Radio and Podcasts doors and album rails; a Settings page holds General, Connect and System. |
 | **Internet radio** | Free stations worldwide from the radio-browser.info directory: Local radios, High Quality (including lossless FLAC streams), By genre, By location, By language, favourites and your own stream URLs. MP3, AAC/HE-AAC and FLAC over HTTP or HTTPS, live "now playing" titles (ICY metadata), automatic reconnection. Streams are **upscaled automatically** with the sinc resampler to the DAC's best rate (switchable). |
 | **Podcasts** | Top shows, categories and languages from Apple's public podcast directory; episodes from the show's own RSS feed, downloaded before playing so seeking and the whole signal path work as for any file. |
 | **Artists** | Round portraits (Deezer, then Wikipedia) with an offline fallback that builds a mosaic of the artist's own album covers; sorting, quality filters, A–Z grouping, grid or list, cover-size slider. Songs and albums sort and filter the same way. |
@@ -70,7 +73,7 @@ Keys: <kbd>Space</kbd> pause · <kbd>←</kbd>/<kbd>→</kbd> ±10 s · <kbd>⌘
 ## Testing
 
 ```bash
-swift build -c release && .build/release/Aureon selftest        # 220 tests, ~1 min, no audio hardware needed
+swift build -c release && .build/release/Aureon selftest        # 236 tests, ~1 min, no audio hardware needed
 .build/release/Aureon selftest queue                             # a subset, by name
 ```
 
@@ -105,6 +108,7 @@ Honest list of what is **not** verified or **not** built:
 - **Radio is lossy** (except the FLAC stations). Upscaling replaces the system mixer's resampling with one long-filter step; it cannot restore detail the broadcaster removed. HLS (`.m3u8`) and Ogg/Opus stations are not offered. Verified against real MP3, HE-AAC and FLAC stations with `radiocheck`; the directory itself is a community service and some stations are offline.
 - **Podcast playback downloads the whole episode first** (progress is shown); there is no streaming start, queue of episodes or resume position yet.
 - **Artist portraits** come from Deezer's public search by exact name and Wikipedia; a common name can still match the wrong artist, in which case the album mosaic is a safer look.
+- **DJ mode is a first version.** There is no headphone cueing / pre-fader listening (it needs a second output device), no loops or hot cues, no scratching and no beat-grid alignment; Sync matches tempo only. Tempo is estimated automatically and can be wrong on tracks without a clear beat (it may report half or double time). Two decks sum before the device volume, so keep the channel faders below the top to avoid clipping.
 - **No TagLib:** the parsers are Aureon's own (a C++ dependency adds build complexity for no benefit here); unusual tag layouts may still need AVFoundation's fallback.
 - The interface is dark-only. Hover, drag and animation behaviour was reviewed from rendered snapshots and code, not by clicking through the live app.
 - Not built: streaming services, UPnP/Chromecast renderers, MQA.

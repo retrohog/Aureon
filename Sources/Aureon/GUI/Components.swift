@@ -2,14 +2,26 @@ import SwiftUI
 import AppKit
 
 enum Brand {
-    /// The colour of primary actions and selected navigation, outside the cover-tinted player.
-    static let accent = Color(red: 0.50, green: 0.55, blue: 1.0)
-    static let cyan = Color(red: 0.36, green: 0.87, blue: 1.0)
-    static let violet = Color(red: 0.58, green: 0.45, blue: 1.0)
-    static let pink = Color(red: 1.0, green: 0.42, blue: 0.76)
-    /// The signature gradient: used sparingly, on the selected item, primary buttons and progress.
-    static let gradient = LinearGradient(colors: [cyan, violet, pink], startPoint: .leading, endPoint: .trailing)
-    static let gradientDiagonal = LinearGradient(colors: [cyan, violet, pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// The colour of selection, primary actions and icons: a vivid coral red, in the spirit of the system's own accent on a dark interface.
+    static let accent = Color(red: 1.0, green: 0.27, blue: 0.40)
+    static let accent2 = Color(red: 1.0, green: 0.55, blue: 0.30)
+    // legacy names, kept so every use follows the same palette
+    static let cyan = accent
+    static let violet = accent2
+    static let pink = accent
+    static let gradient = LinearGradient(colors: [accent, accent2], startPoint: .leading, endPoint: .trailing)
+    static let gradientDiagonal = LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    /// Flat surfaces
+    static let canvas = Color(white: 0.105)
+    static let sidebar = Color(white: 0.145)
+}
+
+/// The system's translucent material, e.g. the sidebar showing the desktop through the window.
+struct VisualEffect: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .sidebar
+    var blending: NSVisualEffectView.BlendingMode = .behindWindow
+    func makeNSView(context: Context) -> NSVisualEffectView { let v = NSVisualEffectView(); v.material = material; v.blendingMode = blending; v.state = .active; return v }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material; v.blendingMode = blending }
 }
 
 extension View {
@@ -166,6 +178,27 @@ struct CoverView: View {
 
 // MARK: - Fluid slider
 
+/// How a press on a slider is interpreted when the slider guards something that must not jump (the volume).
+/// Pressing the knob grabs it exactly where it is — no jump — and dragging moves it. Pressing anywhere else on the track
+/// only nudges the value a small step toward the press, once, so a stray click can never snap the volume to the far end.
+enum SliderGrab: Equatable {
+    case knob(offset: Double)
+    case step
+
+    /// All numbers are fractions of the track (0…1).
+    static func begin(press: Double, current: Double, knobRadius: Double) -> SliderGrab {
+        abs(press - current) <= knobRadius ? .knob(offset: press - current) : .step
+    }
+
+    static func value(for mode: SliderGrab, pointer: Double, current: Double, step: Double) -> Double {
+        let clamp = { (x: Double) in min(1, max(0, x)) }
+        switch mode {
+        case .knob(let off): return clamp(pointer - off)
+        case .step: return clamp(current + min(step, max(-step, pointer - current)))
+        }
+    }
+}
+
 /// A slim slider that swells under the pointer, shows a knob and a value bubble, and animates between playback updates.
 struct FluidSlider: View {
     @Binding var value: Double
@@ -174,11 +207,15 @@ struct FluidSlider: View {
     var restingHeight: CGFloat = 4
     var enabled = true
     var bubble: ((Double) -> String)? = nil
+    /// Volume-like sliders: grab the knob to drag, a click elsewhere only nudges (see `SliderGrab`).
+    var safe = false
+    var safeStep = 0.04
     var onEditingChanged: (Bool) -> Void = { _ in }
 
     @StateObject private var hover = Box(false)
     @StateObject private var dragging = Box(false)
     @StateObject private var pointerX = Box<CGFloat?>(nil)
+    @StateObject private var grab = Box<SliderGrab?>(nil)
 
     private func fraction(_ v: Double) -> CGFloat { range.upperBound > range.lowerBound ? CGFloat(min(1, max(0, (v - range.lowerBound) / (range.upperBound - range.lowerBound)))) : 0 }
 
@@ -212,10 +249,26 @@ struct FluidSlider: View {
             }
             .gesture(DragGesture(minimumDistance: 0).onChanged { d in
                 guard enabled else { return }
+                let span = range.upperBound - range.lowerBound
+                func toValue(_ f: Double) -> Double { range.lowerBound + f * span }
+                if safe {
+                    if grab.v == nil {
+                        let press = Double(min(1, max(0, d.startLocation.x / w)))
+                        let mode = SliderGrab.begin(press: press, current: Double(f), knobRadius: 16 / Double(max(w, 1)))
+                        grab.v = mode
+                        if mode == .step { value = toValue(SliderGrab.value(for: mode, pointer: press, current: Double(f), step: safeStep)); onEditingChanged(false); return }
+                        dragging.v = true; onEditingChanged(true)
+                    }
+                    if let mode = grab.v, mode != .step {
+                        value = toValue(SliderGrab.value(for: mode, pointer: Double(min(1, max(0, d.location.x / w))), current: Double(f), step: safeStep))
+                    }
+                    return
+                }
                 if !dragging.v { dragging.v = true; onEditingChanged(true) }
-                value = range.lowerBound + Double(min(1, max(0, d.location.x / w))) * (range.upperBound - range.lowerBound)
+                value = toValue(Double(min(1, max(0, d.location.x / w))))
             }.onEnded { _ in
                 guard enabled else { return }
+                grab.v = nil
                 dragging.v = false; onEditingChanged(false)
             })
         }

@@ -9,32 +9,34 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: m.tab == .player && ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil,
-                              intensity: m.tab == .player ? 1 : 0.34)
-            HStack(spacing: 10) {
-                Sidebar()
-                ZStack(alignment: .bottom) {
-                    page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
+            Brand.canvas
+            if m.djMode {
+                DJView().transition(.opacity)
+            } else {
+                HStack(spacing: 0) {
+                    Sidebar()
+                    ZStack(alignment: .bottom) {
+                        backdrop
+                        page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
+                    }
+                    .overlay(alignment: .topLeading) { NavButtons().padding(.leading, 18).padding(.top, 14) }
                 }
-                .overlay(alignment: .topLeading) { NavButtons().padding(.leading, 16).padding(.top, 14) }
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.black.opacity(m.tab == .player ? 0.0 : 0.28)))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.03), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
+                .transition(.opacity)
             }
-            .padding(10)
+            DJSwitch().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(.top, 14).padding(.trailing, 18)
             if dropping.v {
-                RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Brand.gradient, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
-                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Brand.violet.opacity(0.1)))
+                RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent.opacity(0.1)))
                     .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(.title3.weight(.semibold)))
-                    .padding(10).transition(.opacity.combined(with: .scale(scale: 0.99))).allowsHitTesting(false)
+                    .padding(10).transition(.opacity).allowsHitTesting(false)
             }
         }
-        .animation(.smooth(duration: 0.3), value: m.tab == .player)
-        .animation(.smooth(duration: 0.22), value: dropping.v)
+        .animation(.easeOut(duration: 0.2), value: m.djMode)
         .animation(.easeOut(duration: 0.16), value: m.tab)
+        .animation(.smooth(duration: 0.22), value: dropping.v)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
-        .environmentObject(m.radio).environmentObject(m.podcasts)
+        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj)
         .preferredColorScheme(.dark)
         .background(Color(white: 0.04))
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
@@ -47,8 +49,19 @@ struct ContentView: View {
         }
     }
 
+    /// Flat surface; Now Playing lets the cover's colours fill it, other pages get only a faint wash from the top.
+    @ViewBuilder private var backdrop: some View {
+        if m.tab == .player {
+            AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil, intensity: 1)
+        } else {
+            Brand.canvas
+            LinearGradient(colors: [m.hero.palette.grid[1].color.opacity(0.28), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)).allowsHitTesting(false)
+        }
+    }
+
     @ViewBuilder private var page: some View {
         switch m.tab {
+        case .home: HomePage()
         case .player: NowPlayingView()
         case .search: SearchPage()
         case .radio: RadioPage()
@@ -57,24 +70,40 @@ struct ContentView: View {
         case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
-        case .connect: PageScaffold(title: "Connect", subtitle: "Discord, scrobbling and remote control") { ConnectTab() }
-        case .diagnostics: PageScaffold(title: "System", subtitle: "Optimisation and hardware diagnostics") { DiagnosticsTab() }
+        case .settings: SettingsPage()
         }
     }
 }
 
-/// Back and Forward through everything visited: pages, albums, genres, shows.
+/// Back and Forward through everything visited: pages, albums, genres, shows. Plain chevrons, like a system toolbar.
 struct NavButtons: View {
     @EnvironmentObject var nav: Navigator
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             Button { withAnimation(.easeOut(duration: 0.16)) { nav.goBack() } } label: { Image(systemName: "chevron.left") }
                 .disabled(!nav.canGoBack).keyboardShortcut("[", modifiers: .command).help("Back (⌘[)")
             Button { withAnimation(.easeOut(duration: 0.16)) { nav.goForward() } } label: { Image(systemName: "chevron.right") }
                 .disabled(!nav.canGoForward).keyboardShortcut("]", modifiers: .command).help("Forward (⌘])")
         }
         .buttonStyle(IconButtonStyle())
-        .padding(3).background(Capsule().fill(.black.opacity(0.3))).overlay(Capsule().strokeBorder(.white.opacity(0.1), lineWidth: 0.8))
+    }
+}
+
+/// The layout switch: normal ⇄ DJ console. Always in the same corner, so there is always a way back.
+struct DJSwitch: View {
+    @EnvironmentObject var m: PlayerModel
+    @StateObject private var hover = Box(false)
+    var body: some View {
+        Button { withAnimation(.easeOut(duration: 0.2)) { m.djMode.toggle() } } label: {
+            HStack(spacing: 5) {
+                Image(systemName: m.djMode ? "rectangle.grid.2x2" : "dial.medium").font(.system(size: 11, weight: .semibold))
+                Text(m.djMode ? "Normal mode" : "DJ mode").font(.system(size: 12, weight: .semibold))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .foregroundStyle(m.djMode ? Color.white : Color.primary)
+            .background(Capsule().fill(m.djMode ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))))
+        }
+        .buttonStyle(.plain).onHover { hover.v = $0 }.help(m.djMode ? "Back to the normal layout" : "Switch to the two-deck DJ console")
     }
 }
 

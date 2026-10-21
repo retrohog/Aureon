@@ -12,7 +12,7 @@ struct PlayerBar: View {
             HStack(spacing: 8) {
                 Image(systemName: m.hasVolume ? "speaker.wave.2.fill" : "lock.fill", variableValue: m.hasVolume ? Double(m.volume) : 1).font(.system(size: 11))
                     .foregroundStyle(.secondary).frame(width: 16).symbolRenderingMode(.hierarchical)
-                FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.volume = Float($0) }), tint: .white.opacity(0.9), restingHeight: 3, enabled: m.hasVolume, bubble: { "\(Int($0 * 100))%" })
+                FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: .white.opacity(0.9), restingHeight: 3, enabled: m.hasVolume, bubble: { "\(Int($0 * 100))%" }, safe: true)
                     .frame(width: 78)
                 Button { showQueue.v.toggle() } label: { Image(systemName: "list.bullet").foregroundStyle(showQueue.v ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Color.primary)) }
                     .buttonStyle(IconButtonStyle()).help("Queue")

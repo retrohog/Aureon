@@ -22,7 +22,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(minHeight: 30).padding(.leading, 76)
+                HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(minHeight: 30).padding(.leading, 76).padding(.trailing, 92)
                 if let back {
                     Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(.system(size: 12, weight: .semibold)) }
                         .buttonStyle(.plain).foregroundStyle(Brand.cyan)
@@ -61,8 +61,8 @@ struct PillButton: View {
                 Text(title).font(.system(size: 12, weight: .semibold))
             }
             .padding(.horizontal, 14).padding(.vertical, 7)
-            .foregroundStyle(filled ? Color.black.opacity(0.85) : Color.primary)
-            .background(Capsule().fill(filled ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))))
+            .foregroundStyle(filled ? Color.white : Color.primary)
+            .background(Capsule().fill(filled ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))))
             .overlay(Capsule().strokeBorder(.white.opacity(filled ? 0 : 0.1), lineWidth: 0.8))
             .brightness(filled && hover.v ? 0.06 : 0)
         }
@@ -80,8 +80,8 @@ struct ToolbarMenu<Content: View>: View {
         Menu { content } label: {
             HStack(spacing: 5) { Image(systemName: icon).font(.system(size: 11, weight: .medium)); Text(label).font(.system(size: 12, weight: .medium)) }
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Capsule().fill(active ? AnyShapeStyle(Brand.violet.opacity(0.3)) : AnyShapeStyle(Color.white.opacity(0.08))))
-                .overlay(Capsule().strokeBorder(active ? Brand.violet.opacity(0.6) : .white.opacity(0.08), lineWidth: 0.8))
+                .background(Capsule().fill(active ? AnyShapeStyle(Brand.accent.opacity(0.25)) : AnyShapeStyle(Color.white.opacity(0.07))))
+                .foregroundStyle(active ? Brand.accent : Color.primary)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
     }
@@ -97,7 +97,7 @@ struct SearchPill: View {
             TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12)).frame(width: width)
             if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary) }.buttonStyle(.plain) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(.white.opacity(0.08))).overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.8))
+        .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(.white.opacity(0.07)))
     }
 }
 
@@ -330,20 +330,32 @@ struct RowButton: View {
 }
 
 /// A round picture: the artist's portrait or album mosaic, else initials on a generated gradient.
+/// The soft shadow is its own blurred shape behind the picture rather than a layer shadow on the clipped image, and the size is a whole number
+/// of points: a clipped photo with a layer shadow at a fractional position can smear its top edge into a visible line on some displays.
 struct Avatar: View {
     let name: String
     var image: NSImage?
     var size: CGFloat
+    var shadow = false
     var body: some View {
+        let d = size.rounded()
         ZStack {
-            if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fill).frame(width: size, height: size).clipped() }
-            else {
-                let p = ArtPalette.fallback(seed: name)
-                Circle().fill(LinearGradient(colors: [p.grid[0].color, p.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Text(initials).font(.system(size: size * 0.38, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.92))
+            if shadow { Circle().fill(.black.opacity(0.4)).frame(width: d - 6, height: d - 6).blur(radius: 6).offset(y: 4) }
+            Group {
+                if let image {
+                    Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill).frame(width: d, height: d)
+                } else {
+                    let p = ArtPalette.fallback(seed: name)
+                    ZStack {
+                        Circle().fill(LinearGradient(colors: [p.grid[0].color, p.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Text(initials).font(.system(size: d * 0.38, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.92))
+                    }.frame(width: d, height: d)
+                }
             }
+            .mask(Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 0.8))
         }
-        .frame(width: size, height: size).clipShape(Circle()).overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 0.8))
+        .frame(width: d + (shadow ? 16 : 0), height: d + (shadow ? 16 : 0))
     }
     private var initials: String { name.split(separator: " ").prefix(2).compactMap { $0.first.map { String($0).uppercased() } }.joined() }
 }
@@ -364,8 +376,8 @@ struct ArtistsView: View {
 
     /// Portraits form one continuous grid; the A–Z headers belong to the list view.
     private var grid: some View {
-        let cell = 84 + CGFloat(opts.size) * 70
-        let cols = [GridItem(.adaptive(minimum: cell, maximum: cell + 30), spacing: 16, alignment: .top)]
+        let cell = (84 + CGFloat(opts.size) * 70).rounded()
+        let cols = [GridItem(.adaptive(minimum: cell + 16, maximum: cell + 16), spacing: 10, alignment: .top)]
         return VStack(alignment: .leading, spacing: 4) {
             LazyVGrid(columns: cols, alignment: .leading, spacing: 20) { ForEach(rows) { ArtistCard(row: $0, size: cell, open: open) } }
             if rows.isEmpty { Text("No artists").foregroundStyle(.secondary).padding(.top, 40) }
@@ -398,16 +410,14 @@ struct ArtistCard: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            Avatar(name: row.title, image: art.info[row.id]?.image, size: size)
-                .shadow(color: .black.opacity(hover.v ? 0.5 : 0.3), radius: hover.v ? 14 : 7, y: hover.v ? 7 : 3)
-                .overlay(Circle().strokeBorder(Brand.gradient, lineWidth: hover.v ? 1.6 : 0))
-                .scaleEffect(hover.v ? 1.03 : 1)
+            Avatar(name: row.title, image: art.info[row.id]?.image, size: size, shadow: true)
+                .overlay { if hover.v { Circle().strokeBorder(Brand.gradient, lineWidth: 1.6).padding(8) } }
             VStack(spacing: 1) {
                 Text(row.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 Text("\(row.count) songs").font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
-        .frame(width: size)
+        .frame(width: size.rounded() + 16)
         .contentShape(Rectangle())
         .onTapGesture { open(row.id) }
         .onHover { h in withAnimation(.easeOut(duration: 0.14)) { hover.v = h } }
@@ -428,7 +438,7 @@ struct ArtistDetail: View {
         PageScaffold(title: "", back: back, backTitle: "Artists") {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 22) {
-                    Avatar(name: name, image: art.info[id]?.image, size: 132).shadow(color: .black.opacity(0.4), radius: 16, y: 8)
+                    Avatar(name: name, image: art.info[id]?.image, size: 132, shadow: true)
                     VStack(alignment: .leading, spacing: 6) {
                         Text("ARTIST").microLabel().foregroundStyle(Brand.cyan)
                         Text(name).font(.system(size: 32, weight: .bold)).tracking(-0.6).lineLimit(2)
@@ -522,8 +532,8 @@ struct AlbumCard: View {
                 CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 10, symbol: "music.note")
                     .shadow(color: .black.opacity(hover.v ? 0.5 : 0.28), radius: hover.v ? 14 : 7, y: hover.v ? 7 : 3)
                 if hover.v {
-                    Button { play() } label: { Image(systemName: "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.black.opacity(0.85)).frame(width: 34, height: 34)
-                        .background(Circle().fill(Brand.gradient)) }
+                    Button { play() } label: { Image(systemName: "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white).frame(width: 34, height: 34)
+                        .background(Circle().fill(Brand.accent)) }
                         .buttonStyle(.plain).padding(8).transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }

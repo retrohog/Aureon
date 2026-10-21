@@ -54,14 +54,15 @@ struct OutputCard: View {
             if m.hasVolume {
                 HStack {
                     Image(systemName: "speaker.fill")
-                    Slider(value: Binding(get: { Double(m.volume) }, set: { m.volume = Float($0) }), in: 0...1)
+                    FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: m.volume > 0.85 ? .orange : .white.opacity(0.9), restingHeight: 4, enabled: true,
+                                bubble: { "\(Int($0 * 100))%" }, safe: true)
                     Image(systemName: "speaker.wave.3.fill")
                     Text("\(Int(m.volume * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
                 }
-                Note(text: m.volume > 0.9 ? "High device volume: check your amplifier before playing." : "Volume is applied by the device itself, so the samples stay untouched.",
-                     color: m.volume > 0.9 ? .orange : .secondary)
+                Note(text: m.volume > 0.85 ? "High device volume: check your amplifier before playing." : "Grab the knob to change the volume; a click elsewhere only nudges it. It is applied by the device itself, so the samples stay untouched.",
+                     color: m.volume > 0.85 ? .orange : .secondary)
             } else {
-                Note(text: "This device has no software-controllable volume. Use your DAC or amplifier: samples are never scaled here.")
+                Note(text: "This device does not report a volume Aureon can read or set. Use your DAC, amplifier or the system volume: samples are never scaled here.")
             }
             if !m.status.errors.isEmpty {
                 Divider()

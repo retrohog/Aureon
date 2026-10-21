@@ -29,6 +29,8 @@ struct RadioSettings: Equatable, Codable {
 
 struct PlaybackSettings: Equatable, Codable {
     var radio = RadioSettings()
+    /// DJ decks: every track is resampled to this one rate, so two decks can share a device without either changing its clock. nil = off.
+    var deckRate: Double? = nil
     var replayGain = ReplayGainSettings()
     var upsampling = UpsamplingSettings()
     var dsd = DSDSettings()
@@ -43,6 +45,7 @@ struct PlaybackSettings: Equatable, Codable {
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         radio = try c.decodeIfPresent(RadioSettings.self, forKey: .radio) ?? radio
+        deckRate = try c.decodeIfPresent(Double.self, forKey: .deckRate)
         replayGain = try c.decodeIfPresent(ReplayGainSettings.self, forKey: .replayGain) ?? replayGain
         upsampling = try c.decodeIfPresent(UpsamplingSettings.self, forKey: .upsampling) ?? upsampling
         dsd = try c.decodeIfPresent(DSDSettings.self, forKey: .dsd) ?? dsd
@@ -68,6 +71,17 @@ struct PlayerOptions {
     var tuning: PlaybackTuning? = nil
     /// Replace the output (tests use a recording sink). Default: CoreAudio on `deviceID`.
     var sinkFactory: ((PlayerOptions) -> AudioSink?)? = nil
+    /// Prepare the first track and hold it paused until told to play (DJ decks).
+    var startPaused = false
+}
+
+/// A level applied to a deck's output (channel fader × crossfader). Read on the real-time thread, written from the interface.
+final class DeckGain: @unchecked Sendable {
+    private let bits = Atomic<UInt32>(Float(1).bitPattern)
+    var value: Float {
+        get { Float(bitPattern: bits.load(ordering: .relaxed)) }
+        set { bits.store(max(0, min(4, newValue.isFinite ? newValue : 0)).bitPattern, ordering: .relaxed) }
+    }
 }
 
 // MARK: - Renderer: the dual path
@@ -83,6 +97,9 @@ final class Renderer: @unchecked Sendable {
     /// Hot-swappable post-processing (convolution, crossfeed, headphone EQ). Empty by default: the direct path stays untouched.
     let chain = RCUBox<RTChainState>()
     let tap: AnalysisTap
+    /// Set before the stream starts (DJ decks). Changes are smoothed over each render block to avoid clicks.
+    var deckGain: DeckGain?
+    private var lastGain: Float = 1          // real-time thread only
 
     init(ring: RingBuffer, channels: Int, dsp: DSPChain, underruns: Counter, tap: AnalysisTap) {
         self.ring = ring; self.channels = channels; self.dsp = dsp; self.underruns = underruns; self.tap = tap
@@ -102,6 +119,19 @@ final class Renderer: @unchecked Sendable {
         }
         if n > 0 {
             _ = chain.read { $0.run(dst, frames: n) }
+            if let dg = deckGain {
+                let target = dg.value
+                if target != 1 || lastGain != 1 {
+                    let step = (target - lastGain) / Float(n)
+                    var g = lastGain
+                    for f in 0..<n {
+                        g += step
+                        let gd = Double(g)
+                        for c in 0..<channels { let i = f * channels + c; dst[i] = Int32(clamping: Int64(Double(dst[i]) * gd)) }
+                    }
+                    lastGain = target
+                }
+            }
             tap.write(dst, frames: n, channels: channels)
         }
         return n

@@ -135,20 +135,32 @@ final class OutputDevice {
         return []
     }
 
-    var hasHardwareVolume: Bool { !volumeElements.isEmpty }
-
-    var hardwareVolume: Float {
-        get {
-            guard let e = volumeElements.first else { return 1 }
+    /// The device volume as it is right now, or nil when the device will not say. A volume is never made up: an invented "100 %" looks exactly
+    /// like a loud setting and invites a click that really does make it loud.
+    func readVolume() -> Float? {
+        let els = volumeElements
+        guard !els.isEmpty else { return nil }
+        var values: [Float] = []
+        for e in els {
             let a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioObjectPropertyScopeOutput, mElement: e)
-            return getValue(id, a, default: Float32(1)) ?? 1
+            guard let v: Float32 = getValue(id, a, default: Float32(0)), v.isFinite else { return nil }
+            values.append(v)
         }
-        set {
-            for e in volumeElements {
-                let a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioObjectPropertyScopeOutput, mElement: e)
-                _ = setValue(id, a, Float32(max(0, min(1, newValue))))
-            }
+        return values.max()
+    }
+
+    var hasHardwareVolume: Bool { readVolume() != nil }
+
+    /// Sets the device volume (0…1) on every element. Returns false when the device refused any of them.
+    @discardableResult
+    func writeVolume(_ newValue: Float) -> Bool {
+        let v = Float32(max(0, min(1, newValue.isFinite ? newValue : 0)))
+        var ok = true
+        for e in volumeElements {
+            let a = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioObjectPropertyScopeOutput, mElement: e)
+            ok = (setValue(id, a, v) == noErr) && ok
         }
+        return ok
     }
 
     func restore() {

@@ -127,8 +127,10 @@ func cmdInspect(_ path: String) throws {
 
 func cmdDevices() {
     for d in listOutputDevices() {
-        let cur = OutputDevice(id: d.id)?.currentRate ?? 0
-        print("\(d.name): now \(Int(cur)) Hz; rates \(d.rates.map { String(Int($0)) }.joined(separator: ", "))")
+        let dev = OutputDevice(id: d.id)
+        let cur = dev?.currentRate ?? 0
+        let vol = dev?.readVolume().map { "volume \(Int(($0 * 100).rounded())) %" } ?? "volume not readable (the app will not show or set one)"
+        print("\(d.name): now \(Int(cur)) Hz; rates \(d.rates.map { String(Int($0)) }.joined(separator: ", ")); \(vol)")
     }
 }
 

@@ -31,6 +31,8 @@ final class LibraryModel: ObservableObject {
     var onReplace: (([TrackDTO]) -> Void)?
     @Published var albums: [ReleaseDTO] = []
     @Published var artistAlbums: [ReleaseDTO] = []
+    @Published var recentAlbums: [ReleaseDTO] = []
+    @Published var hiResAlbums: [ReleaseDTO] = []
     @Published var songs: [TrackDTO] = []
 
     init() {
@@ -40,7 +42,17 @@ final class LibraryModel: ObservableObject {
         refresh()
     }
 
-    func refresh() { guard let store else { return }; Task.detached { let s = store.stats(); await MainActor.run { self.stats = s } }; reload() }
+    func refresh() {
+        guard let store else { return }
+        Task.detached {
+            let s = store.stats()
+            let all = store.releases(limit: 2000)
+            let recent = Array(all.sorted { ($0.addedAt ?? 0) > ($1.addedAt ?? 0) }.prefix(16))
+            let hires = Array(all.filter { $0.isHiRes && !$0.isDSD }.sorted { ($0.addedAt ?? 0) > ($1.addedAt ?? 0) }.prefix(16))
+            await MainActor.run { self.stats = s; self.recentAlbums = recent; self.hiResAlbums = hires }
+        }
+        reload()
+    }
 
     func reload() {
         guard let store else { return }

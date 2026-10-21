@@ -17,7 +17,6 @@ struct AudioTab: View {
             }
             OutputCard()
             radioCard
-            artworkCard
             visualiserCard
             HeadphoneCard(hp: m.headphones)
             RoomCard()
@@ -43,13 +42,6 @@ struct AudioTab: View {
                 }
             }
             Note(text: "Radio is lossy, so this cannot bring back detail the broadcaster removed. What it does: one high-quality resampling step (long sinc filter) instead of the system mixer's, and the filter's images fall far above the audible band. Lossless FLAC stations are marked and play bit-perfect when upscaling is off.")
-        }
-    }
-
-    private var artworkCard: some View {
-        Card(title: "Artwork", subtitle: "Covers come from the file's own tags first (FLAC pictures, ID3, ALAC covr)") {
-            Toggle("Look up missing covers online", isOn: $m.fetchMissingArt)
-            Note(text: "Only the artist and album names are sent, to the iTunes Search API and, failing that, MusicBrainz / Cover Art Archive. Results are cached on this Mac.")
         }
     }
 
