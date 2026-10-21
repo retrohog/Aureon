@@ -1,6 +1,11 @@
 import SwiftUI
 import AppKit
 
+enum Brand {
+    /// The colour of primary actions and selected navigation, outside the cover-tinted player.
+    static let accent = Color(red: 1.0, green: 0.30, blue: 0.42)
+}
+
 // MARK: - Typography
 
 enum Typo {

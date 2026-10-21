@@ -368,6 +368,16 @@ struct InterfaceTests {
         expect(dn.map(\.title) == ["DSD", "DSD reader", "DoP", "Ring buffer", "DAC"] && !dn.contains { $0.alters }, "\(dn.map(\.title))")
     }
 
+    func navigationStructure() {
+        let cats = Tab.allCases.compactMap(\.libraryCategory)
+        expect(Set(cats).count == cats.count, "every library page has its own category")
+        expect(Tab.allCases.filter { $0.section == .library }.count == 3 && Tab.allCases.filter { $0.section == .classical }.count == 4)
+        expect(Tab.search.libraryCategory == nil && Tab.player.libraryCategory == nil && Tab.audio.libraryCategory == nil)
+        expect(Set(Tab.allCases.map(\.icon)).count == Tab.allCases.count, "no two destinations share an icon")
+        expect(Set(Tab.allCases.map(\.rawValue)).count == Tab.allCases.count)
+        expect(Set(LibraryModel.Category.allCases) == Set(cats), "every category is reachable from the sidebar")
+    }
+
     func qualityTiers() {
         func tier(_ r: Double, _ b: Int) -> QualityTier { qualityTier(StreamInfo(sampleRate: r, channels: 2, sourceBits: b, totalFrames: 1, codec: "FLAC")) }
         expect(tier(44_100, 16).name == "CD quality" && !tier(44_100, 16).hiRes)

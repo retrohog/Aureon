@@ -7,9 +7,9 @@ import CoreAudio
 @MainActor
 final class LibraryModel: ObservableObject {
     enum Category: String, CaseIterable, Identifiable {
-        case composers = "Composers", works = "Works", artists = "Artists", albums = "Albums", conductors = "Conductors", ensembles = "Ensembles"
+        case composers = "Composers", works = "Works", artists = "Artists", albums = "Albums", conductors = "Conductors", ensembles = "Ensembles", songs = "Songs"
         var id: String { rawValue }
-        var icon: String { switch self { case .composers: "music.quarternote.3"; case .works: "book"; case .artists: "person.2"; case .albums: "square.stack"; case .conductors: "wand.and.rays"; case .ensembles: "person.3" } }
+        var icon: String { switch self { case .composers: "music.quarternote.3"; case .works: "book"; case .artists: "person.2"; case .albums: "square.stack"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"; case .songs: "music.note" } }
     }
     struct Row: Identifiable, Hashable { var id: String; var title: String; var subtitle: String; var count: Int }
     enum Detail { case none, works([WorkDTO]), recordings(WorkDTO, [RecordingGroupDTO]), tracks(String, [TrackDTO]), releases([ReleaseDTO]) }
@@ -28,6 +28,9 @@ final class LibraryModel: ObservableObject {
     private var back: [Detail] = []
     var canGoBack: Bool { !back.isEmpty }
     var onAdd: (([TrackDTO], Bool) -> Void)?
+    var onReplace: (([TrackDTO]) -> Void)?
+    @Published var albums: [ReleaseDTO] = []
+    @Published var songs: [TrackDTO] = []
 
     init() {
         let snapshot = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil
@@ -50,9 +53,13 @@ final class LibraryModel: ObservableObject {
             case .ensembles: out = store.parties(role: .ensemble, search: q).map { Row(id: $0.id, title: $0.name, subtitle: "", count: $0.count) }
             case .works: out = store.works(search: q).map { Row(id: $0.id, title: $0.title, subtitle: [$0.composerName, $0.catalog].compactMap { $0 }.joined(separator: " · "), count: $0.trackCount) }
             case .albums: out = store.releases(search: q).map { Row(id: $0.id, title: $0.title, subtitle: ($0.artistNames.prefix(2) + [$0.year.map(String.init)].compactMap { $0 }).joined(separator: " · "), count: $0.trackCount) }
+            case .songs: break
             }
             let result = out
-            await MainActor.run { self.rows = result; self.stats = store.stats() }
+            let albums = cat == .albums ? store.releases(search: q.isEmpty ? nil : q) : []
+            var songs = cat == .songs ? store.allTracks(limit: 5000) : []
+            if cat == .songs, !q.isEmpty { songs = songs.filter { ($0.title + " " + $0.artistLine + " " + ($0.releaseTitle ?? "")).localizedCaseInsensitiveContains(q) } }
+            await MainActor.run { self.rows = result; self.albums = albums; self.songs = songs; self.stats = store.stats() }
         }
     }
 
@@ -70,6 +77,7 @@ final class LibraryModel: ObservableObject {
             case .conductors: d = .tracks("Conducted", store.tracks(partyID: id, role: .conductor))
             case .ensembles: d = .tracks("Performed", store.tracks(partyID: id, role: .ensemble))
             case .albums: d = .tracks("Tracks", store.tracks(releaseID: id))
+            case .songs: d = .none
             }
             await MainActor.run { self.back = []; self.detail = d }
         }

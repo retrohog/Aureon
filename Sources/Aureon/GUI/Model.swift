@@ -34,12 +34,40 @@ struct HostedPlugin: Identifiable {
 }
 
 enum Tab: String, CaseIterable, Identifiable {
-    case player = "Player", library = "Library", deepDive = "Deep Dive", audio = "Audio", dsp = "DSP", connect = "Connect", diagnostics = "System"
+    case player = "Now Playing", search = "Search"
+    case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
+    case audio = "Audio", dsp = "DSP"
+    case deepDive = "Deep Dive"
+    case connect = "Connect", diagnostics = "System"
     var id: String { rawValue }
+
     var icon: String {
         switch self {
-        case .player: "play.circle"; case .library: "books.vertical"; case .deepDive: "magnifyingglass.circle"; case .audio: "waveform"
-        case .dsp: "slider.vertical.3"; case .connect: "network"; case .diagnostics: "stethoscope"
+        case .player: "play.circle"; case .search: "magnifyingglass"
+        case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
+        case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
+        case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .deepDive: "sparkle.magnifyingglass"
+        case .connect: "network"; case .diagnostics: "stethoscope"
+        }
+    }
+
+    enum Section: String { case listen = "", library = "Library", classical = "Classical", sound = "Sound", discover = "Discover", system = "Devices" }
+    var section: Section {
+        switch self {
+        case .player, .search: .listen
+        case .albums, .artists, .songs: .library
+        case .composers, .works, .conductors, .ensembles: .classical
+        case .audio, .dsp: .sound
+        case .deepDive: .discover
+        case .connect, .diagnostics: .system
+        }
+    }
+
+    var libraryCategory: LibraryModel.Category? {
+        switch self {
+        case .albums: .albums; case .artists: .artists; case .songs: .songs; case .composers: .composers
+        case .works: .works; case .conductors: .conductors; case .ensembles: .ensembles
+        default: nil
         }
     }
 }
@@ -56,7 +84,20 @@ final class PlayerModel: ObservableObject {
     @Published var items: [QueueItem] = []
     @Published var status = PlayerStatus()
     @Published var devices: [OutputDeviceInfo] = []
-    @Published var tab: Tab = .player { didSet { updateAnalysisActivity(); if tab == .deepDive { loadDeepDiveForCurrent() } } }
+    @Published var tab: Tab = .player {
+        didSet {
+            updateAnalysisActivity()
+            if tab == .deepDive { loadDeepDiveForCurrent() }
+            if let c = tab.libraryCategory, library.category != c { library.category = c }
+        }
+    }
+    @Published var searchText = "" {
+        didSet {
+            library.runSearch(searchText.trimmingCharacters(in: .whitespaces))
+            if !searchText.isEmpty && tab != .search { withAnimation(.smooth(duration: 0.3)) { tab = .search } }
+        }
+    }
+    let albumArt = AlbumArt()
     @Published var hero = HeroArt()
     @Published var fetchMissingArt = true { didSet { defaults.set(fetchMissingArt, forKey: "aureon.fetchArt"); if fetchMissingArt && !oldValue { lookUpMissingArtwork() } } }
     let artFetcher = ArtworkFetcher()
@@ -123,6 +164,9 @@ final class PlayerModel: ObservableObject {
         }
         visualizerEnabled = defaults.object(forKey: "aureon.visualizer") as? Bool ?? true
         library.onAdd = { [weak self] t, p in self?.addTracks(t, play: p) }
+        library.onReplace = { [weak self] t in self?.replaceQueue(with: t) }
+        albumArt.store = library.store; albumArt.fetcher = artFetcher
+        albumArt.fetchOnline = { [weak self] in (self?.fetchMissingArt ?? false) && ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
         remote.makeController = { [unowned self] in self.makeRemoteController() }
         social.$settings.map { ($0.remoteEnabled, $0.remotePort, $0.remoteName) }.removeDuplicates { $0 == $1 }
             .sink { [weak self] enabled, port, name in self?.applyRemote(enabled, port, name) }.store(in: &cancellables)
@@ -176,6 +220,13 @@ final class PlayerModel: ObservableObject {
         let new = zip(entries, found).map { QueueItem(id: $0.id, url: $1, title: $1.deletingPathExtension().lastPathComponent) }
         items += new
         for n in new { Task { await loadMetadata(n.id) } }
+    }
+
+    /// "Play": replace the queue with these tracks and start the first.
+    func replaceQueue(with tracks: [TrackDTO]) {
+        guard !tracks.isEmpty else { return }
+        clear()
+        addTracks(tracks, play: true)
     }
 
     func clear() { player.stop(); player.clearQueue(); started = false; items = []; status = PlayerStatus() }

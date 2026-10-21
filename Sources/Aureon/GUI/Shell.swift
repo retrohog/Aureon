@@ -8,33 +8,26 @@ struct ContentView: View {
     @StateObject private var dropping = Box(false)
 
     var body: some View {
-        HStack(spacing: 0) {
-            QueueView(dropping: dropping.v).frame(width: 300)
-            ZStack(alignment: .top) {
-                VStack(spacing: 0) {
-                    TabBar().padding(.top, 12).padding(.bottom, 10)
-                    ZStack {
-                        switch m.tab {
-                        case .player: NowPlayingView()
-                        case .library: scroll { LibraryTab() }
-                        case .deepDive: scroll { DeepDiveTab() }
-                        case .audio: scroll { AudioTab() }
-                        case .dsp: scroll { DSPTab() }
-                        case .connect: scroll { ConnectTab() }
-                        case .diagnostics: scroll { DiagnosticsTab() }
-                        }
-                    }
-                    .id(m.tab).transition(.tabSwap)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ZStack {
+            AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: m.tab == .player && ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil,
+                              intensity: m.tab == .player ? 1 : 0.3)
+            HStack(spacing: 0) {
+                Sidebar()
+                ZStack(alignment: .bottom) {
+                    page.id(m.tab).transition(.tabSwap).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: m.tab == .player && ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil,
-                                  intensity: m.tab == .player ? 1 : 0.42)
+            if dropping.v {
+                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Brand.accent.opacity(0.9), style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Brand.accent.opacity(0.1)))
+                    .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(.title3.weight(.semibold)))
+                    .padding(10).transition(.opacity.combined(with: .scale(scale: 0.99))).allowsHitTesting(false)
             }
-            .clipped()
         }
+        .animation(.smooth(duration: 0.35), value: m.tab == .player)
+        .animation(.smooth(duration: 0.22), value: dropping.v)
+        .environmentObject(m.albumArt)
         .preferredColorScheme(.dark)
         .background(Color(white: 0.06))
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
@@ -47,8 +40,17 @@ struct ContentView: View {
         }
     }
 
-    private func scroll<C: View>(@ViewBuilder _ content: () -> C) -> some View {
-        ScrollView { content().padding(24) }
+    @ViewBuilder private var page: some View {
+        switch m.tab {
+        case .player: NowPlayingView()
+        case .search: SearchPage()
+        case .albums, .artists, .songs, .composers, .works, .conductors, .ensembles: LibraryPage(lib: m.library, tab: m.tab)
+        case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
+        case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
+        case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
+        case .connect: PageScaffold(title: "Connect", subtitle: "Discord, scrobbling and remote control") { ConnectTab() }
+        case .diagnostics: PageScaffold(title: "System", subtitle: "Optimisation and hardware diagnostics") { DiagnosticsTab() }
+        }
     }
 }
 
@@ -65,7 +67,6 @@ struct QueueView: View {
             if m.items.isEmpty { empty } else { list }
         }
         .background(.ultraThinMaterial)
-        .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.08)).frame(width: 0.8) }
         .overlay {
             if dropping {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(m.hero.palette.accent.color.opacity(0.9), style: StrokeStyle(lineWidth: 2, dash: [7, 5]))

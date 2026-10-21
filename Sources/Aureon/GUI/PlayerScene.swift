@@ -14,7 +14,7 @@ struct NowPlayingView: View {
                     SignalPathView()
                     LiveVisualizerPanel()
                 }
-                .padding(.horizontal, 32).padding(.top, 12).padding(.bottom, 36)
+                .padding(.horizontal, 32).padding(.top, 36).padding(.bottom, 36)
             }
         }
         .environment(\.colorScheme, .dark)

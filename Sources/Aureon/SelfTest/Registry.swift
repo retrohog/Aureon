@@ -47,7 +47,7 @@ func extraTests() -> [(String, TestFn)] {
           ("art.rejects", aw.rejectsWrongMatchesAndRemembersNothingFound), ("art.offline", aw.offlineIsNotRemembered), ("art.dedupe", aw.concurrentRequestsForOneAlbumShareOneLookup),
           ("art.tooSmall", aw.tooSmallImagesAreSkipped)]
     let ui = InterfaceTests()
-    t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers)]
+    t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers), ("ui.navigation", ui.navigationStructure)]
     let dc = DiscordTests()
     t += [("discord.quality", dc.qualityLabels), ("discord.text", dc.textRules), ("discord.presence", dc.presenceBuilder), ("discord.frame", dc.frameEncoding),
           ("discord.socket", dc.handshakeAndActivityOverARealSocket), ("discord.notRunning", dc.discordNotRunning), ("discord.errors", dc.discordErrorsAreSurfaced),

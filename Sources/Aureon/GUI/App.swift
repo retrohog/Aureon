@@ -9,9 +9,10 @@ struct AureonApp: App {
         WindowGroup("Aureon") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 1000, minHeight: 680)
+                .frame(minWidth: 1040, minHeight: 680)
                 .onOpenURL { model.add(urls: [$0]) }
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Add Music…") {
@@ -79,6 +80,31 @@ extension DemoData {
         return NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!
     }
 
+    /// A small library on disk (real files, real tags, generated covers) imported through the real importer.
+    static func importDemoLibrary(of source: String, into model: PlayerModel) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("aureon-demolib-\(getpid())", isDirectory: true)
+        try? FileManager.default.removeItem(at: root)
+        let albums: [(String, String, Int, String, Double, Int)] = [
+            ("Kind of Blue", "Miles Davis", 1959, "Jazz", 0.60, 5), ("Neon Harbour", "Aurora Lane", 2019, "Electronic", 0.80, 9), ("Paper Moons", "The Quiet Hours", 2016, "Indie", 0.08, 11),
+            ("Low Tide", "Mara Voss", 2022, "Ambient", 0.48, 7), ("Glass Cathedral", "Ensemble Nord", 2011, "Classical", 0.97, 8), ("Golden Hour", "Sol & Ember", 2021, "Pop", 0.12, 10),
+            ("Static Bloom", "Kite Runner", 2018, "Rock", 0.0, 12), ("Cartography", "Ines Calder", 2023, "Folk", 0.33, 9), ("Deep Field", "Halcyon Drift", 2020, "Electronic", 0.68, 6)]
+        for (i, a) in albums.enumerated() {
+            let dir = root.appendingPathComponent("\(a.1)/\(a.0)", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let c1 = NSColor(hue: a.4, saturation: 0.75, brightness: 0.28, alpha: 1), c2 = NSColor(hue: (a.4 + 0.08).truncatingRemainder(dividingBy: 1), saturation: 0.6, brightness: 0.85, alpha: 1)
+            let art = coverPNG(c1, c2, accent: NSColor(hue: (a.4 + 0.5).truncatingRemainder(dividingBy: 1), saturation: 0.45, brightness: 1, alpha: 1), size: 700)
+            for n in 1...(i == 0 ? 3 : 2) {
+                let f = dir.appendingPathComponent("0\(n) Track \(n).flac")
+                try? FileManager.default.copyItem(atPath: source, toPath: f.path)
+                injectVorbisComments(f.path, [("TITLE", i == 0 ? ["So What", "Freddie Freeloader", "Blue in Green"][n - 1] : "\(a.0) — Part \(n)"), ("ARTIST", a.1), ("ALBUM", a.0),
+                                              ("TRACKNUMBER", "\(n)"), ("TRACKTOTAL", "\(a.5)"), ("DATE", "\(a.2)"), ("GENRE", a.3)])
+                injectFLACPicture(f.path, image: art)
+            }
+        }
+        _ = model.library.store?.importFolder(root)
+        model.library.refresh()
+    }
+
     /// Copies of `source` carrying real tags and embedded covers, so snapshots exercise the real import path.
     static func taggedCopies(of source: String) -> [String] {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("aureon-demo-\(getpid())", isDirectory: true)
@@ -111,16 +137,20 @@ extension DemoData {
     if let t = env["AUREON_TAB"], let tab = Tab(rawValue: t) { model.tab = tab }
     let files = env["AUREON_DEMO_ART"] != nil && !files.isEmpty ? DemoData.taggedCopies(of: files[0]) : files
     model.add(urls: files.map { URL(fileURLWithPath: $0) })
+    if env["AUREON_DEMO_LIB"] != nil, let src = ProcessInfo.processInfo.arguments.dropFirst().last { DemoData.importDemoLibrary(of: src, into: model) }
     if env["AUREON_DEMO"] != nil { DemoData.populate(model) }
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
-    if env["AUREON_DEMO"] != nil, env["AUREON_TAB"] == "Library" {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated {
-            if env["AUREON_LIB_WORK"] != nil { model.library.category = .works } 
+    if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
+    // grid cells load their cover when they scroll into view; an offscreen snapshot never "appears", so load them up front
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { for a in model.library.albums { model.albumArt.load(a) } } }
+    if env["AUREON_OPEN_FIRST"] != nil {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated {
+            let lib = model.library
+            if let id = model.tab == .albums ? lib.albums.first?.id : lib.rows.first?.id { lib.selectedID = id }
         } }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { MainActor.assumeIsolated { if let r = model.library.rows.first { model.library.selectedID = r.id } } }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { MainActor.assumeIsolated {
-            if env["AUREON_LIB_WORK"] == nil, case .works(let ws) = model.library.detail, let w = ws.first { model.library.open(work: w) }
+            if env["AUREON_OPEN_WORK"] != nil, case .works(let ws) = model.library.detail, let w = ws.first { model.library.open(work: w) }
         } }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 4) {

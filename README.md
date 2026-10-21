@@ -4,7 +4,7 @@ An open-source, audiophile-grade music player for macOS. Aureon keeps your music
 and lets you opt in to processing — upsampling, ReplayGain, EQ, crossfeed, room correction, plugins — only when you want it. The
 signal-path panel always tells you which it is.
 
-> Status: early (0.2). The engine and every service are covered by 192 automated tests; what could not be verified without special
+> Status: early (0.2). The engine and every service are covered by 193 automated tests; what could not be verified without special
 > hardware, accounts or signing is listed under [Limitations](#limitations) — read it before relying on those parts.
 
 ## Features
@@ -20,6 +20,7 @@ signal-path panel always tells you which it is.
 | **Live queue** | Remove, reorder, insert and append while playing; the audible track is never disturbed. |
 | **Headphones** | Bauer **BS2B crossfeed**; **AutoEQ** profiles fetched on demand from the open AutoEQ database (any number of filters, safety pre-amp). |
 | **Room correction** | **Partitioned FFT convolution** (Accelerate) of Room EQ Wizard–style impulse responses (WAV int/float, mono/stereo, any rate), resampled to the stream. 8 s of stereo IR runs ~57× faster than real time. |
+| **Apple Music-style layout** | Grouped sidebar (Library, Classical, Sound, Discover, Devices) with search; albums as a cover grid with HD marks, album pages with Play / Shuffle / Add to Queue; a floating player bar on every page with transport, progress, format badge, volume and the queue (opened from the bar, no permanent column). |
 | **Immersive player** | Large cover over a drifting mesh gradient in the cover's own colours, serif title hierarchy (title, artist, album · year · genre, composer), hardware-style format badges (Hi-Res mark, FLAC, 24-BIT \| 96 kHz), a fluid scrubber and volume slider, animated tab transitions. |
 | **Signal path** | A node graph from file → decoder → stages → buffer → DAC with pulses flowing along the line; green while the signal is untouched, orange from the first stage that changes samples. Hover a station for details. |
 | **Tags & artwork** | Own FLAC (Vorbis + PICTURE blocks, base64 pictures, leading ID3v2), ALAC (`covr`), AIFF/WAV (`ID3 ` chunk) and ID3v2.2–2.4 parsers; AVFoundation fills gaps. Missing covers are fetched from the iTunes Search API, then MusicBrainz + Cover Art Archive, with strict album/artist matching and an on-disk cache. |
@@ -64,7 +65,7 @@ Keys: <kbd>Space</kbd> pause · <kbd>←</kbd>/<kbd>→</kbd> ±10 s · <kbd>⌘
 ## Testing
 
 ```bash
-swift build -c release && .build/release/Aureon selftest        # 192 tests, ~1 min, no audio hardware needed
+swift build -c release && .build/release/Aureon selftest        # 193 tests, ~1 min, no audio hardware needed
 .build/release/Aureon selftest queue                             # a subset, by name
 ```
 
