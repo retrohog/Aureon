@@ -34,6 +34,7 @@ enum SelfTestRunner {
     }
 
     static func run(filter: String?) -> Int32 {
+        setenv("AUREON_TESTING", "1", 1)          // tests never write the user's saved profiles, cues or settings
         var failed = 0, ran = 0
         let start = Date()
         for (name, fn) in all where filter == nil || name.localizedCaseInsensitiveContains(filter!) {

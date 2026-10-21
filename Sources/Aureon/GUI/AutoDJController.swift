@@ -29,6 +29,8 @@ final class AutoDJController: ObservableObject {
     var library: () -> [DJTrack] = { [] }
     var persistence = true
 
+    /// The deck that is on air (the one that is not just being mixed in).
+    var onAirDeck: DJDeck? { current }
     private var current: DJDeck?
     private var incoming: DJDeck?
     private var plan: MixPlan?

@@ -22,7 +22,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(minHeight: 30).padding(.leading, 76).padding(.trailing, 92)
+                HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(height: WindowChrome.band - 14)
                 if let back {
                     Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(.system(size: 12, weight: .semibold)) }
                         .buttonStyle(.plain).foregroundStyle(Brand.cyan)
@@ -36,7 +36,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
                 }
                 content
             }
-            .padding(.horizontal, 24).padding(.top, 14).padding(.bottom, 110)
+            .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 110)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -144,6 +144,7 @@ struct LibraryPage: View {
                     Slider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
                 }
             }
+            Button { lib.scanDuplicates(prompt: false) } label: { Image(systemName: "square.on.square.dashed") }.buttonStyle(IconButtonStyle()).disabled(lib.scanningDuplicates).help("Find duplicate songs and albums")
             Button { chooseFolder() } label: { Image(systemName: "folder.badge.plus") }.buttonStyle(IconButtonStyle()).help("Add music folder…")
             Button { lib.rescan() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(IconButtonStyle()).disabled(lib.folders.isEmpty || lib.importing).help("Rescan")
             if lib.importing { ProgressView().controlSize(.small) }
@@ -176,6 +177,7 @@ struct LibraryPage: View {
 
     @ViewBuilder private var listPage: some View {
         PageScaffold(title: tab.rawValue, subtitle: subtitle, trailing: { toolbar }) {
+            DuplicateBanner(lib: lib)
             switch tab {
             case .albums:
                 let albums = LibraryOrdering.albums(lib.albums, opts)
@@ -199,7 +201,27 @@ struct LibraryPage: View {
             } else {
                 ForEach(rows) { r in RowButton(title: r.title, subtitle: r.subtitle, count: r.count, symbol: tab.icon) { lib.selectedID = r.id } }
             }
-            if rows.isEmpty { Text("Nothing here").foregroundStyle(.secondary).padding(.top, 30) }
+            if rows.isEmpty { categoryExplainer }
+        }
+    }
+
+    /// Shown while a classical category has no data: what the page is for and which tags fill it.
+    @ViewBuilder private var categoryExplainer: some View {
+        switch tab {
+        case .composers:
+            EmptyExplainer(icon: "music.quarternote.3", title: "No composers yet",
+                           text: "Composers lists everyone credited in the COMPOSER tag of your files — classical music, film scores and songwriters. Each composer opens to their works and songs. Tag your files with a composer, then rescan the library.")
+        case .works:
+            EmptyExplainer(icon: "book", title: "No works yet",
+                           text: "Works groups songs into compositions, such as “Symphony No. 5”, with their movements and every recording you own. It is built from the WORK, MOVEMENT and OPUS tags, or from titles shaped like “Symphony No. 5: I. Allegro” when a composer is tagged.")
+        case .conductors:
+            EmptyExplainer(icon: "wand.and.rays", title: "No conductors yet",
+                           text: "Conductors lists the people in the CONDUCTOR tag and the recordings they led. It fills up as you add orchestral and choral albums that carry that tag.")
+        case .ensembles:
+            EmptyExplainer(icon: "person.3", title: "No ensembles yet",
+                           text: "Ensembles lists orchestras, choirs and quartets from the ENSEMBLE or ORCHESTRA tags — and names that clearly are groups, like “Berliner Philharmoniker”. Add classical albums with those tags to see them here.")
+        default:
+            Text("Nothing here").foregroundStyle(.secondary).padding(.top, 30)
         }
     }
 
@@ -218,6 +240,23 @@ struct LibraryPage: View {
         case .tracks(let title, let tracks):
             let name = lib.rows.first { $0.id == lib.selectedID }?.title ?? title
             PageScaffold(title: name, subtitle: "\(tracks.count) songs", back: back, backTitle: tab.rawValue, trailing: { trackActions(tracks) }) { SongList(tracks: tracks) }
+        case .composer(let works, let tracks):
+            let name = lib.rows.first { $0.id == lib.selectedID }?.title ?? "Composer"
+            PageScaffold(title: name, subtitle: "\(works.count) work\(works.count == 1 ? "" : "s") · \(tracks.count) songs", back: back, backTitle: tab.rawValue, trailing: { if !tracks.isEmpty { trackActions(tracks) } }) {
+                VStack(alignment: .leading, spacing: 20) {
+                    if !works.isEmpty {
+                        Text("Works").font(.system(size: 17, weight: .semibold))
+                        worksView(works)
+                    }
+                    if !tracks.isEmpty {
+                        Text(works.isEmpty ? "Songs" : "All songs").font(.system(size: 17, weight: .semibold))
+                        SongList(tracks: tracks)
+                    }
+                    if works.isEmpty && tracks.isEmpty {
+                        EmptyExplainer(icon: "music.quarternote.3", title: "Nothing credited yet", text: "This name appears as a composer in your tags, but no song currently carries the credit. Rescan the library to refresh it.")
+                    }
+                }
+            }
         case .works(let works):
             PageScaffold(title: lib.rows.first { $0.id == lib.selectedID }?.title ?? "Works", subtitle: "\(works.count) works", back: back, backTitle: tab.rawValue) { worksView(works) }
         case .recordings(let w, let groups):
@@ -265,7 +304,7 @@ struct LibraryPage: View {
                             Spacer()
                             Text(fmtDuration(t.duration)).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 2).contentShape(Rectangle()).onTapGesture(count: 2) { lib.onReplace?([t]) }
+                        .padding(.vertical, 3).padding(.horizontal, 4).contentShape(Rectangle()).onTapGesture { lib.onReplace?([t]) }
                     }
                 }
                 .padding(12).panel(radius: 14)
@@ -411,7 +450,10 @@ struct ArtistCard: View {
     var body: some View {
         VStack(spacing: 8) {
             Avatar(name: row.title, image: art.info[row.id]?.image, size: size, shadow: true)
+                .background { Circle().fill(ArtPalette.fallback(seed: row.title).accent.color.opacity(hover.v ? 0.55 : 0)).blur(radius: 22).padding(14).offset(y: 4) }
                 .overlay { if hover.v { Circle().strokeBorder(Brand.gradient, lineWidth: 1.6).padding(8) } }
+                .scaleEffect(hover.v ? 1.07 : 1)
+                .animation(.spring(response: 0.32, dampingFraction: 0.7), value: hover.v)
             VStack(spacing: 1) {
                 Text(row.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 Text("\(row.count) songs").font(.system(size: 11)).foregroundStyle(.secondary)
@@ -530,14 +572,13 @@ struct AlbumCard: View {
         VStack(alignment: .leading, spacing: 7) {
             ZStack(alignment: .bottomLeading) {
                 CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 10, symbol: "music.note")
-                    .shadow(color: .black.opacity(hover.v ? 0.5 : 0.28), radius: hover.v ? 14 : 7, y: hover.v ? 7 : 3)
+                    .hoverLift(hover.v, radius: 10, glow: ArtPalette.fallback(seed: album.title).accent.color)
                 if hover.v {
                     Button { play() } label: { Image(systemName: "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white).frame(width: 34, height: 34)
                         .background(Circle().fill(Brand.accent)) }
                         .buttonStyle(.plain).padding(8).transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
-            .scaleEffect(hover.v ? 1.02 : 1)
             VStack(alignment: .leading, spacing: 1) {
                 Text(album.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                 HStack(spacing: 6) {
@@ -615,31 +656,33 @@ struct SongList: View {
     var numbered = false
     var letters = false
     var sortHeader = false
+    /// Set when the list is a playlist: adds "Remove from Playlist" to the context menu.
+    var playlistID: String? = nil
 
     var body: some View {
+        let position = Dictionary(tracks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let nowPath = m.isActive ? m.current?.url.path : nil
         VStack(spacing: 0) {
             if sortHeader { header }
             LazyVStack(spacing: 0) {
                 if letters {
                     ForEach(LibraryOrdering.grouped(tracks, title: \.title), id: \.letter) { g in
                         LetterHeader(letter: g.letter)
-                        ForEach(Array(g.items.enumerated()), id: \.element.id) { i, t in row(t, index: i, all: g.items) }
+                        ForEach(Array(g.items.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: position[t.id] ?? i, playingPath: nowPath) }
                     }
                 } else {
-                    ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in row(t, index: i, all: tracks) }
+                    ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: i, playingPath: nowPath) }
                 }
                 if tracks.isEmpty { Text("No songs").foregroundStyle(.secondary).padding(.top, 40) }
             }
         }
     }
 
-    private func row(_ t: TrackDTO, index i: Int, all: [TrackDTO]) -> some View {
-        SongRow(track: t, index: i + 1, showArtist: showArtist, numbered: numbered, playing: m.isActive && m.current?.url.path == t.path)
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) { m.library.onReplace?(Array(all[i...])) }
+    private func row(_ t: TrackDTO, shown i: Int, at index: Int, playingPath: String?) -> some View {
+        SongRow(track: t, index: i + 1, showArtist: showArtist, numbered: numbered, playing: playingPath == t.path) { m.play(tracks: tracks, at: index) }
             .contextMenu {
-                Button("Play") { m.library.onReplace?(Array(all[i...])) }
-                Button("Add to Queue") { m.library.onAdd?([t], false) }
+                Button("Play") { m.play(tracks: tracks, at: index) }
+                TrackMenu(tracks: [t], playlistID: playlistID)
             }
     }
 
@@ -663,6 +706,7 @@ struct SongList: View {
             col("Title", .title)
             col("Artist", .artist)
             col("Album", .album)
+            Color.clear.frame(width: 24, height: 1)
             col("Quality", .quality, width: 120, trailing: true)
             col("Time", .duration, width: 46, trailing: true)
         }
@@ -671,29 +715,35 @@ struct SongList: View {
     }
 }
 
+/// One song. The whole row is the button: a click anywhere on it plays the song, with a flash and a bounce so it is clear something happened.
 struct SongRow: View {
     let track: TrackDTO
     let index: Int
     let showArtist: Bool
     let numbered: Bool
     let playing: Bool
+    let onPlay: () -> Void
     @EnvironmentObject var m: PlayerModel
     @StateObject private var hover = Box(false)
+    @StateObject private var flash = Box(0.0)
+    @StateObject private var pressed = Box(false)
 
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if hover.v { Image(systemName: "play.fill").font(.system(size: 11)).foregroundStyle(.primary) }
-                else if playing { EqualizerBars(active: m.status.state == .playing, color: Brand.cyan).frame(width: 12, height: 10) }
+                if hover.v && !playing { Image(systemName: "play.fill").font(.system(size: 11)).foregroundStyle(.primary).transition(.scale.combined(with: .opacity)) }
+                else if playing { EqualizerBars(active: m.status.state == .playing, color: Brand.accent).frame(width: 12, height: 10) }
                 else { Text(numbered ? "\(track.trackNumber ?? index)" : "").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary) }
-            }.frame(width: 26)
-            Text(track.title).font(.system(size: 12.5, weight: playing ? .semibold : .regular)).foregroundStyle(playing ? Brand.cyan : .primary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: 26).scaleEffect(flash.v > 0.01 ? 1 + 0.35 * flash.v : 1)
+            Text(track.title).font(.system(size: 12.5, weight: playing ? .semibold : .regular)).foregroundStyle(playing ? Brand.accent : .primary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             if showArtist && !numbered {
                 Text(track.artistLine).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 Text(track.releaseTitle ?? "").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             } else if showArtist {
                 Text(track.artistLine).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
+            HeartButton(path: track.path, size: 12, alwaysVisible: false).opacity(hover.v || playing ? 1 : 0.0001).overlay { }.frame(width: 24)
             HStack(spacing: 5) {
                 if isHiRes(track) { HDMark() }
                 Text(trackQuality(track)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary)
@@ -701,8 +751,24 @@ struct SongRow: View {
             Text(fmtDuration(track.duration)).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.08 : (index % 2 == 0 ? 0.022 : 0))))
-        .onHover { hover.v = $0 }
+        .background {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.08 : (index % 2 == 0 ? 0.022 : 0)))
+                if playing { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.accent.opacity(0.10)) }
+                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.accent.opacity(0.34 * flash.v))
+            }
+        }
+        .overlay(alignment: .leading) { if playing { Capsule().fill(Brand.accent).frame(width: 3, height: 16).padding(.leading, 2).transition(.scale(scale: 0.2).combined(with: .opacity)) } }
+        .scaleEffect(pressed.v ? 0.992 : 1)
+        .contentShape(Rectangle())
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
+        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in if !pressed.v { withAnimation(.easeOut(duration: 0.08)) { pressed.v = true } } }.onEnded { _ in withAnimation(.easeOut(duration: 0.12)) { pressed.v = false } })
+        .onTapGesture {
+            flash.v = 1
+            DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.75)) { flash.v = 0 } }
+            onPlay()
+        }
+        .animation(.smooth(duration: 0.2), value: playing)
     }
 }
 

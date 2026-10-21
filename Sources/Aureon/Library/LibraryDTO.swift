@@ -34,9 +34,31 @@ struct TrackDTO: Codable, Identifiable, Hashable {
     var genres: [String]
     var mbRecordingID: String?
     var addedAt: Double? = nil
+    // optional so remote peers and libraries from older versions still decode
+    var fileSize: Int64? = nil
+    var liked: Bool? = nil
+    var playCount: Int? = nil
+    var lastPlayedAt: Double? = nil
 
     func names(_ role: CreditRole) -> [String] { credits.filter { $0.role == role.rawValue }.map(\.name) }
-    var artistLine: String { let a = names(.artist); return a.isEmpty ? names(.albumArtist).joined(separator: ", ") : a.joined(separator: ", ") }
+    /// "Artist" or "Artist feat. Guest".
+    var artistLine: String {
+        let a = names(.artist), f = names(.featured)
+        let main = a.isEmpty ? names(.albumArtist).joined(separator: ", ") : a.joined(separator: ", ")
+        return f.isEmpty ? main : main + " feat. " + f.joined(separator: ", ")
+    }
+    /// The artists the track belongs to, without the featured guests.
+    var primaryArtistLine: String { let a = names(.artist); return a.isEmpty ? names(.albumArtist).joined(separator: ", ") : a.joined(separator: ", ") }
+    var isLiked: Bool { liked == true }
+}
+
+struct PlaylistDTO: Codable, Identifiable, Hashable {
+    var id: String
+    var name: String
+    var trackCount: Int
+    var duration: Double
+    var createdAt: Double
+    var updatedAt: Double
 }
 
 struct PartyDTO: Codable, Identifiable, Hashable {

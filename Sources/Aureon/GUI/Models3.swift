@@ -163,10 +163,13 @@ struct RemoteImage: View {
 // MARK: - Library view options (sorting, filtering, size)
 
 enum SortKey: String, Codable, CaseIterable, Identifiable {
-    case title, artist, album, year, duration, quality, added, count
+    case title, artist, album, year, duration, quality, added, count, genre, plays, recent, size
     var id: String { rawValue }
     var label: String {
-        switch self { case .title: "Title"; case .artist: "Artist"; case .album: "Album"; case .year: "Year"; case .duration: "Length"; case .quality: "Quality"; case .added: "Recently added"; case .count: "Most songs" }
+        switch self {
+        case .title: "Title"; case .artist: "Artist"; case .album: "Album"; case .year: "Year"; case .duration: "Length"; case .quality: "Quality (resolution)"
+        case .added: "Date added"; case .count: "Number of songs"; case .genre: "Genre"; case .plays: "Most played"; case .recent: "Recently played"; case .size: "File size"
+        }
     }
 }
 
@@ -198,8 +201,8 @@ struct ViewOptions: Codable, Equatable {
 
     static func available(for tab: Tab) -> [SortKey] {
         switch tab {
-        case .albums: [.title, .artist, .year, .added, .count]
-        case .songs: [.title, .artist, .album, .year, .duration, .quality, .added]
+        case .albums: [.title, .artist, .year, .added, .count, .genre, .quality]
+        case .songs, .liked: [.title, .artist, .album, .year, .duration, .quality, .added, .genre, .plays, .recent, .size]
         default: [.title, .count]
         }
     }
@@ -218,6 +221,8 @@ enum LibraryOrdering {
             case .year: return ((x.year ?? 0), key(x.title)) < ((y.year ?? 0), key(y.title))
             case .added: return ((x.addedAt ?? 0), key(x.title)) < ((y.addedAt ?? 0), key(y.title))
             case .count: return (x.trackCount, key(x.title)) < (y.trackCount, key(y.title))
+            case .genre: return (key(x.genre ?? "~"), key(x.title)) < (key(y.genre ?? "~"), key(y.title))
+            case .quality: return ((x.maxSampleRate ?? 0) * Double(x.maxBitDepth ?? 0), key(x.title)) < ((y.maxSampleRate ?? 0) * Double(y.maxBitDepth ?? 0), key(y.title))
             default: return key(x.title) < key(y.title)
             }
         }
@@ -236,6 +241,10 @@ enum LibraryOrdering {
             case .duration: return x.duration < y.duration
             case .quality: return (x.sampleRate * Double(x.bitDepth), key(x.title)) < (y.sampleRate * Double(y.bitDepth), key(y.title))
             case .added: return ((x.addedAt ?? 0), key(x.title)) < ((y.addedAt ?? 0), key(y.title))
+            case .genre: return (key(x.genres.first ?? "~"), key(x.title)) < (key(y.genres.first ?? "~"), key(y.title))
+            case .plays: return ((x.playCount ?? 0), key(x.title)) < ((y.playCount ?? 0), key(y.title))
+            case .recent: return ((x.lastPlayedAt ?? 0), key(x.title)) < ((y.lastPlayedAt ?? 0), key(y.title))
+            case .size: return ((x.fileSize ?? 0), key(x.title)) < ((y.fileSize ?? 0), key(y.title))
             default: return key(x.title) < key(y.title)
             }
         }

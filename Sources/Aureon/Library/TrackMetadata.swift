@@ -1,13 +1,13 @@
 import Foundation
 
 enum CreditRole: String, Codable, CaseIterable, Hashable {
-    case artist, albumArtist, composer, conductor, ensemble, soloist, performer, lyricist, arranger, producer, engineer, remixer
+    case artist, albumArtist, composer, conductor, ensemble, soloist, performer, lyricist, arranger, producer, engineer, remixer, featured
 
     var title: String {
         switch self {
         case .artist: "Artist"; case .albumArtist: "Album artist"; case .composer: "Composer"; case .conductor: "Conductor"
         case .ensemble: "Ensemble"; case .soloist: "Soloist"; case .performer: "Performer"; case .lyricist: "Lyricist"
-        case .arranger: "Arranger"; case .producer: "Producer"; case .engineer: "Engineer"; case .remixer: "Remixer"
+        case .arranger: "Arranger"; case .producer: "Producer"; case .engineer: "Engineer"; case .remixer: "Remixer"; case .featured: "Featured artist"
         }
     }
     /// Roles that name a group (orchestra, choir, quartet…) rather than a person.
@@ -80,6 +80,45 @@ enum TagInterpreter {
         s.replacingOccurrences(of: " / ", with: ";").replacingOccurrences(of: "\u{0}", with: ";").replacingOccurrences(of: "\\\\", with: ";")
             .split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
+
+    /// "A feat. B & C" → ("A", ["B", "C"]). Also understands "ft.", "featuring" and "(feat. B)". Names that merely contain such a word ("Left Behind") are left alone.
+    static func splitFeaturing(_ s: String) -> (primary: String, featured: [String]) {
+        var text = s.trimmingCharacters(in: .whitespaces)
+        var featured: [String] = []
+        func people(_ t: String) -> [String] {
+            t.replacingOccurrences(of: " & ", with: ",").replacingOccurrences(of: " and ", with: ",").replacingOccurrences(of: ";", with: ",")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        }
+        if let r = text.range(of: #"[\(\[]\s*(?:feat\.?|ft\.?|featuring)\s+([^\)\]]+)[\)\]]"#, options: [.regularExpression, .caseInsensitive]) {
+            let inner = String(text[r]).replacingOccurrences(of: #"^[\(\[]\s*(?i:feat\.?|ft\.?|featuring)\s+"#, with: "", options: .regularExpression).dropLast()
+            featured += people(String(inner))
+            text.removeSubrange(r)
+        }
+        if let r = text.range(of: #"\s+(?:feat\.?|ft\.?|featuring)\s+"#, options: [.regularExpression, .caseInsensitive]) {
+            featured += people(String(text[r.upperBound...]))
+            text = String(text[..<r.lowerBound])
+        }
+        let primary = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (primary.isEmpty ? s : primary, featured)
+    }
+
+    /// Composer, lyricist and similar fields often hold "Lennon, McCartney" or "A & B". "Beethoven, Ludwig van" (surname first) stays one name.
+    static func splitPeople(_ s: String) -> [String] {
+        var out: [String] = []
+        for piece in splitMultiple(s) {
+            if piece.contains(", ") {
+                let parts = piece.components(separatedBy: ", ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                // "John Lennon, Paul McCartney" are two people; "Beethoven, Ludwig van" and "Earth, Wind & Fire" are one name
+                if parts.count >= 2, parts.allSatisfy({ $0.contains(" ") && $0.first?.isUppercase == true && !$0.contains(" & ") }) { out += parts } else { out.append(piece) }
+            } else {
+                out += piece.components(separatedBy: " & ").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            }
+        }
+        return out
+    }
+
+    /// Case- and accent-insensitive comparison key.
+    static func fold(_ s: String) -> String { LibraryStore.fold(s) }
 
     static func number(_ s: String?) -> (Int?, Int?) {
         guard let s else { return (nil, nil) }
@@ -164,11 +203,23 @@ enum TagInterpreter {
         m.label = t.first("LABEL", "ORGANIZATION"); m.releaseCatalogNumber = t.first("CATALOGNUMBER")
 
         // people: multiple values and parallel MusicBrainz / sort lists
-        let artists = list(t, "ARTISTS").isEmpty ? list(t, "ARTIST") : list(t, "ARTISTS")
-        m.credits += credits(.artist, names: artists, sorts: t.all("ARTISTSORT"), mbids: t.all("MUSICBRAINZARTISTID"))
-        m.credits += credits(.albumArtist, names: list(t, "ALBUMARTISTS").isEmpty ? list(t, "ALBUMARTIST") : list(t, "ALBUMARTISTS"),
-                             sorts: t.all("ALBUMARTISTSORT"), mbids: t.all("MUSICBRAINZALBUMARTISTID"))
-        m.credits += credits(.composer, names: list(t, "COMPOSER", "COMPOSERS"), sorts: t.all("COMPOSERSORT"))
+        // "A feat. B" is one primary artist plus a featured one: the primary owns the album, the featured artist is credited on the track
+        var featuredNames: [String] = []
+        func primaries(_ names: [String]) -> [String] {
+            var out: [String] = []
+            for n in names { let (p, f) = splitFeaturing(n); out.append(p); featuredNames += f }
+            return out
+        }
+        let rawArtists = list(t, "ARTISTS").isEmpty ? list(t, "ARTIST") : list(t, "ARTISTS")
+        let artists = primaries(rawArtists)
+        let rawAlbumArtists = list(t, "ALBUMARTISTS").isEmpty ? list(t, "ALBUMARTIST") : list(t, "ALBUMARTISTS")
+        let albumArtists = primaries(rawAlbumArtists)
+        m.credits += credits(.artist, names: artists, sorts: rawArtists.count == artists.count ? t.all("ARTISTSORT") : [], mbids: rawArtists.count == artists.count ? t.all("MUSICBRAINZARTISTID") : [])
+        m.credits += credits(.albumArtist, names: albumArtists, sorts: t.all("ALBUMARTISTSORT"), mbids: rawAlbumArtists.count == albumArtists.count ? t.all("MUSICBRAINZALBUMARTISTID") : [])
+        if let title = t.first("TITLE") { featuredNames += splitFeaturing(title + " ").featured }
+        var seenFeatured = Set(artists.map { fold($0) } + albumArtists.map { fold($0) })
+        for f in featuredNames where seenFeatured.insert(fold(f)).inserted { m.credits.append(Credit(role: .featured, name: f)) }
+        m.credits += credits(.composer, names: (t.all("COMPOSER") + t.all("COMPOSERS")).flatMap(splitPeople).reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }, sorts: t.all("COMPOSERSORT"))
         m.credits += credits(.conductor, names: list(t, "CONDUCTOR", "CONDUCTORS"))
         m.credits += credits(.ensemble, names: list(t, "ENSEMBLE", "ORCHESTRA", "CHOIR"))
         m.credits += credits(.lyricist, names: list(t, "LYRICIST", "LYRICIST"))

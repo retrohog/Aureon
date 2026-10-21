@@ -20,6 +20,10 @@ struct QueueEntry: Identifiable, Equatable {
     init(id: UUID = UUID(), path: String) { self.id = id; self.path = path }
 }
 
+enum RepeatMode: Int, Codable, CaseIterable {
+    case off, all, one
+}
+
 enum PlayerCommand {
     case togglePause
     case setPaused(Bool)
@@ -78,6 +82,7 @@ final class Player: @unchecked Sendable {
     var varispeed: VarispeedControl?
     var deckGain: DeckGain?
     private var heardIndexHint = 0           // engine thread only
+    private var _repeat = RepeatMode.off
 
     let dsp = DSPChain()
     let replayGain = ReplayGainStore()
@@ -107,6 +112,12 @@ final class Player: @unchecked Sendable {
     var plugins: [AVAudioUnit] { lock.lock(); defer { lock.unlock() }; return _plugins }
     func setPlugins(_ units: [AVAudioUnit]) { lock.lock(); _plugins = units; pluginsVersion += 1; lock.unlock() }
 
+    /// What happens at the end of the queue (all) or of a track (one). Takes effect at the next track boundary.
+    var repeatMode: RepeatMode {
+        get { lock.lock(); defer { lock.unlock() }; return _repeat }
+        set { lock.lock(); _repeat = newValue; lock.unlock() }
+    }
+
     func send(_ c: PlayerCommand) { lock.lock(); commands.append(c); lock.unlock() }
 
     // MARK: queue editing (safe at any time, including during playback)
@@ -135,6 +146,17 @@ final class Player: @unchecked Sendable {
         queueVersion += 1; lock.unlock()
     }
     func clearQueue() { lock.lock(); entries = []; queueVersion += 1; lock.unlock() }
+
+    /// Puts the queue in this order (ids that are not in `ids` keep their relative order at the end). Safe during playback: the engine reconciles it like any edit.
+    func setOrder(_ ids: [UUID]) {
+        lock.lock()
+        let byID = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var out: [QueueEntry] = [], seen = Set<UUID>()
+        for id in ids { if let e = byID[id], seen.insert(id).inserted { out.append(e) } }
+        for e in entries where !seen.contains(e.id) { out.append(e) }
+        if out.map(\.id) != entries.map(\.id) { entries = out; queueVersion += 1 }
+        lock.unlock()
+    }
 
     // MARK: lifecycle
 
@@ -462,15 +484,24 @@ final class Player: @unchecked Sendable {
 
         func neighbour(of id: UUID, _ delta: Int) -> QueueEntry? {
             let q = snapshot().entries
-            guard let i = q.firstIndex(where: { $0.id == id }), q.indices.contains(i + delta) else { return nil }
-            return q[i + delta]
+            guard let i = q.firstIndex(where: { $0.id == id }) else { return nil }
+            if q.indices.contains(i + delta) { return q[i + delta] }
+            // repeat-all wraps around the ends of the queue
+            if repeatMode == .all, q.count > 1 { return delta > 0 ? q.first : q.last }
+            return nil
         }
 
         /// Chain the next queue entry gaplessly, or end the group.
         func advance() {
             let q = snapshot().entries
-            guard var ni = q.firstIndex(where: { $0.id == tailID }).map({ $0 + 1 }) else { endOfGroup = true; groupNext = nil; return }
-            while ni < q.count {
+            let mode = repeatMode
+            guard let ti = q.firstIndex(where: { $0.id == tailID }) else { endOfGroup = true; groupNext = nil; return }
+            var ni = mode == .one ? ti : ti + 1
+            var tried = 0
+            while true {
+                if ni >= q.count { if mode != .off, !q.isEmpty { ni = 0 } else { break } }
+                tried += 1
+                if tried > q.count + 1 { break }                                       // every track failed: do not spin
                 let e = q[ni]
                 do {
                     let o = try openTrack(e, settings: cfg, rates: rates, clock: clock, loadRAMNow: false)
@@ -482,7 +513,7 @@ final class Player: @unchecked Sendable {
                     return
                 } catch {
                     note("skipped \((e.path as NSString).lastPathComponent): \(error.localizedDescription)")
-                    ni += 1
+                    ni = (mode == .one ? ti : ni) + 1
                 }
             }
             endOfGroup = true; groupNext = nil

@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// A colour theme: the surfaces, the ink drawn on them and two accent colours. Everything the interface paints with comes from here (through `Brand`).
+/// Every family has a dark and a light variant; `Theme` is one resolved variant.
 struct Theme: Identifiable, Equatable {
     let id: String
+    let family: String
     let name: String
     let blurb: String
     var isLight = false
@@ -16,43 +18,75 @@ struct Theme: Identifiable, Equatable {
 
     static func rgb(_ hex: UInt32) -> Color { Color(.sRGB, red: Double((hex >> 16) & 255) / 255, green: Double((hex >> 8) & 255) / 255, blue: Double(hex & 255) / 255, opacity: 1) }
 
-    static let aureon = Theme(id: "aureon", name: "Aureon", blurb: "The default: graphite and coral", canvas: Color(white: 0.105), sidebar: Color(white: 0.145), ink: .white,
-                              accent: rgb(0xFF4566), accent2: rgb(0xFF8C4D), vibrant: true)
-    static let light = Theme(id: "light", name: "Light", blurb: "Clean and bright", isLight: true, canvas: rgb(0xF7F7F9), sidebar: rgb(0xE9E9EE), ink: .black,
-                             accent: rgb(0xE5334F), accent2: rgb(0xFF7A3D))
-    static let evergreen = Theme(id: "evergreen", name: "Evergreen", blurb: "Forest at night", canvas: rgb(0x0F1B15), sidebar: rgb(0x14271D), ink: rgb(0xE8F5EC),
-                                 accent: rgb(0x3DDC84), accent2: rgb(0xC9F27B))
-    static let nord = Theme(id: "nord", name: "Nord", blurb: "Arctic, muted blues", canvas: rgb(0x2E3440), sidebar: rgb(0x3B4252), ink: rgb(0xECEFF4),
-                            accent: rgb(0x88C0D0), accent2: rgb(0xA3BE8C))
-    static let catppuccin = Theme(id: "catppuccin", name: "Catppuccin", blurb: "Mocha: soft pastels on warm dark", canvas: rgb(0x1E1E2E), sidebar: rgb(0x181825), ink: rgb(0xCDD6F4),
-                                  accent: rgb(0xCBA6F7), accent2: rgb(0xF5C2E7))
-    static let dracula = Theme(id: "dracula", name: "Dracula", blurb: "Purple and pink on charcoal", canvas: rgb(0x282A36), sidebar: rgb(0x21222C), ink: rgb(0xF8F8F2),
-                               accent: rgb(0xBD93F9), accent2: rgb(0xFF79C6))
-    static let gruvbox = Theme(id: "gruvbox", name: "Gruvbox", blurb: "Retro warm browns and amber", canvas: rgb(0x282828), sidebar: rgb(0x1D2021), ink: rgb(0xEBDBB2),
-                               accent: rgb(0xFABD2F), accent2: rgb(0xFE8019))
-    static let synthwave = Theme(id: "synthwave", name: "Synthwave", blurb: "Funky: neon magenta and cyan", canvas: rgb(0x1A1033), sidebar: rgb(0x130A28), ink: rgb(0xF4E9FF),
-                                 accent: rgb(0xFF2BD6), accent2: rgb(0x00E5FF))
+    private static func make(_ family: String, _ name: String, _ blurb: String, dark d: (canvas: UInt32, sidebar: UInt32, ink: UInt32, accent: UInt32, accent2: UInt32),
+                             light l: (canvas: UInt32, sidebar: UInt32, ink: UInt32, accent: UInt32, accent2: UInt32), vibrantDark: Bool = false) -> (dark: Theme, light: Theme) {
+        (Theme(id: family, family: family, name: name, blurb: blurb, isLight: false, canvas: rgb(d.canvas), sidebar: rgb(d.sidebar), ink: rgb(d.ink), accent: rgb(d.accent), accent2: rgb(d.accent2), vibrant: vibrantDark),
+         Theme(id: family + ".light", family: family, name: name, blurb: blurb, isLight: true, canvas: rgb(l.canvas), sidebar: rgb(l.sidebar), ink: rgb(l.ink), accent: rgb(l.accent), accent2: rgb(l.accent2)))
+    }
 
-    static let all: [Theme] = [.aureon, .light, .evergreen, .nord, .catppuccin, .dracula, .gruvbox, .synthwave]
-    static func named(_ id: String?) -> Theme { all.first { $0.id == id } ?? .aureon }
+    static let families: [(id: String, name: String, blurb: String, dark: Theme, light: Theme)] = {
+        let defs: [(String, String, String, (UInt32, UInt32, UInt32, UInt32, UInt32), (UInt32, UInt32, UInt32, UInt32, UInt32), Bool)] = [
+            ("aureon", "Aureon", "The default: graphite and coral", (0x1B1B1B, 0x252525, 0xFFFFFF, 0xFF4566, 0xFF8C4D), (0xF7F7F9, 0xE9E9EE, 0x000000, 0xE5334F, 0xFF7A3D), true),
+            ("evergreen", "Evergreen", "Forest at night, morning meadow by day", (0x0F1B15, 0x14271D, 0xE8F5EC, 0x3DDC84, 0xC9F27B), (0xF3F8F4, 0xE0EDE5, 0x14281D, 0x1E9E5B, 0x7FA82A), false),
+            ("nord", "Nord", "Arctic, muted blues", (0x2E3440, 0x3B4252, 0xECEFF4, 0x88C0D0, 0xA3BE8C), (0xECEFF4, 0xE0E5EC, 0x2E3440, 0x5E81AC, 0x7AA18E), false),
+            ("catppuccin", "Catppuccin", "Mocha and Latte: soft pastels", (0x1E1E2E, 0x181825, 0xCDD6F4, 0xCBA6F7, 0xF5C2E7), (0xEFF1F5, 0xE6E9EF, 0x4C4F69, 0x8839EF, 0xEA76CB), false),
+            ("dracula", "Dracula", "Purple and pink on charcoal, Alucard by day", (0x282A36, 0x21222C, 0xF8F8F2, 0xBD93F9, 0xFF79C6), (0xFFFBEB, 0xF0EAD6, 0x1F1F1F, 0x644AC9, 0xA3144D), false),
+            ("gruvbox", "Gruvbox", "Retro warm browns and amber", (0x282828, 0x1D2021, 0xEBDBB2, 0xFABD2F, 0xFE8019), (0xFBF1C7, 0xEBDBB2, 0x3C3836, 0xB57614, 0xAF3A03), false),
+            ("synthwave", "Synthwave", "Funky: neon magenta and cyan", (0x1A1033, 0x130A28, 0xF4E9FF, 0xFF2BD6, 0x00E5FF), (0xFBF3FF, 0xEFE3FA, 0x2B1055, 0xD100A8, 0x0097B5), false),
+        ]
+        return defs.map { d in
+            let pair = make(d.0, d.1, d.2, dark: (d.3.0, d.3.1, d.3.2, d.3.3, d.3.4), light: (d.4.0, d.4.1, d.4.2, d.4.3, d.4.4), vibrantDark: d.5)
+            return (d.0, d.1, d.2, pair.dark, pair.light)
+        }
+    }()
+
+    static let aureon = families[0].dark
+    static let all: [Theme] = families.flatMap { [$0.dark, $0.light] }
+
+    /// "evergreen", "evergreen.light" (or the old plain "light", which was the light Aureon).
+    static func named(_ id: String?) -> Theme {
+        if id == "light" { return families[0].light }
+        return all.first { $0.id == id } ?? .aureon
+    }
+
+    static func resolve(family: String, light: Bool) -> Theme {
+        let f = families.first { $0.id == family } ?? families[0]
+        return light ? f.light : f.dark
+    }
 
     /// The theme in use. Set on the main thread when the user picks one; read by `Brand` while views are built.
     nonisolated(unsafe) static var current = Theme.aureon
 }
 
-/// A grid of theme previews to pick from.
+/// Which variant of the chosen theme to use.
+enum AppearanceMode: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String { switch self { case .system: "Auto"; case .light: "Light"; case .dark: "Dark" } }
+    var icon: String { switch self { case .system: "circle.lefthalf.filled"; case .light: "sun.max.fill"; case .dark: "moon.fill" } }
+}
+
+/// A grid of theme previews to pick from, with the dark / light switch.
 struct ThemePicker: View {
     @EnvironmentObject var m: PlayerModel
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12)], alignment: .leading, spacing: 12) {
-            ForEach(Theme.all) { t in swatch(t) }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Picker("", selection: $m.appearance) { ForEach(AppearanceMode.allCases) { Label($0.title, systemImage: $0.icon).tag($0) } }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 230)
+                Text(m.appearance == .system ? "Follows your Mac's appearance" : "Every theme has a dark and a light version").font(.caption).foregroundStyle(.secondary)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12)], alignment: .leading, spacing: 12) {
+                ForEach(Theme.families, id: \.id) { f in swatch(f.id, f.name, f.blurb) }
+            }
         }
     }
 
-    private func swatch(_ t: Theme) -> some View {
-        let on = m.theme == t
-        return Button { withAnimation(.easeOut(duration: 0.2)) { m.theme = t } } label: {
+    private func swatch(_ id: String, _ name: String, _ blurb: String) -> some View {
+        let t = Theme.resolve(family: id, light: m.theme.isLight)
+        let on = m.themeFamily == id
+        return Button { withAnimation(.easeOut(duration: 0.2)) { m.themeFamily = id } } label: {
             VStack(alignment: .leading, spacing: 7) {
                 // a miniature of the interface in this theme
                 ZStack(alignment: .topLeading) {
@@ -72,13 +106,32 @@ struct ThemePicker: View {
                 .frame(height: 64).clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(on ? t.accent : Brand.ink.opacity(0.12), lineWidth: on ? 2 : 0.8))
                 HStack(spacing: 5) {
-                    Text(t.name).font(.system(size: 12.5, weight: .semibold))
+                    Text(name).font(.system(size: 12.5, weight: .semibold))
                     if on { Image(systemName: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(t.accent) }
                 }
-                Text(t.blurb).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                Text(blurb).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
             }
             .padding(8).contentShape(Rectangle())
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Brand.ink.opacity(on ? 0.1 : 0.04)))
         }.buttonStyle(.plain)
+    }
+}
+
+/// A sun / moon switch for the sidebar: flips between the dark and light version of the current theme.
+struct AppearanceToggle: View {
+    @EnvironmentObject var m: PlayerModel
+    @StateObject private var hover = Box(false)
+    var body: some View {
+        Button { withAnimation(.easeOut(duration: 0.25)) { m.appearance = m.theme.isLight ? .dark : .light } } label: {
+            ZStack {
+                Image(systemName: "moon.fill").opacity(m.theme.isLight ? 0 : 1).rotationEffect(.degrees(m.theme.isLight ? 90 : 0)).scaleEffect(m.theme.isLight ? 0.4 : 1)
+                Image(systemName: "sun.max.fill").opacity(m.theme.isLight ? 1 : 0).rotationEffect(.degrees(m.theme.isLight ? 0 : -90)).scaleEffect(m.theme.isLight ? 1 : 0.4)
+            }
+            .font(.system(size: 13, weight: .medium)).foregroundStyle(Brand.accent)
+            .frame(width: 30, height: 28)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.10 : 0.05)))
+        }
+        .buttonStyle(.plain).onHover { hover.v = $0 }
+        .help(m.theme.isLight ? "Switch to the dark version of \(m.theme.name)" : "Switch to the light version of \(m.theme.name)")
     }
 }

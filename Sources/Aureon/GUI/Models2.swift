@@ -12,7 +12,7 @@ final class LibraryModel: ObservableObject {
         var icon: String { switch self { case .composers: "music.quarternote.3"; case .works: "book"; case .artists: "person.2"; case .albums: "square.stack"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"; case .songs: "music.note" } }
     }
     struct Row: Identifiable, Hashable { var id: String; var title: String; var subtitle: String; var count: Int }
-    enum Detail { case none, works([WorkDTO]), recordings(WorkDTO, [RecordingGroupDTO]), tracks(String, [TrackDTO]), releases([ReleaseDTO]) }
+    enum Detail { case none, works([WorkDTO]), composer([WorkDTO], [TrackDTO]), recordings(WorkDTO, [RecordingGroupDTO]), tracks(String, [TrackDTO]), releases([ReleaseDTO]) }
 
     let store: LibraryStore?
     @Published var stats = LibraryStats()
@@ -27,6 +27,7 @@ final class LibraryModel: ObservableObject {
     @Published var searchResults: SearchResults?
     private var back: [Detail] = []
     var canGoBack: Bool { !back.isEmpty }
+    var onLibraryChanged: (() -> Void)?
     var onAdd: (([TrackDTO], Bool) -> Void)?
     var onReplace: (([TrackDTO]) -> Void)?
     @Published var albums: [ReleaseDTO] = []
@@ -34,12 +35,20 @@ final class LibraryModel: ObservableObject {
     @Published var recentAlbums: [ReleaseDTO] = []
     @Published var hiResAlbums: [ReleaseDTO] = []
     @Published var songs: [TrackDTO] = []
+    // duplicates
+    @Published var duplicateGroups: [DuplicateGroup] = []
+    @Published var showDuplicates = false
+    @Published var duplicateBanner = false
+    @Published var scanningDuplicates = false
+    var ignoredDuplicates: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "aureon.ignoredDuplicates") ?? [])
 
     init() {
         let snapshot = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil
         store = try? LibraryStore(url: snapshot ? nil : LibraryStore.defaultURL)       // snapshots use a throw-away in-memory library
         folders = UserDefaults.standard.stringArray(forKey: "aureon.musicFolders") ?? []
         refresh()
+        // libraries imported by older versions may hold "A feat. B" as artists of their own: fold them into A once at start-up
+        if !snapshot, let store { Task.detached(priority: .utility) { if store.normalizeArtists() > 0 { await MainActor.run { self.refresh() } } } }
     }
 
     func refresh() {
@@ -82,7 +91,7 @@ final class LibraryModel: ObservableObject {
         Task.detached {
             let d: Detail
             switch cat {
-            case .composers: d = .works(store.works(composerID: id))
+            case .composers: d = .composer(store.works(composerID: id), store.tracks(partyID: id, role: .composer))
             case .works:
                 let w = store.works(search: nil).first { $0.id == id }
                 d = w.map { .recordings($0, store.recordings(workID: id)) } ?? .none
@@ -134,8 +143,14 @@ final class LibraryModel: ObservableObject {
                 }
                 total.added += r.added; total.updated += r.updated; total.removed += r.removed; total.skipped += r.skipped; total.failed += r.failed
             }
+            _ = store.normalizeArtists()
             let summary = "\(total.added) added, \(total.updated) updated, \(total.removed) removed" + (total.failed > 0 ? ", \(total.failed) unreadable" : "")
-            await MainActor.run { self.importing = false; self.importProgress = summary; self.refresh() }
+            await MainActor.run {
+                self.importing = false; self.importProgress = summary; self.refresh()
+                // new files may duplicate something already here: offer a check
+                if total.added > 0 { self.scanDuplicates(prompt: true) }
+                self.onLibraryChanged?()
+            }
         }
     }
 }

@@ -17,36 +17,67 @@ struct ContentView: View {
                     Sidebar()
                     ZStack(alignment: .bottom) {
                         backdrop
-                        page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.trailing, m.showQueue ? 362 : 0)
                         if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
                     }
-                    .overlay(alignment: .topLeading) { NavButtons().padding(.leading, 18).padding(.top, 14) }
                 }
                 .transition(.opacity)
             }
-            DJSwitch().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(.top, 14).padding(.trailing, 18)
+            if m.showDropToast, let t = m.current ?? m.focusItem {
+                VStack {
+                    HStack(spacing: 8) {
+                        EqualizerBars(active: true, color: Brand.accent).frame(width: 14, height: 12)
+                        Text("Playing “\(t.title)”").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                        if m.items.count > 1 { Text("+\(m.items.count - 1) queued").font(.system(size: 11.5)).foregroundStyle(.secondary) }
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().fill(.regularMaterial)).overlay(Capsule().strokeBorder(Brand.ink.opacity(0.15), lineWidth: 0.8)).shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+                    Spacer()
+                }.padding(.top, 14).transition(.move(edge: .top).combined(with: .opacity)).allowsHitTesting(false)
+            }
+            if m.showQueue && !m.djMode {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    QueuePanel()
+                }
+                .padding(.top, WindowChrome.band - 8).padding(.trailing, 12).padding(.bottom, m.tab == .player ? 14 : 92)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
             if dropping.v {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent.opacity(0.1)))
-                    .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(.title3.weight(.semibold)))
+                    .overlay(Label(m.djMode ? "Drop to load on a deck" : "Drop to play", systemImage: "play.circle.fill").font(.title3.weight(.semibold)))
                     .padding(10).transition(.opacity).allowsHitTesting(false)
             }
         }
+        .background(WindowChrome().frame(width: 0, height: 0))
+        .alert("Save your DSP settings?", isPresented: Binding(get: { m.showDSPPrompt }, set: { if !$0 && m.showDSPPrompt { m.cancelDSPPrompt() } })) {
+            Button("Save") { m.resolveDSPPrompt(save: true) }
+            Button("Don't Save") { m.resolveDSPPrompt(save: false) }
+            Button("Stay Here", role: .cancel) { m.cancelDSPPrompt() }
+        } message: { Text("You changed the equalizer or plug-ins. Saved settings come back next time; if you don't save them they stay for this session only and are gone when Aureon quits.") }
+        .sheet(isPresented: Binding(get: { m.library.showDuplicates }, set: { m.library.showDuplicates = $0 })) { DuplicateReviewSheet(lib: m.library).environmentObject(m) }
         .animation(.easeOut(duration: 0.2), value: m.djMode)
+        .animation(.smooth(duration: 0.28), value: m.showQueue)
         .animation(.easeOut(duration: 0.16), value: m.tab)
         .animation(.smooth(duration: 0.22), value: dropping.v)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
-        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj)
+        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel)
         .preferredColorScheme(m.theme.isLight ? .light : .dark)
         .foregroundStyle(Brand.ink)
         .background(Brand.canvas)
         .id(m.theme.id)
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
+            let group = DispatchGroup()
+            let urls = DropURLs()
             for p in providers {
+                group.enter()
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
-                    if let url { Task { @MainActor in m.add(urls: [url]) } }
+                    if let url { urls.append(url) }
+                    group.leave()
                 }
             }
+            group.notify(queue: .main) { MainActor.assumeIsolated { m.handleDrop(urls.all) } }
             return true
         }
     }
@@ -57,7 +88,7 @@ struct ContentView: View {
             AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil, intensity: 1)
         } else {
             Brand.canvas
-            if m.theme.id == Theme.aureon.id {
+            if m.theme.family == "aureon" {
                 LinearGradient(colors: [m.hero.palette.grid[1].color.opacity(0.28), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)).allowsHitTesting(false)
             } else {
                 // themed glow: the two accents bleeding in from opposite corners
@@ -74,12 +105,36 @@ struct ContentView: View {
         case .search: SearchPage()
         case .radio: RadioPage()
         case .podcasts: PodcastsPage()
+        case .liked: LikedPage()
+        case .playlists: PlaylistsPage()
         case .albums, .artists, .songs, .composers, .works, .conductors, .ensembles: LibraryPage(lib: m.library, tab: m.tab)
         case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
         case .settings: SettingsPage()
         }
+    }
+}
+
+/// Collects the dropped file addresses from the item providers' callbacks (which arrive on background threads).
+final class DropURLs: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: [URL] = []
+    func append(_ u: URL) { lock.lock(); list.append(u); lock.unlock() }
+    var all: [URL] { lock.lock(); defer { lock.unlock() }; return list.sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending } }
+}
+
+/// The queue as a panel inside the window, sliding in from the right above the player bar.
+struct QueuePanel: View {
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        QueueView(dropping: false, onClose: { m.showQueue = false })
+            .frame(width: 350).frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Brand.sidebar.opacity(0.8)))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Brand.ink.opacity(0.14), lineWidth: 0.8))
+            .shadow(color: .black.opacity(0.35), radius: 24, y: 8)
     }
 }
 
@@ -97,19 +152,30 @@ struct NavButtons: View {
     }
 }
 
-/// The layout switch: normal ⇄ DJ console. Always in the same corner, so there is always a way back.
+/// The layout switch: normal ⇄ DJ console. In the sidebar it is a row like the others; in the console it is a button in the header, so there is always a way back.
 struct DJSwitch: View {
     @EnvironmentObject var m: PlayerModel
+    var inSidebar = true
     @StateObject private var hover = Box(false)
     var body: some View {
         Button { withAnimation(.easeOut(duration: 0.2)) { m.djMode.toggle() } } label: {
-            HStack(spacing: 5) {
-                Image(systemName: m.djMode ? "rectangle.grid.2x2" : "dial.medium").font(.system(size: 11, weight: .semibold))
-                Text(m.djMode ? "Normal mode" : "DJ mode").font(.system(size: 12, weight: .semibold))
+            if inSidebar {
+                HStack(spacing: 9) {
+                    Image(systemName: "dial.medium").font(.system(size: 14)).frame(width: 20).foregroundStyle(Brand.accent)
+                    Text("DJ Mode").font(.system(size: 13, weight: .medium))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.06 : 0)))
+            } else {
+                HStack(spacing: 5) {
+                    Image(systemName: "rectangle.grid.2x2").font(.system(size: 11, weight: .semibold))
+                    Text("Normal mode").font(.system(size: 12, weight: .semibold))
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .foregroundStyle(Color.white)
+                .background(Capsule().fill(Brand.accent))
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .foregroundStyle(m.djMode ? Color.white : Color.primary)
-            .background(Capsule().fill(m.djMode ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.16 : 0.09))))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.help(m.djMode ? "Back to the normal layout" : "Switch to the two-deck DJ console")
     }
@@ -121,13 +187,13 @@ struct QueueView: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var sel = Box(Set<UUID>())
     var dropping = false
+    var onClose: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
             header
             if m.items.isEmpty { empty } else { list }
         }
-        .background(.ultraThinMaterial)
         .overlay {
             if dropping {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(m.hero.palette.accent.color.opacity(0.9), style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
@@ -146,6 +212,7 @@ struct QueueView: View {
             Spacer()
             Button { openPanel() } label: { Image(systemName: "plus") }.help("Add music (⌘O)")
             Button { withAnimation(.smooth) { m.clear() } } label: { Image(systemName: "trash") }.disabled(m.items.isEmpty).help("Clear queue")
+            if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.help("Close") }
         }
         .buttonStyle(IconButtonStyle())
         .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
@@ -225,7 +292,7 @@ struct QueueRow: View {
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(playing ? 0.09 : (hover.v ? 0.06 : 0))))
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.smooth(duration: 0.14)) { hover.v = h } }
-        .onTapGesture(count: 2) { m.play(item.id) }
+        .onTapGesture { if playing { m.togglePlay() } else { m.play(item.id) } }
         .animation(.smooth(duration: 0.2), value: playing)
     }
 

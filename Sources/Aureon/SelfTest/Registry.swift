@@ -63,6 +63,18 @@ func extraTests() -> [(String, TestFn)] {
           ("auto.plan", auto.mixPlanGeometry), ("auto.blend", auto.blendAutomation)]
     let deckT = DJDeckTests()
     t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops), ("auto.engine", deckT.autoDJMixesTwoTracks)]
+    let coll = CollectionTests()
+    t += [("lib.featuring", coll.featuringIsSplit), ("lib.composerSplit", coll.composersAreSplitCleanly), ("lib.guests", coll.guestsLiveUnderTheirHostArtist), ("lib.tidy", coll.existingLibrariesAreTidied), ("lib.playlists", coll.likesAndPlaylists)]
+    let dup = DuplicateTests()
+    t += [("dup.titles", dup.titlesNormalise), ("dup.songs", dup.songDuplicates), ("dup.albums", dup.albumDuplicates), ("dup.remove", dup.removalFromTheLibrary)]
+    let rep = RepeatTests()
+    t += [("repeat.off", rep.repeatOffEnds), ("repeat.all", rep.repeatAllWrapsAround), ("repeat.one", rep.repeatOneStaysOnTheTrack), ("queue.order", rep.reorderingTheQueue)]
+    let shf = ShuffleTests()
+    t += [("shuffle.normal", shf.normalShuffleIsAPermutation), ("shuffle.smart", shf.smartShuffleSpreadsArtists), ("shuffle.liked", shf.smartShuffleKeepsTheCurrentSongFirstAndFavoursLiked), ("shuffle.flow", shf.smartShuffleUsesTheTransitionNetwork), ("shuffle.restore", shf.restoreOrder)]
+    let dspm = DSPModelTests()
+    t += [("dspm.profiles", dspm.profilesSaveAndComeBack), ("dspm.throttle", dspm.appliesAreThrottled), ("dspm.prompt", dspm.leavingTheDSPPageAsksFirst), ("dspm.master", dspm.turningOnTheEqualizerSwitchesTheDSPPathOn)]
+    let rmx = RemixTests()
+    t += [("remix.actions", rmx.performancesAreWellFormed), ("remix.context", rmx.contextComesFromTheTrack), ("remix.rules", rmx.policyKnowsTheRules), ("remix.learn", rmx.policyLearnsAndPersists), ("remix.controller", rmx.controllerPerformsAndRestores)]
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]

@@ -2,55 +2,100 @@ import SwiftUI
 
 struct DSPTab: View {
     @EnvironmentObject var m: PlayerModel
+    @EnvironmentObject var dsp: DSPModel
     @StateObject private var sel = Box(5)
     @StateObject private var picking = Box(false)
 
     var body: some View {
         VStack(spacing: 18) {
+            profileCard
             Card(title: "DSP path", subtitle: "AVAudioEngine in manual rendering mode, pulled by the DAC callback — never connected to the hardware by macOS") {
-                Toggle("Process audio through EQ and plugins", isOn: $m.settings.dsp.enabled)
-                Note(text: m.settings.dsp.enabled ? "DSP is on: audio is processed in 32-bit float and is not bit-perfect." : "DSP is off: audio takes the direct path from the ring buffer to the DAC.",
-                     color: m.settings.dsp.enabled ? .orange : .green)
+                Toggle("Process audio through EQ and plugins", isOn: $dsp.draft.enabled)
+                Note(text: dsp.draft.enabled ? "DSP is on: audio is processed in 32-bit float and is not bit-perfect." : "DSP is off: audio takes the direct path from the ring buffer to the DAC. Turning on the equalizer or adding a plug-in switches this on for you.",
+                     color: dsp.draft.enabled ? .orange : .green)
             }
             eqCard
             pluginCard
         }
     }
 
+    // MARK: profiles
+
+    private var profileCard: some View {
+        Card(title: "Profile", subtitle: "Settings are kept only when you save them into a profile") {
+            HStack(spacing: 10) {
+                Menu {
+                    Button { dsp.select(nil) } label: { Label("Clean start (nothing applied)", systemImage: dsp.activeID == nil ? "checkmark" : "") }
+                    if !dsp.profiles.isEmpty { Divider() }
+                    ForEach(dsp.profiles) { p in Button { dsp.select(p.id) } label: { Label(p.name, systemImage: dsp.activeID == p.id ? "checkmark" : "") } }
+                } label: {
+                    Label(dsp.active?.name ?? "No profile", systemImage: "slider.horizontal.below.square.filled.and.square")
+                }.fixedSize()
+                if dsp.dirty { Circle().fill(Color.orange).frame(width: 8, height: 8).help("Unsaved changes") }
+                Spacer()
+                Button("Revert") { dsp.revert() }.disabled(!dsp.dirty)
+                Button("Save as…") {
+                    if let n = promptForText(title: "Save as a new profile", placeholder: "Profile name", confirm: "Save") { dsp.saveAs(n) }
+                }
+                Button { m.saveDSP() } label: { Text(dsp.active == nil ? "Save…" : "Save") }.buttonStyle(.borderedProminent).tint(Brand.accent).disabled(!dsp.dirty)
+                if let a = dsp.active {
+                    Menu { Button("Rename…") { if let n = promptForText(title: "Rename profile", initial: a.name, confirm: "Rename") { dsp.rename(a.id, to: n) } }
+                           Button("Delete “\(a.name)”", role: .destructive) { dsp.delete(a.id) } } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
+                }
+            }
+            Note(text: dsp.dirty ? (dsp.acknowledged ? "Unsaved changes are kept for this session only." : "You have unsaved changes. They are lost when you quit Aureon unless you save them.")
+                                  : (dsp.active == nil ? "Nothing is saved yet. Make a setting, then Save to keep it." : "Everything is saved in “\(dsp.active!.name)”."),
+                 color: dsp.dirty ? .orange : .green)
+        }
+    }
+
     // MARK: EQ
 
-    private func band(_ i: Int) -> Binding<EQBand> { $m.settings.dsp.eq.bands[i] }
+    private func band(_ i: Int) -> Binding<EQBand> { $dsp.draft.eq.bands[i] }
+
+    private var eqEnabled: Binding<Bool> {
+        Binding(get: { dsp.draft.eq.enabled }, set: { on in dsp.draft.eq.enabled = on; if on { dsp.draft.enabled = true } })
+    }
 
     private var eqCard: some View {
         Card(title: "Parametric equalizer", subtitle: "10 bands · peak, shelves and cuts") {
             HStack {
-                Toggle("Enabled", isOn: $m.settings.dsp.eq.enabled)
+                Toggle("Enabled", isOn: eqEnabled)
                 Spacer()
                 Menu("Presets") {
-                    ForEach(EQPreset.all, id: \.name) { p in Button(p.name) { m.settings.dsp.eq.bands = p.apply(to: m.settings.dsp.eq.bands) } }
+                    ForEach(EQPreset.all, id: \.name) { p in Button(p.name) { dsp.draft.eq.bands = p.apply(to: dsp.draft.eq.bands); if dsp.draft.eq.enabled { dsp.draft.enabled = true } } }
                 }.fixedSize()
             }
             HStack(spacing: 4) {
-                ForEach(m.settings.dsp.eq.bands.indices, id: \.self) { i in
+                ForEach(dsp.draft.eq.bands.indices, id: \.self) { i in
+                    let b = dsp.draft.eq.bands[i]
+                    let isCut = b.kind == .lowCut || b.kind == .highCut
                     VStack(spacing: 6) {
-                        Text(String(format: "%+.1f", m.settings.dsp.eq.bands[i].gainDB)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        VerticalFader(value: band(i).gainDB, enabled: m.settings.dsp.eq.bands[i].enabled)
-                        Text(freqLabel(m.settings.dsp.eq.bands[i].frequency)).font(.caption2.weight(sel.v == i ? .bold : .regular))
-                            .foregroundStyle(sel.v == i ? Color.accentColor : .secondary)
+                        Text(isCut ? "cut" : String(format: "%+.1f", b.gainDB)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                        VerticalFader(value: band(i).gainDB, enabled: b.enabled && !isCut)
+                        Text(freqLabel(b.frequency)).font(.caption2.weight(sel.v == i ? .bold : .regular))
+                            .foregroundStyle(sel.v == i ? Brand.accent : .secondary)
+                        Circle().fill(b.enabled ? Brand.accent : Brand.ink.opacity(0.2)).frame(width: 5, height: 5)
                     }
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(sel.v == i ? 0.08 : 0)))
                     .contentShape(Rectangle())
                     .onTapGesture { sel.v = i }
                 }
             }
-            .disabled(!m.settings.dsp.eq.enabled)
+            .opacity(dsp.draft.eq.enabled ? 1 : 0.55)
 
-            if m.settings.dsp.eq.bands.indices.contains(sel.v) {
+            if dsp.draft.eq.bands.indices.contains(sel.v) {
                 Divider()
                 let b = band(sel.v)
+                let kind = b.wrappedValue.kind
                 HStack(spacing: 14) {
+                    Text("Band \(sel.v + 1)").font(.system(size: 12, weight: .semibold))
                     Picker("Type", selection: b.kind) { ForEach(EQBand.Kind.allCases) { Text($0.title).tag($0) } }.frame(width: 190)
                     Toggle("Band on", isOn: b.enabled)
+                    Spacer()
+                    Button("Reset band") { b.wrappedValue.gainDB = 0; b.wrappedValue.q = 1; b.wrappedValue.kind = .peak; b.wrappedValue.frequency = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000][sel.v] }
                 }
                 HStack {
                     Text("Frequency").frame(width: 80, alignment: .leading)
@@ -58,18 +103,24 @@ struct DSPTab: View {
                     Text(b.wrappedValue.frequency >= 1000 ? String(format: "%g kHz", b.wrappedValue.frequency / 1000) : String(format: "%g Hz", b.wrappedValue.frequency)).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }
                 HStack {
+                    Text("Gain").frame(width: 80, alignment: .leading)
+                    Slider(value: b.gainDB, in: -12...12, step: 0.5)
+                    Text(String(format: "%+.1f dB", b.wrappedValue.gainDB)).monospacedDigit().frame(width: 80, alignment: .trailing)
+                }.disabled(kind == .lowCut || kind == .highCut).opacity(kind == .lowCut || kind == .highCut ? 0.4 : 1)
+                HStack {
                     Text("Q").frame(width: 80, alignment: .leading)
                     Slider(value: b.q, in: 0.2...10)
                     Text(String(format: "%.2f", b.wrappedValue.q)).monospacedDigit().frame(width: 80, alignment: .trailing)
-                }
+                }.disabled(kind != .peak).opacity(kind != .peak ? 0.4 : 1)
+                if kind != .peak { Note(text: kind == .lowCut || kind == .highCut ? "A cut filter only needs a frequency." : "A shelf only needs a frequency and a gain; Q applies to peak bands.") }
             }
             Divider()
             HStack {
                 Text("Pre-amp").frame(width: 80, alignment: .leading)
-                Slider(value: $m.settings.dsp.eq.preampDB, in: -24...12, step: 0.5).disabled(m.settings.dsp.eq.autoPreamp)
-                Text(String(format: "%+.1f dB", m.settings.dsp.eq.effectivePreampDB)).monospacedDigit().frame(width: 80, alignment: .trailing)
+                Slider(value: $dsp.draft.eq.preampDB, in: -24...12, step: 0.5).disabled(dsp.draft.eq.autoPreamp)
+                Text(String(format: "%+.1f dB", dsp.draft.eq.effectivePreampDB)).monospacedDigit().frame(width: 80, alignment: .trailing)
             }
-            Toggle("Automatic headroom: lower the pre-amp by the largest boost", isOn: $m.settings.dsp.eq.autoPreamp)
+            Toggle("Automatic headroom: lower the pre-amp by the largest boost", isOn: $dsp.draft.eq.autoPreamp)
         }
     }
 
@@ -97,7 +148,7 @@ struct DSPTab: View {
                     }.onMove { m.movePlugin(from: $0, to: $1) }
                 }
                 .frame(height: CGFloat(min(m.hosted.count, 5)) * 44 + 8).listStyle(.plain)
-                Note(text: "Drag to reorder. Plugin settings are kept for this session.")
+                Note(text: "Drag to reorder. A plug-in's own window can be resized and scrolled. Its settings are saved into the profile with the rest.")
             }
             if let e = m.pluginError { Note(text: e, color: .red) }
         }

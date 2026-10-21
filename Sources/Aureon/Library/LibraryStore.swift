@@ -32,13 +32,16 @@ final class LibraryStore: @unchecked Sendable {
         let l = NSAttributeType.integer64AttributeType, bo = NSAttributeType.booleanAttributeType
         let track = ent("Track", [("uid", s, false), ("path", s, false), ("title", s, true), ("trackNumber", i, true), ("discNumber", i, true),
                                   ("duration", d, true), ("sampleRate", d, true), ("bitDepth", i, true), ("channels", i, true), ("codec", s, true),
-                                  ("fileSize", l, true), ("fileMTime", d, true), ("year", i, true), ("mbRecordingID", s, true), ("workInferred", bo, true), ("addedAt", d, true)])
+                                  ("fileSize", l, true), ("fileMTime", d, true), ("year", i, true), ("mbRecordingID", s, true), ("workInferred", bo, true), ("addedAt", d, true),
+                                  ("liked", bo, true), ("likedAt", d, true), ("playCount", i, true), ("lastPlayedAt", d, true)])
         let release = ent("Release", [("uid", s, false), ("key", s, false), ("title", s, true), ("year", i, true), ("mbReleaseID", s, true), ("label", s, true), ("catalogNumber", s, true)])
         let party = ent("Party", [("uid", s, false), ("key", s, false), ("name", s, false), ("sortName", s, true), ("kind", s, true), ("mbArtistID", s, true)])
         let credit = ent("Credit", [("role", s, false), ("instrument", s, true), ("order", i, true)])
         let work = ent("Work", [("uid", s, false), ("key", s, false), ("title", s, false), ("catalogNumber", s, true), ("musicalKey", s, true), ("mbWorkID", s, true)])
         let movement = ent("Movement", [("uid", s, false), ("number", i, true), ("total", i, true), ("title", s, true)])
         let genre = ent("Genre", [("name", s, false)])
+        let playlist = ent("Playlist", [("uid", s, false), ("name", s, false), ("createdAt", d, true), ("updatedAt", d, true)])
+        let entry = ent("PlaylistEntry", [("order", i, true), ("addedAt", d, true)])
         let change = ent("Change", [("seq", l, false), ("revision", l, false), ("kind", s, false), ("uid", s, false), ("op", s, false), ("at", d, true)])
         link(track, "release", false, .nullifyDeleteRule, release, "tracks", true, .nullifyDeleteRule)
         link(track, "work", false, .nullifyDeleteRule, work, "tracks", true, .nullifyDeleteRule)
@@ -48,7 +51,9 @@ final class LibraryStore: @unchecked Sendable {
         link(work, "composer", false, .nullifyDeleteRule, party, "composedWorks", true, .nullifyDeleteRule)
         link(work, "movements", true, .cascadeDeleteRule, movement, "work", false, .nullifyDeleteRule)
         link(track, "genres", true, .nullifyDeleteRule, genre, "tracks", true, .nullifyDeleteRule)
-        let m = NSManagedObjectModel(); m.entities = [track, release, party, credit, work, movement, genre, change]
+        link(playlist, "entries", true, .cascadeDeleteRule, entry, "playlist", false, .nullifyDeleteRule)
+        link(track, "playlistEntries", true, .cascadeDeleteRule, entry, "track", false, .nullifyDeleteRule)
+        let m = NSManagedObjectModel(); m.entities = [track, release, party, credit, work, movement, genre, change, playlist, entry]
         return m
     }()
 
@@ -281,11 +286,13 @@ final class LibraryStore: @unchecked Sendable {
                         workID: work.flatMap { str($0, "uid") }, workTitle: work.flatMap { str($0, "title") }, catalog: work.flatMap { str($0, "catalogNumber") },
                         movementID: mv.flatMap { str($0, "uid") }, movementNumber: mv.flatMap { int($0, "number") }, movementTitle: mv.flatMap { str($0, "title") },
                         credits: credits, genres: many(t, "genres").compactMap { str($0, "name") }.sorted(), mbRecordingID: str(t, "mbRecordingID"),
-                        addedAt: dbl(t, "addedAt") > 0 ? dbl(t, "addedAt") : nil)
+                        addedAt: dbl(t, "addedAt") > 0 ? dbl(t, "addedAt") : nil, fileSize: Int64(dbl(t, "fileSize")),
+                        liked: (t.value(forKey: "liked") as? NSNumber)?.boolValue == true ? true : nil, playCount: int(t, "playCount").flatMap { $0 > 0 ? $0 : nil },
+                        lastPlayedAt: dbl(t, "lastPlayedAt") > 0 ? dbl(t, "lastPlayedAt") : nil)
     }
 
     private func partyDTO(_ p: NSManagedObject, role: CreditRole? = nil) -> PartyDTO {
-        let credits = many(p, "credits").filter { role == nil || str($0, "role") == role!.rawValue }
+        let credits = many(p, "credits").filter { role == nil || str($0, "role") == role!.rawValue || (role == .artist && (str($0, "role") == "featured" || str($0, "role") == "albumArtist")) }
         var count = Set(credits.compactMap { ($0.value(forKey: "track") as? NSManagedObject)?.objectID }).count
         if role == .composer { count = max(count, many(p, "composedWorks").reduce(0) { $0 + many($1, "tracks").count }) }
         return PartyDTO(id: str(p, "uid") ?? "", name: str(p, "name") ?? "", sortName: str(p, "sortName") ?? "", kind: str(p, "kind") ?? "person", count: count, mbArtistID: str(p, "mbArtistID"))
@@ -327,7 +334,7 @@ final class LibraryStore: @unchecked Sendable {
 
     func parties(role: CreditRole, search: String? = nil, limit: Int = 500) -> [PartyDTO] {
         ctx.performAndWait {
-            var preds = [NSPredicate(format: "ANY credits.role == %@", role.rawValue)]
+            var preds = [role == .artist ? NSPredicate(format: "ANY credits.role == %@ OR ANY credits.role == %@ OR ANY credits.role == %@", "artist", "featured", "albumArtist") : NSPredicate(format: "ANY credits.role == %@", role.rawValue)]
             if let s = search, !s.isEmpty { preds.append(NSPredicate(format: "key CONTAINS %@", Self.fold(s))) }
             return fetch("Party", NSCompoundPredicate(andPredicateWithSubpredicates: preds), sort: [NSSortDescriptor(key: "sortName", ascending: true, selector: #selector(NSString.localizedCaseInsensitiveCompare(_:)))], limit: limit)
                 .map { partyDTO($0, role: role) }
@@ -363,7 +370,9 @@ final class LibraryStore: @unchecked Sendable {
             if let r = releaseID { preds.append(NSPredicate(format: "release.uid == %@", r)) }
             if let w = workID { preds.append(NSPredicate(format: "work.uid == %@", w)) }
             if let p = partyID {
-                preds.append(role.map { NSPredicate(format: "SUBQUERY(credits, $c, $c.party.uid == %@ AND $c.role == %@).@count > 0", p, $0.rawValue) } ?? NSPredicate(format: "ANY credits.party.uid == %@", p))
+                preds.append(role.map { r in
+                    r == .artist ? NSPredicate(format: "SUBQUERY(credits, $c, $c.party.uid == %@ AND ($c.role == %@ OR $c.role == %@ OR $c.role == %@)).@count > 0", p, "artist", "featured", "albumArtist")
+                                 : NSPredicate(format: "SUBQUERY(credits, $c, $c.party.uid == %@ AND $c.role == %@).@count > 0", p, r.rawValue) } ?? NSPredicate(format: "ANY credits.party.uid == %@", p))
             }
             return fetch("Track", preds.isEmpty ? nil : NSCompoundPredicate(andPredicateWithSubpredicates: preds), limit: limit).map(trackDTO).sorted(by: Self.trackOrder)
         }
@@ -481,5 +490,228 @@ final class LibraryStore: @unchecked Sendable {
         if !batch.isEmpty { let r = upsert(batch); report.added += r.added; report.updated += r.updated }
         report.removed = removeTracks(under: folder.path, keeping: existing)
         return report
+    }
+}
+
+// MARK: - Likes, play counts and playlists
+
+extension LibraryStore {
+    func likedPaths() -> Set<String> {
+        ctx.performAndWait { Set(fetch("Track", NSPredicate(format: "liked == YES")).compactMap { str($0, "path") }) }
+    }
+
+    /// Marks tracks (by file path) as liked or not. Returns how many changed.
+    @discardableResult
+    func setLiked(paths: [String], liked: Bool) -> Int {
+        ctx.performAndWait {
+            var n = 0
+            let now = Date().timeIntervalSince1970
+            for t in fetch("Track", NSPredicate(format: "path IN %@", paths)) {
+                let was = (t.value(forKey: "liked") as? NSNumber)?.boolValue == true
+                guard was != liked else { continue }
+                set(t, "liked", liked); set(t, "likedAt", liked ? now : nil); n += 1
+            }
+            if n > 0 { try? ctx.save() }
+            return n
+        }
+    }
+
+    /// Liked songs, most recently liked first.
+    func likedTracks() -> [TrackDTO] {
+        ctx.performAndWait {
+            fetch("Track", NSPredicate(format: "liked == YES"), sort: [NSSortDescriptor(key: "likedAt", ascending: false)]).map(trackDTO)
+        }
+    }
+
+    func recordPlay(path: String) {
+        ctx.performAndWait {
+            guard let t = one("Track", "path == %@", path) else { return }
+            set(t, "playCount", (int(t, "playCount") ?? 0) + 1); set(t, "lastPlayedAt", Date().timeIntervalSince1970)
+            try? ctx.save()
+        }
+    }
+
+    // MARK: playlists
+
+    private func playlistDTO(_ p: NSManagedObject) -> PlaylistDTO {
+        let entries = many(p, "entries")
+        let duration = entries.reduce(0.0) { $0 + (($1.value(forKey: "track") as? NSManagedObject).map { dbl($0, "duration") } ?? 0) }
+        return PlaylistDTO(id: str(p, "uid") ?? "", name: str(p, "name") ?? "", trackCount: entries.filter { $0.value(forKey: "track") != nil }.count, duration: duration,
+                           createdAt: dbl(p, "createdAt"), updatedAt: dbl(p, "updatedAt"))
+    }
+
+    func playlists() -> [PlaylistDTO] {
+        ctx.performAndWait { fetch("Playlist", sort: [NSSortDescriptor(key: "createdAt", ascending: true)]).map(playlistDTO) }
+    }
+
+    @discardableResult
+    func createPlaylist(name: String, paths: [String] = []) -> PlaylistDTO? {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return nil }
+        let id: String = ctx.performAndWait {
+            let p = NSEntityDescription.insertNewObject(forEntityName: "Playlist", into: ctx)
+            let now = Date().timeIntervalSince1970, uid = UUID().uuidString
+            set(p, "uid", uid); set(p, "name", n); set(p, "createdAt", now); set(p, "updatedAt", now)
+            try? ctx.save()
+            return uid
+        }
+        if !paths.isEmpty { addToPlaylist(id: id, paths: paths) }
+        return playlists().first { $0.id == id }
+    }
+
+    func renamePlaylist(id: String, name: String) {
+        let n = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !n.isEmpty else { return }
+        ctx.performAndWait { if let p = one("Playlist", "uid == %@", id) { set(p, "name", n); set(p, "updatedAt", Date().timeIntervalSince1970); try? ctx.save() } }
+    }
+
+    func deletePlaylist(id: String) {
+        ctx.performAndWait { if let p = one("Playlist", "uid == %@", id) { ctx.delete(p); try? ctx.save() } }
+    }
+
+    private func orderedEntries(_ p: NSManagedObject) -> [NSManagedObject] {
+        many(p, "entries").filter { $0.value(forKey: "track") != nil }.sorted { (int($0, "order") ?? 0) < (int($1, "order") ?? 0) }
+    }
+
+    /// Appends tracks that are not already in the playlist. Returns how many were added.
+    @discardableResult
+    func addToPlaylist(id: String, paths: [String]) -> Int {
+        ctx.performAndWait {
+            guard let p = one("Playlist", "uid == %@", id) else { return 0 }
+            let existing = orderedEntries(p)
+            var have = Set(existing.compactMap { ($0.value(forKey: "track") as? NSManagedObject).flatMap { str($0, "path") } })
+            var order = (existing.last.flatMap { int($0, "order") } ?? -1) + 1
+            let byPath = Dictionary(fetch("Track", NSPredicate(format: "path IN %@", paths)).compactMap { t in str(t, "path").map { ($0, t) } }, uniquingKeysWith: { a, _ in a })
+            var added = 0
+            for path in paths where !have.contains(path) {
+                guard let t = byPath[path] else { continue }
+                let e = NSEntityDescription.insertNewObject(forEntityName: "PlaylistEntry", into: ctx)
+                set(e, "order", order); set(e, "addedAt", Date().timeIntervalSince1970); set(e, "playlist", p); set(e, "track", t)
+                have.insert(path); order += 1; added += 1
+            }
+            if added > 0 { set(p, "updatedAt", Date().timeIntervalSince1970); try? ctx.save() }
+            return added
+        }
+    }
+
+    func removeFromPlaylist(id: String, paths: [String]) {
+        ctx.performAndWait {
+            guard let p = one("Playlist", "uid == %@", id) else { return }
+            let drop = Set(paths)
+            var n = 0
+            for e in orderedEntries(p) {
+                if let path = (e.value(forKey: "track") as? NSManagedObject).flatMap({ str($0, "path") }), drop.contains(path) { ctx.delete(e) } else { set(e, "order", n); n += 1 }
+            }
+            set(p, "updatedAt", Date().timeIntervalSince1970); try? ctx.save()
+        }
+    }
+
+    /// SwiftUI `onMove` semantics.
+    func movePlaylistEntries(id: String, from source: IndexSet, to destination: Int) {
+        ctx.performAndWait {
+            guard let p = one("Playlist", "uid == %@", id) else { return }
+            var list = orderedEntries(p)
+            let moving = source.map { list[$0] }
+            let before = source.filter { $0 < destination }.count
+            for i in source.sorted(by: >) { list.remove(at: i) }
+            list.insert(contentsOf: moving, at: max(0, min(destination - before, list.count)))
+            for (i, e) in list.enumerated() { set(e, "order", i) }
+            set(p, "updatedAt", Date().timeIntervalSince1970); try? ctx.save()
+        }
+    }
+
+    func playlistTracks(id: String) -> [TrackDTO] {
+        ctx.performAndWait {
+            guard let p = one("Playlist", "uid == %@", id) else { return [] }
+            return orderedEntries(p).compactMap { ($0.value(forKey: "track") as? NSManagedObject).map(trackDTO) }
+        }
+    }
+
+    func playlistIDs(containing path: String) -> Set<String> {
+        ctx.performAndWait {
+            guard let t = one("Track", "path == %@", path) else { return [] }
+            return Set(many(t, "playlistEntries").compactMap { ($0.value(forKey: "playlist") as? NSManagedObject).flatMap { str($0, "uid") } })
+        }
+    }
+
+    // MARK: tidying artists
+
+    /// Folds "A feat. B" artists into "A" (with B credited as a featured artist on those tracks) and merges albums that only differed by such a name.
+    /// Safe to run again and again; returns the number of artist entries that were folded.
+    @discardableResult
+    func normalizeArtists() -> Int {
+        ctx.performAndWait {
+            let candidates = fetch("Party", NSPredicate(format: "key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@", " feat", " ft", "featuring"))
+            guard !candidates.isEmpty else { return 0 }
+            var touched = Touched()
+            var deleted: [(kind: String, uid: String)] = []
+            var releases: [NSManagedObject] = []
+            var folded = 0
+            for old in candidates {
+                let name = str(old, "name") ?? ""
+                let (primary, featured) = TagInterpreter.splitFeaturing(name)
+                guard !featured.isEmpty, Self.fold(primary) != Self.fold(name) else { continue }
+                let prim = party(Credit(role: .artist, name: primary), &touched)
+                guard prim !== old else { continue }
+                for c in many(old, "credits") {
+                    guard let track = c.value(forKey: "track") as? NSManagedObject else { ctx.delete(c); continue }
+                    let role = str(c, "role") ?? "artist"
+                    let siblings = many(track, "credits")
+                    if siblings.contains(where: { $0 !== c && ($0.value(forKey: "party") as? NSManagedObject) === prim && str($0, "role") == role }) { ctx.delete(c) } else { set(c, "party", prim) }
+                    if role == "artist" {
+                        for f in featured {
+                            let fp = party(Credit(role: .featured, name: f), &touched)
+                            if !many(track, "credits").contains(where: { ($0.value(forKey: "party") as? NSManagedObject) === fp }) {
+                                let cr = NSEntityDescription.insertNewObject(forEntityName: "Credit", into: ctx)
+                                set(cr, "role", CreditRole.featured.rawValue); set(cr, "order", 99); set(cr, "track", track); set(cr, "party", fp)
+                            }
+                        }
+                    }
+                    touched.tracks.insert(str(track, "uid") ?? "")
+                    if let r = track.value(forKey: "release") as? NSManagedObject, !releases.contains(where: { $0 === r }) { releases.append(r) }
+                }
+                deleted.append(("party", str(old, "uid") ?? "")); ctx.delete(old)
+                folded += 1
+            }
+            guard folded > 0 else { return 0 }
+            try? ctx.save()
+            // releases keyed by album + album artist may now collide
+            for r in releases where !r.isDeleted {
+                guard str(r, "mbReleaseID") == nil, let title = str(r, "title") else { continue }
+                let tracks = many(r, "tracks")
+                let credits = tracks.flatMap { many($0, "credits") }
+                let pick = credits.filter { str($0, "role") == "albumArtist" }.min { (int($0, "order") ?? 0) < (int($1, "order") ?? 0) }
+                    ?? credits.filter { str($0, "role") == "artist" }.min { (int($0, "order") ?? 0) < (int($1, "order") ?? 0) }
+                let artist = (pick?.value(forKey: "party") as? NSManagedObject).flatMap { str($0, "name") } ?? ""
+                let key = Self.fold(title) + "|" + Self.fold(artist)
+                guard key != str(r, "key") else { continue }
+                if let other = one("Release", "key == %@", key), other !== r {
+                    for t in tracks { set(t, "release", other) }
+                    deleted.append(("release", str(r, "uid") ?? "")); touched.releases.insert(str(other, "uid") ?? ""); ctx.delete(r)
+                } else { set(r, "key", key); touched.releases.insert(str(r, "uid") ?? "") }
+            }
+            try? ctx.save()
+            deleted += pruneOrphans()
+            commit(touched, deleted: deleted)
+            return folded
+        }
+    }
+}
+
+// MARK: - Removal by path
+
+extension LibraryStore {
+    /// Removes tracks from the library by path (the files themselves are the caller's business).
+    @discardableResult
+    func removeTracks(paths: [String]) -> Int {
+        ctx.performAndWait {
+            var deleted: [(kind: String, uid: String)] = []
+            for t in fetch("Track", NSPredicate(format: "path IN %@", paths)) { deleted.append(("track", str(t, "uid") ?? "")); ctx.delete(t) }
+            guard !deleted.isEmpty else { return 0 }
+            try? ctx.save()
+            deleted += pruneOrphans()
+            commit(Touched(), deleted: deleted)
+            return deleted.filter { $0.kind == "track" }.count
+        }
     }
 }

@@ -10,7 +10,8 @@ struct AureonApp: App {
             ContentView()
                 .environmentObject(model)
                 .frame(minWidth: 860, minHeight: 540)
-                .onOpenURL { model.add(urls: [$0]) }
+                .onOpenURL { model.add(urls: [$0], play: true) }
+                .onAppear { AppDelegate.model = model }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1080, height: 700)
@@ -27,7 +28,24 @@ struct AureonApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    nonisolated(unsafe) static weak var model: PlayerModel?
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Unsaved DSP settings are lost on quit: ask first.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            guard let m = AppDelegate.model, m.dspModel.dirty else { return .terminateNow }
+            let a = NSAlert()
+            a.messageText = "Save your DSP settings before quitting?"
+            a.informativeText = "You have unsaved equalizer or plug-in changes. If you don't save them they are lost."
+            a.addButton(withTitle: "Save"); a.addButton(withTitle: "Quit Without Saving"); a.addButton(withTitle: "Cancel")
+            switch a.runModal() {
+            case .alertFirstButtonReturn: return m.saveDSP() ? .terminateNow : .terminateCancel
+            case .alertSecondButtonReturn: return .terminateNow
+            default: return .terminateCancel
+            }
+        }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         MainActor.assumeIsolated { ScrollRouter.shared.install() }
@@ -195,6 +213,8 @@ extension DemoData {
     if env["AUREON_DEMO_LIB"] != nil, let src = ProcessInfo.processInfo.arguments.dropFirst().last { DemoData.importDemoLibrary(of: src, into: model) }
     if env["AUREON_DEMO"] != nil { DemoData.populate(model) }
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
+    if env["AUREON_QUEUE"] != nil { model.showQueue = true }
+    if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; model.dj.auto.enabled = env["AUREON_AUTO"] != nil } } }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
     if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
     // a local fake radio station, so the live Now Playing display can be shown without a network

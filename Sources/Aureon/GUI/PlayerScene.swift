@@ -11,10 +11,19 @@ struct NowPlayingView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
                     hero(width: geo.size.width - 56)
-                    SignalPathView()
+                    if geo.size.width >= 940 {
+                        // the signal path takes what it needs; the rest of the row is the queue
+                        HStack(alignment: .top, spacing: 18) {
+                            SignalPathView().frame(maxWidth: .infinity)
+                            UpNextPanel().frame(width: 330)
+                        }
+                    } else {
+                        SignalPathView()
+                        UpNextPanel()
+                    }
                     LiveVisualizerPanel()
                 }
-                .padding(.horizontal, 28).padding(.top, 52).padding(.bottom, 28)
+                .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 28)
             }
         }
         .environment(\.colorScheme, .dark)
@@ -86,6 +95,7 @@ struct NowPlayingView: View {
 
     private var transport: some View {
         HStack(spacing: 6) {
+            ShuffleButton(size: 14, tint: .white)
             Button { m.player.send(.previous) } label: { Image(systemName: "backward.fill") }.keyboardShortcut(.leftArrow, modifiers: .command).help("Previous")
             Button { m.player.send(.seekBy(-10)) } label: { Image(systemName: "gobackward.10") }.keyboardShortcut(.leftArrow, modifiers: []).help("Back 10 s")
                 .disabled(m.status.sourceInfo?.isLive == true)
@@ -97,6 +107,10 @@ struct NowPlayingView: View {
             Button { m.player.send(.seekBy(10)) } label: { Image(systemName: "goforward.10") }.keyboardShortcut(.rightArrow, modifiers: []).help("Forward 10 s")
                 .disabled(m.status.sourceInfo?.isLive == true)
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
+            RepeatButton(size: 14, tint: .white)
+            Divider().frame(height: 18).overlay(.white.opacity(0.2))
+            HeartButton(path: m.current.flatMap { $0.isStream ? nil : $0.url.path }, size: 15)
+            QueueButton()
         }
         .buttonStyle(TransportButtonStyle(size: 15))
         .disabled(m.items.isEmpty)
@@ -114,6 +128,60 @@ struct NowPlayingView: View {
             Text(m.hasVolume ? "\(Int(v * 100))%" : "—").font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.5)).frame(width: 34, alignment: .trailing)
         }
         .help(m.hasVolume ? (m.volume > 0.9 ? "High device volume: check your amplifier before playing." : "Applied by the device itself, so the samples stay untouched.") : "This device has no software volume. Use your DAC or amplifier: samples are never scaled here.")
+    }
+}
+
+/// The next songs, beside the signal path: tap one to play it.
+struct UpNextPanel: View {
+    @EnvironmentObject var m: PlayerModel
+
+    var body: some View {
+        let items = m.items
+        let at = items.firstIndex { $0.id == m.status.trackID } ?? -1
+        let upcoming = Array(items.dropFirst(at + 1).prefix(7))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Up next").kicker().foregroundStyle(.white.opacity(0.6))
+                Spacer()
+                if m.shuffle != .off { Label(m.shuffle.title, systemImage: m.shuffle.icon).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(m.hero.palette.accent.color) }
+                Button { withAnimation(.smooth(duration: 0.28)) { m.showQueue.toggle() } } label: { Text(m.showQueue ? "Hide queue" : "Open queue").font(.system(size: 11.5, weight: .semibold)) }
+                    .buttonStyle(.plain).foregroundStyle(.white.opacity(0.75))
+            }
+            if upcoming.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "text.line.last.and.arrowtriangle.forward").font(.system(size: 22, weight: .light)).foregroundStyle(.white.opacity(0.5))
+                    Text(items.isEmpty ? "The queue is empty" : "Nothing after this song").font(.callout.weight(.medium)).foregroundStyle(.white.opacity(0.7))
+                    Text(m.repeatMode == .off ? "Add songs from your library, or turn on repeat." : "Repeat is on: the queue starts over.").font(.caption).foregroundStyle(.white.opacity(0.5)).multilineTextAlignment(.center)
+                }.frame(maxWidth: .infinity, minHeight: 120)
+            } else {
+                VStack(spacing: 2) { ForEach(upcoming) { UpNextRow(item: $0) } }
+                if items.count - (at + 1) > upcoming.count { Text("+ \(items.count - (at + 1) - upcoming.count) more").font(.caption).foregroundStyle(.white.opacity(0.45)).padding(.leading, 8) }
+            }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .topLeading).glassPanel()
+    }
+}
+
+struct UpNextRow: View {
+    @EnvironmentObject var m: PlayerModel
+    let item: QueueItem
+    @StateObject private var hover = Box(false)
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                CoverView(image: item.thumb, palette: ArtPalette.fallback(seed: item.album.isEmpty ? item.title : item.album), corner: 5, symbol: "music.note")
+                if hover.v { Color.black.opacity(0.5).clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous)); Image(systemName: "play.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(.white) }
+            }.frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+                Text([item.artist, item.album].filter { !$0.isEmpty }.joined(separator: " — ")).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 3).contentShape(Rectangle())
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(hover.v ? 0.1 : 0)))
+        .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
+        .onTapGesture { m.play(item.id) }
     }
 }
 

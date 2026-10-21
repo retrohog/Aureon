@@ -9,7 +9,13 @@ struct Sidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            searchField.padding(.horizontal, 12).padding(.top, 44).padding(.bottom, 10)
+            // the window buttons are placed over the left of this row by `WindowChrome`; Back and Forward sit beside them
+            HStack(spacing: 0) {
+                Color.clear.frame(width: 92, height: 1)
+                NavButtons()
+                Spacer(minLength: 0)
+            }.frame(height: WindowChrome.band)
+            searchField.padding(.horizontal, 12).padding(.bottom, 10)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(sections, id: \.self) { sec in
@@ -21,7 +27,13 @@ struct Sidebar: View {
                     }
                 }.padding(.horizontal, 8).padding(.bottom, 12)
             }
-            SidebarItem(tab: .settings).padding(.horizontal, 8).padding(.bottom, 10).padding(.top, 4)
+            VStack(spacing: 2) {
+                DJSwitch()
+                HStack(spacing: 6) {
+                    SidebarItem(tab: .settings)
+                    AppearanceToggle()
+                }
+            }.padding(.horizontal, 8).padding(.bottom, 10).padding(.top, 4)
         }
         .frame(width: 204)
         .background {

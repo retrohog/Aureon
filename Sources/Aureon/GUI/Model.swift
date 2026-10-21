@@ -38,6 +38,7 @@ struct HostedPlugin: Identifiable {
 
 enum Tab: String, CaseIterable, Identifiable {
     case home = "Home", player = "Now Playing", search = "Search", radio = "Radio", podcasts = "Podcasts"
+    case liked = "Liked Songs", playlists = "Playlists"
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
     case deepDive = "Deep Dive"
     case audio = "Audio", dsp = "DSP"
@@ -48,6 +49,7 @@ enum Tab: String, CaseIterable, Identifiable {
         switch self {
         case .home: "house"; case .player: "play.circle"; case .search: "magnifyingglass"; case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
+        case .liked: "heart"; case .playlists: "music.note.list"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
         case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .settings: "gearshape"
         }
@@ -57,7 +59,7 @@ enum Tab: String, CaseIterable, Identifiable {
     var section: Section {
         switch self {
         case .home, .player, .search, .radio, .podcasts: .listen
-        case .albums, .artists, .songs: .library
+        case .albums, .artists, .songs, .liked, .playlists: .library
         case .composers, .works, .conductors, .ensembles: .classical
         case .deepDive: .discover
         case .audio, .dsp: .sound
@@ -97,6 +99,11 @@ final class PlayerModel: ObservableObject {
     @Published var devices: [OutputDeviceInfo] = []
     @Published var tab: Tab = .home {
         didSet {
+            // leaving the DSP page with unsaved changes asks first
+            if oldValue == .dsp, tab != .dsp, dspModel.needsPrompt, !djMode {
+                pendingTab = tab; tab = .dsp; showDSPPrompt = true
+                return
+            }
             updateAnalysisActivity()
             if tab == .deepDive { loadDeepDiveForCurrent() }
             if let c = tab.libraryCategory, library.category != c { library.category = c }
@@ -118,6 +125,11 @@ final class PlayerModel: ObservableObject {
         player.analysis.setActive(false)
         library.category = .songs
         LibraryModelBridge.shared.model = library
+        collections.attach(library.store)
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil {
+            repeatMode = RepeatMode(rawValue: defaults.integer(forKey: "aureon.repeat")) ?? .off
+            player.repeatMode = repeatMode
+        }
         var o = PlayerOptions(); o.hog = false; o.rateSwitch = false; o.deviceID = deviceID == 0 ? nil : deviceID; o.bufferSeconds = 0.4
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }
         let rate = OutputDevice(id: deviceID == 0 ? nil : deviceID)?.currentRate ?? 48_000
@@ -125,12 +137,36 @@ final class PlayerModel: ObservableObject {
     }
     @Published var settingsSection: SettingsSection = .general
     /// The colour theme. Changing it rebuilds the whole interface (the root view is keyed on the theme's id).
-    @Published var theme: Theme = Theme.current { didSet { Theme.current = theme; if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(theme.id, forKey: "aureon.theme") } } }
+    @Published private(set) var theme: Theme = Theme.current
+    /// Which colour theme (its dark and light variants are chosen by `appearance`).
+    @Published var themeFamily = "aureon" { didSet { if themeFamily != oldValue { resolveTheme() } } }
+    @Published var appearance = AppearanceMode.dark { didSet { if appearance != oldValue { resolveTheme() } } }
+
+    private func resolveTheme() {
+        let systemLight = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
+        let light = appearance == .light || (appearance == .system && systemLight)
+        theme = Theme.resolve(family: themeFamily, light: light)
+        Theme.current = theme
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(themeFamily, forKey: "aureon.themeFamily"); defaults.set(appearance.rawValue, forKey: "aureon.appearance") }
+    }
     let navigator = Navigator()
     let radio = RadioModel()
     let podcasts = PodcastModel()
     let artistArt = ArtistArt()
     let dj = DJModel()
+    let collections = CollectionsModel()
+    let dspModel = DSPModel()
+    @Published var showDSPPrompt = false
+    private var pendingTab: Tab?
+    private var parameterTokens: [UUID: AUParameterObserverToken] = [:]
+    /// The queue panel (slides in over the page, so it can never fall outside the window).
+    @Published var showQueue = false
+    @Published var showDropToast = false
+    @Published var shuffle = ShuffleMode.off { didSet { if shuffle != oldValue { applyShuffle(from: oldValue); defaults.set(shuffle.rawValue, forKey: "aureon.shuffle") } } }
+    @Published var repeatMode = RepeatMode.off { didSet { player.repeatMode = repeatMode; defaults.set(repeatMode.rawValue, forKey: "aureon.repeat") } }
+    private var originalOrder: [UUID] = []
+    private var shuffleNet: TransitionNet?
+    private var countedPlay: UUID?
     @Published var viewOptions: [String: ViewOptions] = [:] { didSet { if let d = try? JSONEncoder().encode(viewOptions), ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(d, forKey: "aureon.viewOptions") } } }
 
     var place: Place { Place(tab: tab, library: library.selectedID, radio: radio.navKey, podcast: podcasts.navKey) }
@@ -203,14 +239,27 @@ final class PlayerModel: ObservableObject {
     private let defaults = UserDefaults.standard
     private var volumeDevice: OutputDevice?
     private var timer: Timer?
+    private var persistWork: DispatchWorkItem?
     private var started = false
 
     init() {
-        if let d = defaults.data(forKey: "aureon.settings"), let s = try? JSONDecoder().decode(PlaybackSettings.self, from: d) { settings = s; player.settings = s }
+        if let d = defaults.data(forKey: "aureon.settings"), var s = try? JSONDecoder().decode(PlaybackSettings.self, from: d) { s.dsp = DSPSettings(); settings = s; player.settings = s }
+        dspModel.apply = { [unowned self] d in self.settings.dsp = d }
+        dspModel.captureHosted = { [unowned self] in self.capturePlugins() }
+        dspModel.restoreHosted = { [unowned self] saved in await self.restorePlugins(saved); self.dspModel.markPluginsClean() }
+        dspModel.pluginCount = { [unowned self] in self.hosted.count }
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
-        let chosen = Theme.named(ProcessInfo.processInfo.environment["AUREON_THEME"] ?? defaults.string(forKey: "aureon.theme"))
-        theme = chosen; Theme.current = chosen          // property observers do not run inside init
+        // property observers do not run inside init, so the theme is resolved explicitly
+        var chosen = Theme.named(ProcessInfo.processInfo.environment["AUREON_THEME"] ?? defaults.string(forKey: "aureon.theme"))
+        if let f = defaults.string(forKey: "aureon.themeFamily"), ProcessInfo.processInfo.environment["AUREON_THEME"] == nil {
+            chosen = Theme.resolve(family: f, light: AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "dark") == .light)
+        }
+        themeFamily = chosen.family; appearance = chosen.isLight ? .light : (AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "") ?? .dark)
+        resolveTheme()
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if self?.appearance == .system { self?.resolveTheme() } }
+        }
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
         volumeLimit = defaults.object(forKey: "aureon.volumeLimit") as? Float ?? 1
         LibraryModelBridge.shared.model = library
@@ -248,11 +297,35 @@ final class PlayerModel: ObservableObject {
             .sink { [weak self] enabled, port, name in self?.applyRemote(enabled, port, name) }.store(in: &cancellables)
         system.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.syncRemoteOptions() } }.store(in: &cancellables)
         updateAnalysisActivity()
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { dspModel.startUp() }
+    }
+
+    /// Answer to the "unsaved DSP settings" question.
+    func resolveDSPPrompt(save: Bool) {
+        if save { saveDSP() }
+        else { dspModel.acknowledgeUnsaved() }                  // keep them for this session
+        showDSPPrompt = false
+        if let t = pendingTab { pendingTab = nil; tab = t }
+    }
+
+    func cancelDSPPrompt() { showDSPPrompt = false; pendingTab = nil }
+
+    /// Saves the DSP state into the active profile, asking for a name when there is none yet.
+    @discardableResult
+    func saveDSP() -> Bool {
+        if dspModel.active != nil { dspModel.save(); return true }
+        guard let name = promptForText(title: "Save DSP settings", message: "Give this set of EQ and plug-in settings a name.", placeholder: "For example: Headphones", confirm: "Save") else { return false }
+        dspModel.saveAs(name)
+        return true
     }
 
     private func persist() {
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { return }     // snapshots never touch saved settings
-        if let d = try? JSONEncoder().encode(settings) { defaults.set(d, forKey: "aureon.settings") }
+        var s = settings; s.dsp = DSPSettings()                  // DSP settings live in profiles and are saved on purpose
+        persistWork?.cancel()
+        let work = DispatchWorkItem { [defaults] in if let d = try? JSONEncoder().encode(s) { defaults.set(d, forKey: "aureon.settings") } }
+        persistWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
     var current: QueueItem? { started ? items.first { $0.id == status.trackID } : nil }
@@ -280,7 +353,8 @@ final class PlayerModel: ObservableObject {
 
     // MARK: queue
 
-    func add(urls: [URL]) {
+    /// Adds files or folders to the queue; `play` starts the first of them at once (used by drag and drop).
+    func add(urls: [URL], play start: Bool = false) {
         var found: [URL] = []
         for u in urls {
             var isDir: ObjCBool = false
@@ -297,6 +371,21 @@ final class PlayerModel: ObservableObject {
         let new = zip(entries, found).map { QueueItem(id: $0.id, url: $1, title: $1.deletingPathExtension().lastPathComponent) }
         items += new
         for n in new { Task { await loadMetadata(n.id) } }
+        originalOrder += new.map(\.id)
+        if shuffle != .off && !start { reshuffle(keeping: nil) }
+        if start, let first = new.first { play(first.id) }
+    }
+
+    /// Files or folders dropped on the window: the DJ console loads them on its decks; anywhere else the first one starts playing at once
+    /// and the rest join the queue behind it.
+    func handleDrop(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        if djMode { dj.loadDropped(urls); return }
+        let before = items.count
+        add(urls: urls, play: true)
+        if items.count == before { return }
+        withAnimation(.easeOut(duration: 0.2)) { showDropToast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation(.easeOut(duration: 0.3)) { self.showDropToast = false } }
     }
 
     /// Live radio: the queue becomes this one station.
@@ -345,7 +434,7 @@ final class PlayerModel: ObservableObject {
         addTracks(tracks, play: true)
     }
 
-    func clear() { player.stop(); player.clearQueue(); started = false; items = []; resetStatus() }
+    func clear() { player.stop(); player.clearQueue(); started = false; items = []; originalOrder = []; resetStatus() }
 
     private func resetStatus() { status = PlayerStatus(); progress.update(position: 0, duration: 0); objectWillChange.send() }
 
@@ -474,6 +563,7 @@ final class PlayerModel: ObservableObject {
         }
         if player.queueRevision != lastQueueRev { reconcileItems() }
         refreshHero()
+        countPlay()
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }
         if started && s.trackID != lastDeepDiveID && tab == .deepDive { loadDeepDiveForCurrent() }
         let playing = started && s.state == .playing
@@ -508,7 +598,93 @@ final class PlayerModel: ObservableObject {
         let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
         items += new; lastQueueRev = player.queueRevision
         for n in new { Task { await loadMetadata(n.id) } }
+        originalOrder += new.map(\.id)
+        if shuffle != .off { reshuffle(keeping: start ? new.first?.id : nil) }
         if start, let first = new.first { play(first.id) }
+    }
+
+    /// Replaces the queue with `tracks` and starts the one at `index`; the songs before it stay in the queue so Previous works.
+    func play(tracks: [TrackDTO], at index: Int) {
+        guard tracks.indices.contains(index) else { return }
+        clear()
+        let entries = player.append(tracks.map(\.path))
+        items = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
+        lastQueueRev = player.queueRevision
+        for n in items { Task { await loadMetadata(n.id) } }
+        originalOrder = items.map(\.id)
+        let first = items[index].id
+        if shuffle != .off { reshuffle(keeping: first) }
+        play(first)
+    }
+
+    /// Queues songs right after the one that is playing.
+    func playNext(_ tracks: [TrackDTO]) {
+        guard !tracks.isEmpty else { return }
+        let at = (items.firstIndex { $0.id == status.trackID } ?? -1) + 1
+        let entries = player.insert(tracks.map(\.path), at: at)
+        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
+        items.insert(contentsOf: new, at: min(at, items.count)); lastQueueRev = player.queueRevision
+        originalOrder += new.map(\.id)
+        for n in new { Task { await loadMetadata(n.id) } }
+    }
+
+    // MARK: shuffle
+
+    /// Turns shuffle on, off or switches between normal and smart.
+    private func applyShuffle(from old: ShuffleMode) {
+        if shuffle == .off {
+            let order = Shuffler.restore(current: items.map(\.id), original: originalOrder)
+            player.setOrder(order)
+            return
+        }
+        if old == .off { originalOrder = items.map(\.id) }
+        reshuffle(keeping: nil)
+    }
+
+    /// Shuffles what is still to come; the playing song and everything already played stay where they are. `keeping` forces one song to be first of the rest.
+    private func reshuffle(keeping first: UUID?) {
+        let ids = items.map(\.id)
+        guard ids.count > 1 else { return }
+        let curID = first ?? (isActive ? status.trackID : nil)
+        let curIndex = curID.flatMap { ids.firstIndex(of: $0) } ?? -1
+        let head = first != nil ? [] : Array(ids[0..<max(0, curIndex)])               // played songs
+        let cur = first ?? (curIndex >= 0 ? ids[curIndex] : nil)
+        let rest = ids.filter { !head.contains($0) && $0 != cur }
+        let mode = shuffle
+        switch mode {
+        case .off: return
+        case .normal:
+            var rng = SystemRandomNumberGenerator()
+            player.setOrder(head + (cur.map { [$0] } ?? []) + Shuffler.normal(rest, using: &rng))
+        case .smart:
+            let paths = Dictionary(items.map { ($0.id, $0.url.path) }, uniquingKeysWith: { a, _ in a })
+            let store = library.store, net = shuffleNet ?? TransitionNet.loadOrCreate()
+            shuffleNet = net
+            let wanted = Set(ids)
+            Task {
+                let order: [UUID] = await Task.detached(priority: .userInitiated) {
+                    let known = store?.tracks(paths: Array(paths.values)) ?? [:]
+                    func cand(_ id: UUID) -> ShuffleCandidate {
+                        let path = paths[id] ?? ""
+                        let t = known[path]
+                        return ShuffleCandidate(id: id, path: path, artist: LibraryStore.fold(t?.primaryArtistLine.split(separator: ",").first.map(String.init) ?? ""), album: t?.releaseID ?? "", genres: t?.genres ?? [], year: t?.year,
+                                                liked: t?.isLiked ?? false, playCount: t?.playCount ?? 0, lastPlayedAt: t?.lastPlayedAt, analysis: AnalysisCache.shared.cached(path: path))
+                    }
+                    var rng = SystemRandomNumberGenerator()
+                    return head + (cur.map { [$0] } ?? []) + Shuffler.smart(rest.map(cand), start: cur.map(cand), net: net, using: &rng).filter { $0 != cur }
+                }.value
+                // apply only if the queue is still the one we shuffled and smart shuffle is still on
+                guard shuffle == mode, Set(items.map(\.id)) == wanted else { return }
+                player.setOrder(order)
+            }
+        }
+    }
+
+    /// Counts a play once a song has been heard for ten seconds (feeds Smart Shuffle and “most played”).
+    private func countPlay() {
+        guard started, status.state == .playing, status.position > 10, let id = status.trackID, countedPlay != id, let item = items.first(where: { $0.id == id }), !item.isStream else { return }
+        countedPlay = id
+        library.store?.recordPlay(path: item.url.path)
     }
 
     func nowPlayingInfo() -> NowPlayingInfo? {
@@ -557,6 +733,9 @@ final class PlayerModel: ObservableObject {
             do {
                 let unit = try await DSPChain.instantiate(info)
                 hosted.append(HostedPlugin(info: info, unit: unit))
+                observeParameters(of: hosted[hosted.count - 1])
+                settings.dsp.enabled = true; dspModel.draft.enabled = true
+                dspModel.notePluginsChanged()
                 player.setPlugins(hosted.map(\.unit))
                 pluginError = nil
             } catch { pluginError = "Could not load \(info.name): \(error.localizedDescription)" }
@@ -565,33 +744,40 @@ final class PlayerModel: ObservableObject {
 
     func removePlugin(_ id: UUID) {
         pluginWindows[id]?.close(); pluginWindows[id] = nil
+        if let h = hosted.first(where: { $0.id == id }), let t = parameterTokens[id] { h.unit.auAudioUnit.parameterTree?.removeParameterObserver(t); parameterTokens[id] = nil }
         hosted.removeAll { $0.id == id }
+        dspModel.notePluginsChanged()
         player.setPlugins(hosted.map(\.unit))
     }
 
-    func movePlugin(from: IndexSet, to: Int) { hosted.move(fromOffsets: from, toOffset: to); player.setPlugins(hosted.map(\.unit)) }
+    /// Notices when the user turns a knob inside a plug-in's own window, so the profile knows it has unsaved changes.
+    func observeParameters(of p: HostedPlugin) {
+        guard let tree = p.unit.auAudioUnit.parameterTree else { return }
+        parameterTokens[p.id] = tree.token(byAddingParameterObserver: { [weak self] _, _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.dspModel.notePluginsChanged() } }
+        })
+    }
 
+    func movePlugin(from: IndexSet, to: Int) { hosted.move(fromOffsets: from, toOffset: to); dspModel.notePluginsChanged(); player.setPlugins(hosted.map(\.unit)) }
+
+    /// Opens a plug-in's own window. The window can be resized; a plug-in whose view is bigger than the screen (or than the window) scrolls.
     func openPluginUI(_ p: HostedPlugin) {
         if let w = pluginWindows[p.id] { w.makeKeyAndOrderFront(nil); return }
-        func show(_ vc: NSViewController) {
-            let w = NSWindow(contentViewController: vc)
-            w.title = "\(p.info.manufacturer) \(p.info.name)"
-            w.styleMask.insert([.closable, .miniaturizable])
-            w.isReleasedWhenClosed = false
-            w.makeKeyAndOrderFront(nil)
-            pluginWindows[p.id] = w
-        }
+        let title = "\(p.info.manufacturer) \(p.info.name)"
         p.unit.auAudioUnit.requestViewController { [weak self] vc in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    if let vc { show(vc); return }
-                    // No custom UI (typical for AUv2): fall back to the system's generic parameter view.
-                    let generic = AUGenericView(audioUnit: p.unit.audioUnit)
-                    generic.showsExpertParameters = true
-                    let host = NSViewController(); host.view = generic
-                    host.preferredContentSize = NSSize(width: 520, height: 360)
-                    show(host)
+                    let w: NSWindow
+                    if let vc { w = PluginWindowFactory.window(title: title, custom: vc) }
+                    else {
+                        // No custom UI (typical for AUv2): the system's generic parameter view, which lists every parameter and scrolls
+                        let generic = AUGenericView(audioUnit: p.unit.audioUnit)
+                        generic.showsExpertParameters = true
+                        w = PluginWindowFactory.window(title: title, generic: generic)
+                    }
+                    w.makeKeyAndOrderFront(nil)
+                    self.pluginWindows[p.id] = w
                 }
             }
         }

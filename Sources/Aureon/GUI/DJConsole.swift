@@ -67,6 +67,7 @@ struct DeckPanel: View {
     @ObservedObject var deck: DJDeck
     @EnvironmentObject var model: DJModel
     private var color: Color { DJColor.deck(deck.name) }
+    @StateObject private var dropping = Box(false)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -86,6 +87,13 @@ struct DeckPanel: View {
         .padding(12).frame(maxHeight: .infinity, alignment: .top).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Brand.ink.opacity(0.05)))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(deck.playing ? color.opacity(0.6) : Brand.ink.opacity(0.08), lineWidth: deck.playing ? 1.4 : 0.8))
         .animation(.easeOut(duration: 0.2), value: deck.playing)
+        .overlay { if dropping.v { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(color, style: StrokeStyle(lineWidth: 2.5, dash: [8, 5])).background(RoundedRectangle(cornerRadius: 16).fill(color.opacity(0.12))).overlay(Label("Load on deck \(deck.name)", systemImage: "arrow.down.circle.fill").font(.headline)).allowsHitTesting(false) } }
+        .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
+            _ = providers.first?.loadObject(ofClass: URL.self) { url, _ in
+                if let url { Task { @MainActor in model.loadFile(url, into: deck) } }
+            }
+            return true
+        }
     }
 
     private var header: some View {
@@ -361,6 +369,39 @@ struct AutoDJPanel: View {
     }
 }
 
+struct RemixPanel: View {
+    @ObservedObject var remix: RemixController
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars").foregroundStyle(Brand.accent2)
+                Text("AI REMIXER").microLabel()
+                Text(remix.status).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                Spacer()
+                ForEach(Array(remix.history.suffix(6).enumerated()), id: \.offset) { _, a in
+                    Text(a.title).font(.system(size: 10.5, weight: .semibold)).padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Brand.accent2.opacity(0.18)))
+                }
+            }
+            HStack(spacing: 12) {
+                Text("Subtle").font(.system(size: 11)).foregroundStyle(.secondary)
+                FluidSlider(value: $remix.intensity, range: 0...1, tint: Brand.accent2, restingHeight: 4, enabled: true, bubble: { $0 < 0.34 ? "subtle" : ($0 < 0.67 ? "medium" : "wild") }).frame(width: 220)
+                Text("Wild").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("\(remix.actionCount) moves").font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+                Spacer()
+                Button { remix.rate(liked: true) } label: { Image(systemName: "hand.thumbsup.fill") }.disabled(!remix.canRate).help("That move worked — do more like it")
+                Button { remix.rate(liked: false) } label: { Image(systemName: "hand.thumbsdown.fill") }.disabled(!remix.canRate).help("That move did not work — do less of it")
+                Text("\(remix.feedbackCount) opinions learned").font(.system(size: 11)).foregroundStyle(.tertiary)
+            }.buttonStyle(.bordered).controlSize(.small)
+            Text("It performs the deck's own filter, effects, EQ and loops on the bar line. It does not separate stems or create new sounds.").font(.system(size: 10.5)).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent2.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent2.opacity(0.35), lineWidth: 0.8))
+    }
+}
+
 // MARK: - The console
 
 struct DJView: View {
@@ -378,9 +419,10 @@ struct DJView: View {
             .fixedSize(horizontal: false, vertical: true)
             MasterBar()
             if dj.auto.enabled { AutoDJPanel(auto: dj.auto) }
+            if dj.remix.enabled { RemixPanel(remix: dj.remix) }
             DJBrowser()
         }
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 12)
+        .padding(.horizontal, 16).padding(.top, 0).padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             m.library.category = .songs
@@ -400,6 +442,12 @@ struct DJView: View {
                     .background(Capsule().fill(dj.auto.enabled ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink.opacity(0.10))))
                     .foregroundStyle(dj.auto.enabled ? Color.black.opacity(0.85) : Brand.ink)
             }.buttonStyle(.plain).help("Let Aureon choose the next track, match its tempo and mix it in")
+            Button { dj.remix.enabled.toggle() } label: {
+                Label(dj.remix.enabled ? "Remix on" : "Remix", systemImage: "wand.and.stars").font(.system(size: 12.5, weight: .semibold))
+                    .padding(.horizontal, 12).padding(.vertical, 5)
+                    .background(Capsule().fill(dj.remix.enabled ? AnyShapeStyle(Brand.accent2) : AnyShapeStyle(Brand.ink.opacity(0.10))))
+                    .foregroundStyle(dj.remix.enabled ? Color.black.opacity(0.85) : Brand.ink)
+            }.buttonStyle(.plain).help("An AI remixer performs filter sweeps, echoes, loop rolls, drops and risers on the playing deck")
             Button { dj.quantize.toggle() } label: {
                 Label("Quantize", systemImage: "square.grid.3x1.below.line.grid.1x2").font(.system(size: 12, weight: .medium))
                     .padding(.horizontal, 10).padding(.vertical, 5)
@@ -416,9 +464,9 @@ struct DJView: View {
                 }
                 .padding(.horizontal, 11).padding(.vertical, 5).background(Capsule().fill(dj.recording ? Color.red.opacity(0.25) : Brand.ink.opacity(0.08)))
             }.buttonStyle(.plain).help(dj.recording ? "Stop recording" : "Record the master mix to a WAV file in Music/Aureon Mixes")
-            Color.clear.frame(width: 110, height: 1)       // room for the layout switch in the corner (a bare Color.clear would stretch the row vertically)
+            DJSwitch(inSidebar: false)
         }
-        .padding(.top, 2)
+        .padding(.leading, 78).frame(height: WindowChrome.band - 6)
     }
 }
 

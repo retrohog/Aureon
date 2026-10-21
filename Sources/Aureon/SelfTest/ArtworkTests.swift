@@ -371,7 +371,7 @@ struct InterfaceTests {
     func navigationStructure() {
         let cats = Tab.allCases.compactMap(\.libraryCategory)
         expect(Set(cats).count == cats.count, "every library page has its own category")
-        expect(Tab.allCases.filter { $0.section == .library }.count == 3 && Tab.allCases.filter { $0.section == .classical }.count == 4)
+        expect(Tab.allCases.filter { $0.section == .library }.map(\.rawValue) == ["Liked Songs", "Playlists", "Albums", "Artists", "Songs"] && Tab.allCases.filter { $0.section == .classical }.count == 4)
         expect(Tab.allCases.filter { $0.section == .listen }.map(\.rawValue) == ["Home", "Now Playing", "Search", "Radio", "Podcasts"], "radio and podcasts sit with Now Playing")
         let order = [Tab.Section.listen, .library, .classical, .discover, .sound].flatMap { sec in Tab.allCases.filter { $0.section == sec }.map(\.rawValue) }
         expect(order.firstIndex(of: "Deep Dive")! < order.firstIndex(of: "Audio")!, "Deep Dive sits above the Sound section")

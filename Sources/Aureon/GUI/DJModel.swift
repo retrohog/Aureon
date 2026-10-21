@@ -191,10 +191,10 @@ final class DJDeck: ObservableObject, Identifiable {
         loopOut = b; loopActive = true; applyLoop()
     }
     /// A loop of `beats` beats starting at the current position (on the beat grid when there is one).
-    func autoLoop(beats: Double) {
+    func autoLoop(beats: Double, snap: Bool = false) {
         guard track != nil else { return }
         let len = beats * (beatLength ?? 0.5)
-        let a = snapped(position)
+        let a = snap ? (analysis?.nearestBeat(to: position).map { max(0, $0) } ?? position) : snapped(position)
         loopIn = a; loopOut = min(duration, a + len); loopActive = true; applyLoop()
     }
     func toggleLoop() {
@@ -286,6 +286,7 @@ final class DJModel: ObservableObject {
     /// Tests and snapshots replace the real device output.
     var outputFactory: ((DJMixerCore) -> DJOutput?)?
     lazy var auto = AutoDJController(model: self)
+    lazy var remix = RemixController(model: self)
     /// Set by Auto DJ while it is blending: the crossfader is bypassed and these gains are used instead.
     var autoBlend: (outgoing: DJDeck, frame: AutoMixer.Frame)? { didSet { applyMix() } }
 
@@ -354,6 +355,7 @@ final class DJModel: ObservableObject {
         guard active else { return }
         active = false
         auto.enabled = false
+        remix.enabled = false
         stopRecording()
         timer?.invalidate(); timer = nil
         for d in decks { d.unload(); d.player.analysis.setActive(false) }
@@ -444,6 +446,22 @@ final class DJModel: ObservableObject {
             self?.libraryTask = nil; self?.analysisProgress = nil
             self?.auto.refreshPool()
         }
+    }
+
+    /// A file dropped on a deck (or on the console): its tags come from the library when it is in there, else its file name.
+    func loadFile(_ url: URL, into d: DJDeck) {
+        guard audioExtensions.contains(url.pathExtension.lowercased()) else { return }
+        let known = LibraryModelBridge.shared.model?.store?.track(path: url.path)
+        d.load(DJTrack(path: url.path, title: known?.title ?? url.deletingPathExtension().lastPathComponent, artist: known?.artistLine ?? "", album: known?.releaseTitle ?? ""))
+    }
+
+    /// Several dropped files go to the free deck and then the other one.
+    func loadDropped(_ urls: [URL]) {
+        let files = urls.filter { audioExtensions.contains($0.pathExtension.lowercased()) }
+        guard let first = files.first else { return }
+        let target = freeDeck()
+        loadFile(first, into: target)
+        if files.count > 1 { loadFile(files[1], into: other(target)) }
     }
 
     /// Loads into the deck that is not playing (deck A if neither is).
