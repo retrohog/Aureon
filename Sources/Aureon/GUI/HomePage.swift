@@ -153,6 +153,9 @@ struct GeneralSettings: View {
 
     var body: some View {
         VStack(spacing: 16) {
+            Card(title: "Appearance", subtitle: "Colour themes: the whole interface follows the one you pick") {
+                ThemePicker()
+            }
             Card(title: "Layout", subtitle: "The same player, arranged for listening or for mixing") {
                 Picker("", selection: $m.djMode) { Text("Normal").tag(false); Text("DJ console").tag(true) }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 280)
                 Note(text: "The DJ console has two decks, a mixer and a crossfader. You can switch at any time with the button in the top-right corner.")

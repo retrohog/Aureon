@@ -39,7 +39,7 @@ struct SpectrumCanvas: View {
             for g in stride(from: -80, through: -10, by: 10) {                                    // dB grid
                 let y = size.height * (1 - CGFloat((Double(g) + 90) / 90))
                 var p = Path(); p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
-                ctx.stroke(p, with: .color(.white.opacity(0.07)), lineWidth: 0.5)
+                ctx.stroke(p, with: .color(Brand.ink.opacity(0.07)), lineWidth: 0.5)
             }
             for c in 0..<columns {
                 let v = (0..<per).map { bars[c * per + $0] }.max() ?? -120
@@ -67,7 +67,7 @@ struct SpectrogramCanvas: View {
             for (hz, label) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] {
                 let y = size.height * (1 - CGFloat(logX(hz)))
                 var p = Path(); p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
-                ctx.stroke(p, with: .color(.white.opacity(0.12)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                ctx.stroke(p, with: .color(Brand.ink.opacity(0.12)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
                 ctx.draw(Text(label).font(.system(size: 9)).foregroundStyle(.white.opacity(0.7)), at: CGPoint(x: 14, y: y - 6))
             }
         }
@@ -125,7 +125,7 @@ struct PeakBars: View {
             func bar(_ y: CGFloat, _ rms: Float, _ peak: Float, _ name: String) {
                 let h: CGFloat = 12, w = size.width - 34
                 func x(_ db: Float) -> CGFloat { 22 + w * CGFloat(max(0, min(1, (Double(db) + 60) / 60))) }
-                ctx.fill(Path(roundedRect: CGRect(x: 22, y: y, width: w, height: h), cornerRadius: 3), with: .color(.white.opacity(0.08)))
+                ctx.fill(Path(roundedRect: CGRect(x: 22, y: y, width: w, height: h), cornerRadius: 3), with: .color(Brand.ink.opacity(0.08)))
                 let fill = CGRect(x: 22, y: y, width: x(rms) - 22, height: h)
                 ctx.fill(Path(roundedRect: fill, cornerRadius: 3), with: .linearGradient(Gradient(colors: [.green, .green, .yellow, .red]), startPoint: CGPoint(x: 22, y: 0), endPoint: CGPoint(x: 22 + w, y: 0)))
                 var pk = Path(); pk.move(to: CGPoint(x: x(peak), y: y - 1)); pk.addLine(to: CGPoint(x: x(peak), y: y + h + 1))

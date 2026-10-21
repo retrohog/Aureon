@@ -12,7 +12,7 @@ struct PlayerBar: View {
             HStack(spacing: 8) {
                 Image(systemName: m.hasVolume ? "speaker.wave.2.fill" : "lock.fill", variableValue: m.hasVolume ? Double(m.volume) : 1).font(.system(size: 11))
                     .foregroundStyle(.secondary).frame(width: 16).symbolRenderingMode(.hierarchical)
-                FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: .white.opacity(0.9), restingHeight: 3, enabled: m.hasVolume, bubble: { "\(Int($0 * 100))%" }, safe: true)
+                FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: Brand.ink.opacity(0.9), restingHeight: 3, enabled: m.hasVolume, bubble: { "\(Int($0 * 100))%" }, safe: true)
                     .frame(width: 78)
                 Button { showQueue.v.toggle() } label: { Image(systemName: "list.bullet").foregroundStyle(showQueue.v ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Color.primary)) }
                     .buttonStyle(IconButtonStyle()).help("Queue")
@@ -21,7 +21,7 @@ struct PlayerBar: View {
         }
         .padding(.horizontal, 14).frame(height: 64)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.ultraThinMaterial))
-        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.black.opacity(0.3)))
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Brand.sidebar.opacity(0.72)))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.24), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
         .shadow(color: .black.opacity(0.4), radius: 22, y: 10)
         .padding(.horizontal, 16).padding(.bottom, 12)
@@ -34,7 +34,7 @@ struct PlayerBar: View {
                 .keyboardShortcut(.space, modifiers: []).help("Play / pause")
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
         }
-        .buttonStyle(TransportButtonStyle(size: 13)).disabled(m.items.isEmpty)
+        .buttonStyle(TransportButtonStyle(size: 13, ink: Brand.ink)).disabled(m.items.isEmpty)
     }
 }
 
@@ -70,7 +70,7 @@ struct BarDisplay: View {
             }
             .padding(.horizontal, 9).padding(.top, 5)
             FluidSlider(value: Binding(get: { m.scrub ?? progress.position }, set: { m.scrub = $0 }), range: 0...dur, tint: m.hero.palette.accent.color, restingHeight: 2.5, enabled: m.isActive && !live,
-                        bubble: { clock($0) }) { editing in
+                        bubble: { clock($0) }, scrollStep: 5) { editing in
                 if !editing, let t = m.scrub { m.player.send(.seekTo(t)); m.scrub = nil }
             }.padding(.horizontal, 9).frame(height: 14)
         }
@@ -83,7 +83,7 @@ struct BarDisplay: View {
                 Color.black.opacity(0.32)
             }.clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(.white.opacity(0.1), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Brand.ink.opacity(0.1), lineWidth: 0.8))
     }
 }
 

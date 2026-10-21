@@ -64,7 +64,7 @@ struct ResponseGraph: View {
         Canvas { ctx, size in
             let n = 160, rate = 48_000.0
             func y(_ db: Double) -> CGFloat { size.height * (0.5 - CGFloat(db / 24)) }
-            for g in [-12.0, 0, 12] { var p = Path(); p.move(to: CGPoint(x: 0, y: y(g))); p.addLine(to: CGPoint(x: size.width, y: y(g))); ctx.stroke(p, with: .color(.white.opacity(g == 0 ? 0.25 : 0.08)), lineWidth: 0.6) }
+            for g in [-12.0, 0, 12] { var p = Path(); p.move(to: CGPoint(x: 0, y: y(g))); p.addLine(to: CGPoint(x: size.width, y: y(g))); ctx.stroke(p, with: .color(Brand.ink.opacity(g == 0 ? 0.25 : 0.08)), lineWidth: 0.6) }
             var line = Path()
             for i in 0..<n {
                 let f = 20 * pow(1000, Double(i) / Double(n - 1))

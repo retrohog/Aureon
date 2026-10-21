@@ -119,11 +119,13 @@ final class PlayerModel: ObservableObject {
         library.category = .songs
         LibraryModelBridge.shared.model = library
         var o = PlayerOptions(); o.hog = false; o.rateSwitch = false; o.deviceID = deviceID == 0 ? nil : deviceID; o.bufferSeconds = 0.4
-        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { o.sinkFactory = { _ in NullSink() } }
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }
         let rate = OutputDevice(id: deviceID == 0 ? nil : deviceID)?.currentRate ?? 48_000
         dj.enter(options: o, rate: rate > 0 ? rate : 48_000)
     }
     @Published var settingsSection: SettingsSection = .general
+    /// The colour theme. Changing it rebuilds the whole interface (the root view is keyed on the theme's id).
+    @Published var theme: Theme = Theme.current { didSet { Theme.current = theme; if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(theme.id, forKey: "aureon.theme") } } }
     let navigator = Navigator()
     let radio = RadioModel()
     let podcasts = PodcastModel()
@@ -207,6 +209,8 @@ final class PlayerModel: ObservableObject {
         if let d = defaults.data(forKey: "aureon.settings"), let s = try? JSONDecoder().decode(PlaybackSettings.self, from: d) { settings = s; player.settings = s }
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
+        let chosen = Theme.named(ProcessInfo.processInfo.environment["AUREON_THEME"] ?? defaults.string(forKey: "aureon.theme"))
+        theme = chosen; Theme.current = chosen          // property observers do not run inside init
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
         volumeLimit = defaults.object(forKey: "aureon.volumeLimit") as? Float ?? 1
         LibraryModelBridge.shared.model = library
@@ -432,7 +436,7 @@ final class PlayerModel: ObservableObject {
         o.tuning = system.quietMode ? system.quiet : nil
         o.promoteEngineThread = system.promoteEngine
         o.ioCycleUsage = system.useCycleUsage ? Float(system.cycleUsage) : nil
-        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { o.sinkFactory = { _ in NullSink() } }      // snapshots make no sound
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }      // snapshots make no sound
         return o
     }
 

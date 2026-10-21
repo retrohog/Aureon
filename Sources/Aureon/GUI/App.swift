@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
+        MainActor.assumeIsolated { ScrollRouter.shared.install() }
         // earlier versions opened large; once per size policy, bring the window to a comfortable default (users can still resize it afterwards)
         let key = "aureon.windowPolicy", policy = 2
         if UserDefaults.standard.integer(forKey: key) < policy {
@@ -144,6 +145,26 @@ extension DemoData {
 
 @MainActor func runSnapshot(out: String, files: [String]) {
     _ = NSApplication.shared
+    if ProcessInfo.processInfo.environment["AUREON_SLIDER_PROBE"] != nil {
+        // does SwiftUI's Slider sit on an NSSlider that the scroll router can find and drive?
+        final class Probe: ObservableObject { @Published var v = 0.3 }
+        let probe = Probe()
+        struct V: View { @ObservedObject var p: Probe; var body: some View { Slider(value: $p.v, in: 0...1).frame(width: 300).padding(20) } }
+        let host = NSHostingView(rootView: V(p: probe)); host.frame = NSRect(x: 0, y: 0, width: 340, height: 80)
+        let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false); win.contentView = host
+        host.layoutSubtreeIfNeeded(); RunLoop.current.run(until: Date().addingTimeInterval(0.3)); host.layoutSubtreeIfNeeded()
+        var found: NSSlider?
+        func walk(_ v: NSView) { if let sl = v as? NSSlider { found = sl }; v.subviews.forEach(walk) }
+        walk(host)
+        if let sl = found {
+            let before = probe.v
+            sl.doubleValue = ScrollStep.apply(value: sl.doubleValue, notches: 2, range: sl.minValue...sl.maxValue)
+            sl.sendAction(sl.action, to: sl.target)
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            print("NSSlider found: \(type(of: sl)); binding \(before) -> \(probe.v); action set: \(sl.action != nil)")
+        } else { print("NO NSSlider in hierarchy") }
+        exit(0)
+    }
     if ProcessInfo.processInfo.environment["AUREON_AVATAR_TEST"] != nil {
         // portraits are rarely square: render avatars with tall and wide pictures to look for edge artefacts
         func pic(_ w: Int, _ h: Int, _ top: NSColor) -> NSImage {
@@ -231,10 +252,10 @@ extension DemoData {
     DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
         MainActor.assumeIsolated {
             let h = CGFloat(Double(env["AUREON_HEIGHT"] ?? "") ?? 900), w = CGFloat(Double(env["AUREON_WIDTH"] ?? "") ?? 1100)
-            let host = NSHostingView(rootView: ContentView().environmentObject(model).frame(width: w, height: h).preferredColorScheme(.dark))
+            let host = NSHostingView(rootView: ContentView().environmentObject(model).frame(width: w, height: h).preferredColorScheme(model.theme.isLight ? .light : .dark))
             host.frame = NSRect(x: 0, y: 0, width: w, height: h)
             let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-            win.contentView = host; win.appearance = NSAppearance(named: .darkAqua)
+            win.contentView = host; win.appearance = NSAppearance(named: model.theme.isLight ? .aqua : .darkAqua)
             host.layoutSubtreeIfNeeded()
             if env["AUREON_BENCH"] != nil {
                 // how long does it take to swap between two heavy pages? (layout + display, synchronous)

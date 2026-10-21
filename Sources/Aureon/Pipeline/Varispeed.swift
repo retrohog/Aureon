@@ -11,6 +11,30 @@ final class VarispeedControl: @unchecked Sendable {
         get { Double(bitPattern: ratioBits.load(ordering: .relaxed)) }
         set { ratioBits.store(max(0.5, min(2, newValue.isFinite ? newValue : 1)).bitPattern, ordering: .relaxed) }
     }
+    private let bendBits = Atomic<UInt64>(Double(0).bitPattern)
+    private let loopOnFlag = Atomic<Bool>(false)
+    private let loopInBits = Atomic<Int64>(0), loopOutBits = Atomic<Int64>(0)
+    private let wrapCount = Atomic<Int>(0)
+
+    /// A momentary nudge on top of the pitch fader (the jog wheel's pitch bend): +0.04 plays 4 % faster while held. Limited to ±50 %.
+    var bend: Double {
+        get { Double(bitPattern: bendBits.load(ordering: .relaxed)) }
+        set { bendBits.store(max(-0.5, min(0.5, newValue.isFinite ? newValue : 0)).bitPattern, ordering: .relaxed) }
+    }
+
+    /// A loop over `[loopIn, loopOut)` in source frames. While it is on, reaching `loopOut` jumps back to `loopIn` with the fractional phase kept.
+    var loopOn: Bool { loopOnFlag.load(ordering: .relaxed) }
+    var loopIn: Int64 { loopInBits.load(ordering: .relaxed) }
+    var loopOut: Int64 { loopOutBits.load(ordering: .relaxed) }
+    /// Number of times a loop has wrapped (lets the interface notice that the position jumped).
+    var wraps: Int { wrapCount.load(ordering: .relaxed) }
+    func setLoop(from a: Int64, to b: Int64, on: Bool) {
+        loopInBits.store(max(0, a), ordering: .relaxed); loopOutBits.store(max(a + 1, b), ordering: .relaxed)
+        loopOnFlag.store(on && b > a, ordering: .relaxed)
+    }
+    func clearLoop() { loopOnFlag.store(false, ordering: .relaxed) }
+    fileprivate func noteWrap() { wrapCount.add(1, ordering: .relaxed) }
+
     /// Frames of the source consumed so far, fractional.
     var sourceFrame: Double { Double(bitPattern: posBits.load(ordering: .relaxed)) }
     fileprivate func setSourceFrame(_ p: Double) { posBits.store(p.bitPattern, ordering: .relaxed) }
@@ -57,7 +81,7 @@ final class VarispeedSource: FrameSource {
 
     func read(into buf: UnsafeMutablePointer<Int32>, frames: Int) -> Int {
         var produced = 0
-        let ratio = control.ratio
+        let ratio = control.ratio * (1 + control.bend)
         while produced < frames {
             let i0 = Int64(pos.rounded(.down))
             if !ensure(i0 + 2) {
@@ -74,6 +98,16 @@ final class VarispeedSource: FrameSource {
             }
             produced += 1
             pos += ratio
+            if control.loopOn {
+                let a = control.loopIn, b = control.loopOut
+                if pos >= Double(b) {
+                    // jump back; reload the window a little before the loop start so the interpolation has its neighbours
+                    pos = Double(a) + (pos - Double(b)).truncatingRemainder(dividingBy: Double(max(1, b - a)))
+                    let from = max(0, a - 2)
+                    base.seek(to: from); window.removeAll(keepingCapacity: true); winStart = from; eof = false
+                    control.noteWrap()
+                }
+            }
         }
         // keep the window small: drop what is behind the interpolation neighbourhood
         let drop = Int(Int64(pos.rounded(.down)) - 2 - winStart)

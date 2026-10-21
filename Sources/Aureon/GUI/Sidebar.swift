@@ -25,9 +25,9 @@ struct Sidebar: View {
         }
         .frame(width: 204)
         .background {
-            if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { Brand.sidebar } else { VisualEffect(material: .sidebar, blending: .behindWindow) }
+            if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil || !Theme.current.vibrant { Brand.sidebar } else { VisualEffect(material: .sidebar, blending: .behindWindow) }
         }
-        .overlay(alignment: .trailing) { Rectangle().fill(.black.opacity(0.35)).frame(width: 0.8) }
+        .overlay(alignment: .trailing) { Rectangle().fill(Theme.current.isLight ? Color.black.opacity(0.12) : Color.black.opacity(0.35)).frame(width: 0.8) }
     }
 
     private var searchField: some View {
@@ -40,7 +40,7 @@ struct Sidebar: View {
             }
         }
         .padding(.horizontal, 9).frame(height: 28)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(searchFocused ? 0.14 : 0.09)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(searchFocused ? 0.14 : 0.09)))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(searchFocused ? Brand.accent.opacity(0.8) : .clear, lineWidth: 1.2))
         .animation(.easeOut(duration: 0.12), value: searchFocused)
     }
@@ -63,7 +63,7 @@ struct SidebarItem: View {
                 if tab == .radio, m.current?.isStream == true { Circle().fill(Brand.accent).frame(width: 6, height: 6).shadow(color: Brand.accent, radius: 3) }
             }
             .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.white.opacity(selected ? 0.13 : (hover.v ? 0.06 : 0))))
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(selected ? 0.13 : (hover.v ? 0.06 : 0))))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .accessibilityAddTraits(selected ? .isSelected : [])

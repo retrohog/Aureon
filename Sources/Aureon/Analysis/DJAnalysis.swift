@@ -1,11 +1,36 @@
 import Foundation
 
 /// What a deck needs to know about a track: a waveform overview and the tempo.
-struct DJTrackAnalysis: Equatable {
+struct DJTrackAnalysis: Equatable, Codable {
     var peaks: [Float]            // 0…1 per bucket, left to right across the whole track
     var bpm: Double?
     var confidence: Double        // 0…1: how clearly periodic the beat is
     var duration: Double
+    var key: MusicalKey? = nil
+    var keyStrength: Double = 0
+    /// 0…1: how intense the track is (loudness, density of onsets).
+    var energy: Double = 0
+    /// Time of a beat near the start, in seconds: the anchor of the beat grid.
+    var firstBeat: Double? = nil
+    /// Where the opening groove ends and where the closing section starts, in seconds.
+    var introEnd: Double? = nil
+    var outroStart: Double? = nil
+    /// Mean level in dBFS.
+    var loudness: Double = -30
+
+    /// Seconds of the beat nearest to `t` on the grid, or nil without a tempo.
+    func nearestBeat(to t: Double) -> Double? {
+        guard let bpm, bpm > 0, let fb = firstBeat else { return nil }
+        let p = 60 / bpm
+        return fb + (( t - fb) / p).rounded() * p
+    }
+    /// Position inside the current beat, 0…1.
+    func beatPhase(at t: Double) -> Double? {
+        guard let bpm, bpm > 0, let fb = firstBeat else { return nil }
+        let p = 60 / bpm
+        let x = (t - fb) / p
+        return x - x.rounded(.down)
+    }
 }
 
 enum DJAnalysis {
@@ -18,6 +43,9 @@ enum DJAnalysis {
         var energy = [Float](); energy.reserveCapacity(total / hop + 1)
         let buf = UnsafeMutablePointer<Int32>.allocate(capacity: 16_384 * ch); defer { buf.deallocate() }
         var frame = 0, hopSum = 0.0, hopN = 0
+        let chroma = ChromaAccumulator(sampleRate: info.sampleRate)
+        var mono32 = [Float](repeating: 0, count: 16_384)
+        var sumSq = 0.0
         while true {
             if cancelled() { return nil }
             let n = f.read(into: buf, frames: 16_384)
@@ -26,15 +54,72 @@ enum DJAnalysis {
                 var pk = 0.0, mono = 0.0
                 for c in 0..<ch { let v = Double(buf[i * ch + c]) / 2_147_483_648; pk = max(pk, abs(v)); mono += v }
                 mono /= Double(ch)
+                mono32[i] = Float(mono); sumSq += mono * mono
                 let b = min(buckets - 1, (frame + i) / per)
                 peaks[b] = max(peaks[b], Float(pk))
                 hopSum += mono * mono; hopN += 1
                 if hopN == hop { energy.append(Float(hopSum / Double(hop))); hopSum = 0; hopN = 0 }
             }
+            mono32.withUnsafeBufferPointer { chroma.feed($0.baseAddress!, count: n) }
             frame += n
         }
-        let est = estimateBPM(energy: energy, hopRate: info.sampleRate / Double(hop))
-        return DJTrackAnalysis(peaks: peaks, bpm: est?.bpm, confidence: est?.confidence ?? 0, duration: info.duration)
+        let hopRate = info.sampleRate / Double(hop)
+        let est = estimateBPM(energy: energy, hopRate: hopRate)
+        var a = DJTrackAnalysis(peaks: peaks, bpm: est?.bpm, confidence: est?.confidence ?? 0, duration: info.duration)
+        if let k = KeyEstimator.estimate(chroma: chroma.chroma) { a.key = k.key; a.keyStrength = k.strength }
+        a.loudness = 10 * log10(max(1e-10, sumSq / Double(max(1, frame))))
+        if let bpm = est?.bpm { a.firstBeat = firstBeat(energy: energy, hopRate: hopRate, bpm: bpm) }
+        let sections = sections(energy: energy, hopRate: hopRate)
+        a.introEnd = sections.introEnd; a.outroStart = sections.outroStart
+        a.energy = energyScore(loudnessDB: a.loudness, energy: energy, hopRate: hopRate, bpm: est?.bpm)
+        return a
+    }
+
+    /// The beat phase that best lines the onset curve up with a grid of period 60 / bpm, as the time of the first beat (seconds).
+    static func firstBeat(energy: [Float], hopRate: Double, bpm: Double) -> Double? {
+        guard energy.count > Int(hopRate * 4), bpm > 0 else { return nil }
+        let env = energy.map { log(1 + 1000 * Double($0)) }
+        var flux = [Double](repeating: 0, count: env.count)
+        for i in 1..<env.count { flux[i] = max(0, env[i] - env[i - 1]) }
+        let period = hopRate * 60 / bpm                       // in hops, fractional
+        let steps = Int(period.rounded(.up))
+        // score each candidate phase over the first ~45 s (grids drift a little more over a whole track)
+        let span = min(flux.count, Int(hopRate * 45))
+        var best = 0, bestScore = -1.0
+        for ph in 0..<steps {
+            var s = 0.0, t = Double(ph)
+            while Int(t) + 1 < span { let i = Int(t); s += flux[i] + 0.5 * (flux[min(i + 1, flux.count - 1)] + flux[max(0, i - 1)]); t += period }
+            if s > bestScore { bestScore = s; best = ph }
+        }
+        // the onset curve peaks a little after the true attack; the energy hop is also a window, so shift back by half a hop
+        return max(0, (Double(best) - 0.5) / hopRate)
+    }
+
+    /// Intro end and outro start: where the smoothed energy first / last reaches 60 % of its typical loud level.
+    static func sections(energy: [Float], hopRate: Double) -> (introEnd: Double?, outroStart: Double?) {
+        let w = max(1, Int(hopRate * 2))
+        guard energy.count > w * 8 else { return (nil, nil) }
+        var sm = [Double](); sm.reserveCapacity(energy.count / w)
+        var i = 0
+        while i + w <= energy.count { sm.append(energy[i..<(i + w)].reduce(0) { $0 + Double($1) } / Double(w)); i += w }
+        let loud = sm.sorted()[Int(Double(sm.count - 1) * 0.75)]
+        guard loud > 1e-9 else { return (nil, nil) }
+        let thr = 0.6 * loud
+        guard let first = sm.firstIndex(where: { $0 >= thr }), let last = sm.lastIndex(where: { $0 >= thr }) else { return (nil, nil) }
+        let secs = Double(w) / hopRate
+        let intro = Double(first) * secs, outro = Double(last + 1) * secs
+        let total = Double(energy.count) / hopRate
+        return (intro > 2 && intro < total * 0.5 ? intro : nil, outro < total - 2 && outro > total * 0.5 ? outro : nil)
+    }
+
+    /// A single 0…1 figure: loudness, how much the energy moves, and tempo.
+    static func energyScore(loudnessDB: Double, energy: [Float], hopRate: Double, bpm: Double?) -> Double {
+        let loud = max(0, min(1, (loudnessDB + 30) / 20))         // −30 dB → 0, −10 dB → 1
+        let env = energy.map { log(1 + 1000 * Double($0)) }
+        var flux = 0.0; for i in 1..<max(1, env.count) { flux += abs(env[i] - env[i - 1]) }
+        let density = max(0, min(1, flux / Double(max(1, env.count)) / 0.25))
+        let tempo = bpm.map { max(0, min(1, ($0 - 80) / 80)) } ?? 0.5
+        return max(0, min(1, 0.45 * loud + 0.3 * density + 0.25 * tempo))
     }
 
     /// Tempo from the autocorrelation of the onset strength (rises in energy). Folded into 75…180 BPM.

@@ -62,8 +62,8 @@ struct PillButton: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 7)
             .foregroundStyle(filled ? Color.white : Color.primary)
-            .background(Capsule().fill(filled ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))))
-            .overlay(Capsule().strokeBorder(.white.opacity(filled ? 0 : 0.1), lineWidth: 0.8))
+            .background(Capsule().fill(filled ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.16 : 0.09))))
+            .overlay(Capsule().strokeBorder(Brand.ink.opacity(filled ? 0 : 0.1), lineWidth: 0.8))
             .brightness(filled && hover.v ? 0.06 : 0)
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(.easeOut(duration: 0.12), value: hover.v)
@@ -80,7 +80,7 @@ struct ToolbarMenu<Content: View>: View {
         Menu { content } label: {
             HStack(spacing: 5) { Image(systemName: icon).font(.system(size: 11, weight: .medium)); Text(label).font(.system(size: 12, weight: .medium)) }
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Capsule().fill(active ? AnyShapeStyle(Brand.accent.opacity(0.25)) : AnyShapeStyle(Color.white.opacity(0.07))))
+                .background(Capsule().fill(active ? AnyShapeStyle(Brand.accent.opacity(0.25)) : AnyShapeStyle(Brand.ink.opacity(0.07))))
                 .foregroundStyle(active ? Brand.accent : Color.primary)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -97,7 +97,7 @@ struct SearchPill: View {
             TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12)).frame(width: width)
             if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary) }.buttonStyle(.plain) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(.white.opacity(0.07)))
+        .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(Brand.ink.opacity(0.07)))
     }
 }
 
@@ -139,7 +139,7 @@ struct LibraryPage: View {
                 HStack(spacing: 0) {
                     Button { update { $0.list = false } } label: { Image(systemName: "square.grid.2x2") }.foregroundStyle(opts.list ? Color.secondary : Brand.cyan)
                     Button { update { $0.list = true } } label: { Image(systemName: "list.bullet") }.foregroundStyle(opts.list ? Brand.cyan : Color.secondary)
-                }.buttonStyle(IconButtonStyle()).padding(2).background(Capsule().fill(.white.opacity(0.08)))
+                }.buttonStyle(IconButtonStyle()).padding(2).background(Capsule().fill(Brand.ink.opacity(0.08)))
                 if !opts.list {
                     Slider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
                 }
@@ -323,7 +323,7 @@ struct RowButton: View {
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 9).padding(.vertical, 5).contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white.opacity(hover.v ? 0.07 : 0)))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.07 : 0)))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(.easeOut(duration: 0.1), value: hover.v)
     }
@@ -353,7 +353,7 @@ struct Avatar: View {
                 }
             }
             .mask(Circle())
-            .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 0.8))
+            .overlay(Circle().strokeBorder(Brand.ink.opacity(0.14), lineWidth: 0.8))
         }
         .frame(width: d + (shadow ? 16 : 0), height: d + (shadow ? 16 : 0))
     }
@@ -509,7 +509,7 @@ struct AlbumListRow: View {
             Text("\(album.trackCount)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.tertiary).frame(width: 28, alignment: .trailing)
         }
         .padding(.horizontal, 9).padding(.vertical, 5).contentShape(Rectangle())
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white.opacity(hover.v ? 0.07 : 0)))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.07 : 0)))
         .onHover { hover.v = $0 }.onTapGesture(perform: open).onAppear { art.load(album) }
     }
 }
@@ -667,7 +667,7 @@ struct SongList: View {
             col("Time", .duration, width: 46, trailing: true)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.08)).frame(height: 0.8) }
+        .overlay(alignment: .bottom) { Rectangle().fill(Brand.ink.opacity(0.08)).frame(height: 0.8) }
     }
 }
 
@@ -701,7 +701,7 @@ struct SongRow: View {
             Text(fmtDuration(track.duration)).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(hover.v ? 0.08 : (index % 2 == 0 ? 0.022 : 0))))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.08 : (index % 2 == 0 ? 0.022 : 0))))
         .onHover { hover.v = $0 }
     }
 }

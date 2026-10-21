@@ -37,8 +37,10 @@ struct ContentView: View {
         .animation(.smooth(duration: 0.22), value: dropping.v)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
         .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj)
-        .preferredColorScheme(.dark)
-        .background(Color(white: 0.04))
+        .preferredColorScheme(m.theme.isLight ? .light : .dark)
+        .foregroundStyle(Brand.ink)
+        .background(Brand.canvas)
+        .id(m.theme.id)
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
@@ -55,7 +57,13 @@ struct ContentView: View {
             AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil, intensity: 1)
         } else {
             Brand.canvas
-            LinearGradient(colors: [m.hero.palette.grid[1].color.opacity(0.28), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)).allowsHitTesting(false)
+            if m.theme.id == Theme.aureon.id {
+                LinearGradient(colors: [m.hero.palette.grid[1].color.opacity(0.28), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)).allowsHitTesting(false)
+            } else {
+                // themed glow: the two accents bleeding in from opposite corners
+                RadialGradient(colors: [Brand.accent.opacity(m.theme.isLight ? 0.10 : 0.16), .clear], center: .topTrailing, startRadius: 0, endRadius: 520).allowsHitTesting(false)
+                RadialGradient(colors: [Brand.accent2.opacity(m.theme.isLight ? 0.08 : 0.12), .clear], center: .bottomLeading, startRadius: 0, endRadius: 520).allowsHitTesting(false)
+            }
         }
     }
 
@@ -101,7 +109,7 @@ struct DJSwitch: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .foregroundStyle(m.djMode ? Color.white : Color.primary)
-            .background(Capsule().fill(m.djMode ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))))
+            .background(Capsule().fill(m.djMode ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.16 : 0.09))))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.help(m.djMode ? "Back to the normal layout" : "Switch to the two-deck DJ console")
     }
@@ -214,7 +222,7 @@ struct QueueRow: View {
             if let n = item.trackNumber, hover.v || playing { Text("\(n)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary) }
         }
         .padding(.horizontal, 6).padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white.opacity(playing ? 0.09 : (hover.v ? 0.06 : 0))))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(playing ? 0.09 : (hover.v ? 0.06 : 0))))
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.smooth(duration: 0.14)) { hover.v = h } }
         .onTapGesture(count: 2) { m.play(item.id) }
@@ -255,7 +263,7 @@ struct IconButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label.font(.system(size: 13, weight: .semibold)).foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.5))
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(.white.opacity(configuration.isPressed ? 0.18 : (hover.v && enabled ? 0.1 : 0))))
+                .background(Circle().fill(Brand.ink.opacity(configuration.isPressed ? 0.18 : (hover.v && enabled ? 0.1 : 0))))
                 .scaleEffect(configuration.isPressed ? 0.92 : 1)
                 .animation(.smooth(duration: 0.15), value: hover.v).animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
                 .onHover { hover.v = $0 }

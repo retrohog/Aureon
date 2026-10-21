@@ -20,7 +20,7 @@ struct SectionChips<T: Hashable & Identifiable>: View {
                         }
                         .padding(.horizontal, 13).padding(.vertical, 7)
                         .foregroundStyle(on ? Color.white : Color.primary.opacity(0.85))
-                        .background { if on { Capsule().fill(Brand.accent).matchedGeometryEffect(id: "chip", in: ns) } else { Capsule().fill(.white.opacity(0.07)) } }
+                        .background { if on { Capsule().fill(Brand.accent).matchedGeometryEffect(id: "chip", in: ns) } else { Capsule().fill(Brand.ink.opacity(0.07)) } }
                     }.buttonStyle(.plain)
                 }
             }.padding(.vertical, 2)
@@ -66,7 +66,7 @@ struct FacetRow: View {
             }
             .padding(.horizontal, 10).padding(.vertical, 5).contentShape(Rectangle())
             .foregroundStyle(on ? Brand.cyan : .primary)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? AnyShapeStyle(Brand.cyan.opacity(0.12)) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.06 : 0))))
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(on ? AnyShapeStyle(Brand.cyan.opacity(0.12)) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.06 : 0))))
         }.buttonStyle(.plain).onHover { hover.v = $0 }
     }
 }
@@ -303,7 +303,7 @@ struct EpisodeRow: View {
         HStack(alignment: .top, spacing: 12) {
             Button { pod.play(ep, of: show) } label: {
                 ZStack {
-                    Circle().fill(playing ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Color.white.opacity(hover.v ? 0.16 : 0.09))).frame(width: 34, height: 34)
+                    Circle().fill(playing ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.16 : 0.09))).frame(width: 34, height: 34)
                     if let progress { ProgressView(value: progress).progressViewStyle(.circular).controlSize(.small) }
                     else { Image(systemName: playing && m.status.state == .playing ? "waveform" : "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white) }
                 }
@@ -320,7 +320,7 @@ struct EpisodeRow: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(hover.v ? 0.06 : 0)))
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.06 : 0)))
         .onHover { hover.v = $0 }
     }
 }

@@ -2,18 +2,20 @@ import SwiftUI
 import AppKit
 
 enum Brand {
-    /// The colour of selection, primary actions and icons: a vivid coral red, in the spirit of the system's own accent on a dark interface.
-    static let accent = Color(red: 1.0, green: 0.27, blue: 0.40)
-    static let accent2 = Color(red: 1.0, green: 0.55, blue: 0.30)
+    /// Everything here follows the selected theme (see `Theme`); views are rebuilt when the theme changes.
+    static var accent: Color { Theme.current.accent }
+    static var accent2: Color { Theme.current.accent2 }
+    /// Colour of text and hairlines: white-ish on dark themes, black-ish on light ones. Use `ink.opacity(x)` for faint surfaces and lines.
+    static var ink: Color { Theme.current.ink }
     // legacy names, kept so every use follows the same palette
-    static let cyan = accent
-    static let violet = accent2
-    static let pink = accent
-    static let gradient = LinearGradient(colors: [accent, accent2], startPoint: .leading, endPoint: .trailing)
-    static let gradientDiagonal = LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static var cyan: Color { accent }
+    static var violet: Color { accent2 }
+    static var pink: Color { accent }
+    static var gradient: LinearGradient { LinearGradient(colors: [accent, accent2], startPoint: .leading, endPoint: .trailing) }
+    static var gradientDiagonal: LinearGradient { LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing) }
     /// Flat surfaces
-    static let canvas = Color(white: 0.105)
-    static let sidebar = Color(white: 0.145)
+    static var canvas: Color { Theme.current.canvas }
+    static var sidebar: Color { Theme.current.sidebar }
 }
 
 /// The system's translucent material, e.g. the sidebar showing the desktop through the window.
@@ -27,7 +29,7 @@ struct VisualEffect: NSViewRepresentable {
 extension View {
     /// A floating glass panel: a faint fill, a hairline that catches light at the top edge, optional coloured glow.
     func panel(radius: CGFloat = 18, fill: Double = 0.045, glow: Color? = nil) -> some View {
-        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Color.white.opacity(fill)))
+        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Brand.ink.opacity(fill)))
             .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.03), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
             .shadow(color: glow?.opacity(0.25) ?? .clear, radius: 20)
     }
@@ -83,7 +85,7 @@ struct HWBadge: View {
                 .shadow(color: lit ? tone.color.opacity(0.9) : .clear, radius: 3)
             Text(text).font(.system(size: compact ? 9.5 : 11, weight: .bold, design: .monospaced)).tracking(compact ? 0.8 : 1.1).foregroundStyle(tone.color)
             if let detail {
-                Rectangle().fill(.white.opacity(0.18)).frame(width: 1, height: compact ? 9 : 11)
+                Rectangle().fill(Brand.ink.opacity(0.18)).frame(width: 1, height: compact ? 9 : 11)
                 Text(detail).font(.system(size: compact ? 9.5 : 11, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(.white.opacity(0.88))
             }
         }
@@ -172,50 +174,31 @@ struct CoverView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(Brand.ink.opacity(0.12), lineWidth: 0.8))
     }
 }
 
 // MARK: - Fluid slider
 
-/// How a press on a slider is interpreted when the slider guards something that must not jump (the volume).
-/// Pressing the knob grabs it exactly where it is — no jump — and dragging moves it. Pressing anywhere else on the track
-/// only nudges the value a small step toward the press, once, so a stray click can never snap the volume to the far end.
-enum SliderGrab: Equatable {
-    case knob(offset: Double)
-    case step
-
-    /// All numbers are fractions of the track (0…1).
-    static func begin(press: Double, current: Double, knobRadius: Double) -> SliderGrab {
-        abs(press - current) <= knobRadius ? .knob(offset: press - current) : .step
-    }
-
-    static func value(for mode: SliderGrab, pointer: Double, current: Double, step: Double) -> Double {
-        let clamp = { (x: Double) in min(1, max(0, x)) }
-        switch mode {
-        case .knob(let off): return clamp(pointer - off)
-        case .step: return clamp(current + min(step, max(-step, pointer - current)))
-        }
-    }
-}
-
 /// A slim slider that swells under the pointer, shows a knob and a value bubble, and animates between playback updates.
 struct FluidSlider: View {
     @Binding var value: Double
     var range: ClosedRange<Double> = 0...1
-    var tint: Color = .white
+    var tint: Color = Brand.ink
     var restingHeight: CGFloat = 4
     var enabled = true
     var bubble: ((Double) -> String)? = nil
-    /// Volume-like sliders: grab the knob to drag, a click elsewhere only nudges (see `SliderGrab`).
+    /// Volume-like sliders: dragging is relative and a click only nudges (see `SliderDrag`); scrolling moves by small steps.
     var safe = false
     var safeStep = 0.04
+    /// One wheel click moves the value by this much (default 2 % of the range, 1 % for guarded sliders).
+    var scrollStep: Double? = nil
     var onEditingChanged: (Bool) -> Void = { _ in }
 
     @StateObject private var hover = Box(false)
     @StateObject private var dragging = Box(false)
     @StateObject private var pointerX = Box<CGFloat?>(nil)
-    @StateObject private var grab = Box<SliderGrab?>(nil)
+    @StateObject private var dragStart = Box<Double?>(nil)
 
     private func fraction(_ v: Double) -> CGFloat { range.upperBound > range.lowerBound ? CGFloat(min(1, max(0, (v - range.lowerBound) / (range.upperBound - range.lowerBound)))) : 0 }
 
@@ -225,7 +208,7 @@ struct FluidSlider: View {
             let h = active ? restingHeight * 1.9 : restingHeight
             let f = fraction(value)
             ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(enabled ? 0.2 : 0.1)).frame(height: h)
+                Capsule().fill(Brand.ink.opacity(enabled ? 0.2 : 0.1)).frame(height: h)
                 Capsule().fill(tint.opacity(enabled ? 1 : 0.35)).frame(width: max(h, w * f), height: h)
                     .shadow(color: tint.opacity(active ? 0.55 : 0), radius: 6)
                 Circle().fill(.white).frame(width: 15, height: 15).shadow(color: .black.opacity(0.35), radius: 3, y: 1)
@@ -250,27 +233,28 @@ struct FluidSlider: View {
             .gesture(DragGesture(minimumDistance: 0).onChanged { d in
                 guard enabled else { return }
                 let span = range.upperBound - range.lowerBound
-                func toValue(_ f: Double) -> Double { range.lowerBound + f * span }
+                if !dragging.v { dragging.v = true; dragStart.v = Double(f); onEditingChanged(true) }
                 if safe {
-                    if grab.v == nil {
-                        let press = Double(min(1, max(0, d.startLocation.x / w)))
-                        let mode = SliderGrab.begin(press: press, current: Double(f), knobRadius: 16 / Double(max(w, 1)))
-                        grab.v = mode
-                        if mode == .step { value = toValue(SliderGrab.value(for: mode, pointer: press, current: Double(f), step: safeStep)); onEditingChanged(false); return }
-                        dragging.v = true; onEditingChanged(true)
-                    }
-                    if let mode = grab.v, mode != .step {
-                        value = toValue(SliderGrab.value(for: mode, pointer: Double(min(1, max(0, d.location.x / w))), current: Double(f), step: safeStep))
-                    }
-                    return
+                    // relative: pressing changes nothing, dragging moves by the distance dragged
+                    value = range.lowerBound + SliderDrag.relative(start: dragStart.v ?? Double(f), dx: Double(d.translation.width / max(w, 1))) * span
+                } else {
+                    value = range.lowerBound + Double(min(1, max(0, d.location.x / w))) * span
                 }
-                if !dragging.v { dragging.v = true; onEditingChanged(true) }
-                value = toValue(Double(min(1, max(0, d.location.x / w))))
-            }.onEnded { _ in
+            }.onEnded { d in
                 guard enabled else { return }
-                grab.v = nil
+                if safe, abs(Double(d.translation.width)) < SliderDrag.clickSlop {
+                    let span = range.upperBound - range.lowerBound
+                    value = range.lowerBound + SliderDrag.clickNudge(current: dragStart.v ?? Double(f), press: Double(min(1, max(0, d.startLocation.x / max(w, 1)))), step: safeStep) * span
+                }
+                dragStart.v = nil
                 dragging.v = false; onEditingChanged(false)
             })
+            .scrollAdjustable(hovering: hover.v && enabled) { notches in
+                let per = scrollStep.map { $0 / max(range.upperBound - range.lowerBound, 1e-9) } ?? (safe ? 0.01 : 0.02)
+                value = ScrollStep.apply(value: value, notches: notches, range: range, perNotch: per, maxMove: safe ? 0.03 : 0.1)
+                onEditingChanged(true); onEditingChanged(false)
+                return true
+            }
         }
         .frame(height: 24)
         .opacity(enabled ? 1 : 0.7)
@@ -289,19 +273,22 @@ struct FluidSlider: View {
 
 struct TransportButtonStyle: ButtonStyle {
     var size: CGFloat = 22
-    func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, size: size) }
+    /// Colour of the glyphs: white on the immersive Now Playing page, the theme's ink on the player bar.
+    var ink: Color = .white
+    func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, size: size, ink: ink) }
 
     private struct Inner: View {
         let configuration: Configuration
         let size: CGFloat
+        let ink: Color
         @StateObject private var hover = Box(false)
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
                 .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(.white.opacity(enabled ? 1 : 0.35))
+                .foregroundStyle(ink.opacity(enabled ? 1 : 0.35))
                 .frame(width: size * 2, height: size * 2)
-                .background(Circle().fill(.white.opacity(configuration.isPressed ? 0.2 : (hover.v && enabled ? 0.12 : 0))))
+                .background(Circle().fill(ink.opacity(configuration.isPressed ? 0.2 : (hover.v && enabled ? 0.12 : 0))))
                 .scaleEffect(configuration.isPressed ? 0.9 : (hover.v && enabled ? 1.06 : 1))
                 .animation(.spring(response: 0.25, dampingFraction: 0.65), value: configuration.isPressed)
                 .animation(.smooth(duration: 0.15), value: hover.v)
@@ -328,11 +315,11 @@ struct VerticalFader: View {
     var body: some View {
         let f = fraction(value), mid = fraction(0), active = hover.v || dragging.v
         ZStack {
-            Capsule().fill(.white.opacity(0.12)).frame(width: 4, height: height)
+            Capsule().fill(Brand.ink.opacity(0.12)).frame(width: 4, height: height)
             // gain fill: from the zero line to the knob
             Capsule().fill(Brand.gradient).frame(width: 4, height: max(2, abs(f - mid) * height))
                 .position(x: 15, y: height * (1 - (f + mid) / 2)).opacity(enabled ? 1 : 0.3)
-            Rectangle().fill(.white.opacity(0.3)).frame(width: 12, height: 1).position(x: 15, y: height * (1 - mid))
+            Rectangle().fill(Brand.ink.opacity(0.3)).frame(width: 12, height: 1).position(x: 15, y: height * (1 - mid))
             Circle().fill(.white).frame(width: active ? 14 : 11, height: active ? 14 : 11).shadow(color: Brand.violet.opacity(active ? 0.8 : 0.3), radius: active ? 6 : 2)
                 .position(x: 15, y: height * (1 - f))
         }
@@ -340,6 +327,7 @@ struct VerticalFader: View {
         .contentShape(Rectangle())
         .opacity(enabled ? 1 : 0.45)
         .onHover { hover.v = $0 }
+        .scrollAdjustable(hovering: hover.v && enabled) { n in value = ScrollStep.apply(value: value, notches: n, range: range); return true }
         .animation(.easeOut(duration: 0.12), value: active)
         .gesture(DragGesture(minimumDistance: 0).onChanged { d in
             dragging.v = true

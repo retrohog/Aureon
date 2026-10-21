@@ -26,7 +26,7 @@ struct AmbientBackground: View {
 
     var body: some View {
         ZStack {
-            Color(white: 0.06)
+            Brand.canvas
             TimelineView(.animation(minimumInterval: animated ? 1.0 / 24 : 3600, paused: !animated)) { tl in
                 MeshGradient(width: 3, height: 3, points: points(tl.date.timeIntervalSinceReferenceDate), colors: palette.grid.map(\.color), smoothsColors: true)
             }

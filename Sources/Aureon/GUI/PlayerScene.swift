@@ -127,7 +127,7 @@ struct NowPlayingScrubber: View {
         let live = m.status.sourceInfo?.isLive == true && m.isActive
         let dur = max(progress.duration, 0.001), pos = m.scrub ?? progress.position
         VStack(spacing: 2) {
-            FluidSlider(value: Binding(get: { m.scrub ?? progress.position }, set: { m.scrub = $0 }), range: 0...dur, tint: tint, enabled: m.isActive && !live, bubble: { clock($0) }) { editing in
+            FluidSlider(value: Binding(get: { m.scrub ?? progress.position }, set: { m.scrub = $0 }), range: 0...dur, tint: tint, enabled: m.isActive && !live, bubble: { clock($0) }, scrollStep: 5) { editing in
                 if !editing, let t = m.scrub { m.player.send(.seekTo(t)); m.scrub = nil }
             }
             HStack {

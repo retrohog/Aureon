@@ -477,23 +477,35 @@ struct InterfaceTests {
     }
 
     func volumeSliderCannotJump() {
-        // the bug: the volume showed 100 % and a click anywhere near the end set it to 100 %
+        // the original bug: the volume showed 100 % and a click anywhere near the end set it to 100 %
         let current = 0.20
-        let far = SliderGrab.begin(press: 0.97, current: current, knobRadius: 0.03)
-        expect(far == .step, "a press far from the knob is not a grab")
-        let v = SliderGrab.value(for: far, pointer: 0.97, current: current, step: 0.04)
-        expect(abs(v - 0.24) < 1e-9, "…and nudges by one step instead of jumping to 97 %: \(v)")
-        expect(abs(SliderGrab.value(for: .step, pointer: 0.0, current: 0.5, step: 0.04) - 0.46) < 1e-9, "downward nudges are the same size")
-        expect(SliderGrab.value(for: .step, pointer: 0.99, current: 0.99, step: 0.04) == 0.99 && SliderGrab.value(for: .step, pointer: 1, current: 0.98, step: 0.04) == 1, "never past the ends")
-        let near = SliderGrab.begin(press: 0.215, current: current, knobRadius: 0.03)
-        guard case .knob(let off) = near else { expect(false, "a press on the knob grabs it"); return }
-        expect(abs(SliderGrab.value(for: near, pointer: 0.215, current: current, step: 0.04) - current) < 1e-9, "grabbing does not move the value (no jump): offset \(off)")
-        expect(abs(SliderGrab.value(for: near, pointer: 0.40, current: current, step: 0.04) - 0.385) < 1e-9, "dragging follows the pointer relative to where it was grabbed")
-        expect(SliderGrab.value(for: near, pointer: 1.5, current: current, step: 0.04) == 1 && SliderGrab.value(for: near, pointer: -2, current: current, step: 0.04) == 0)
-        // a sequence of stray clicks raises the volume slowly, one visible step at a time
+        // pressing never changes the value; only movement does, by the distance moved, from wherever the press was
+        expect(SliderDrag.relative(start: current, dx: 0) == current, "a press alone changes nothing")
+        expect(abs(SliderDrag.relative(start: current, dx: 0.15) - 0.35) < 1e-9, "dragging right by 15 % of the track adds 15 %")
+        expect(abs(SliderDrag.relative(start: current, dx: -0.05) - 0.15) < 1e-9)
+        expect(SliderDrag.relative(start: current, dx: 5) == 1 && SliderDrag.relative(start: current, dx: -5) == 0, "clamped at the ends")
+        // the second bug: dragging stopped after a short distance. A long drag from anywhere keeps following the pointer
+        var v = current
+        for i in 1...40 { v = SliderDrag.relative(start: current, dx: Double(i) * 0.01) }
+        expect(abs(v - 0.60) < 1e-9, "a long continuous drag keeps going: \(v)")
+        // a click without movement nudges toward the press by one step at most
+        expect(abs(SliderDrag.clickNudge(current: current, press: 0.97, step: 0.04) - 0.24) < 1e-9, "a click near the far end moves 4 %, not to 97 %")
+        expect(abs(SliderDrag.clickNudge(current: 0.5, press: 0.0, step: 0.04) - 0.46) < 1e-9)
+        expect(SliderDrag.clickNudge(current: 0.99, press: 1, step: 0.04) == 1 && SliderDrag.clickNudge(current: 0.5, press: 0.51, step: 0.04) == 0.51, "a click right next to the knob lands there")
         var x = 0.0
-        for _ in 0..<5 { x = SliderGrab.value(for: .step, pointer: 1, current: x, step: 0.04) }
-        expect(abs(x - 0.20) < 1e-9, "five clicks at the far end give 20 %, not 100 %: \(x)")
+        for _ in 0..<5 { x = SliderDrag.clickNudge(current: x, press: 1, step: 0.04) }
+        expect(abs(x - 0.20) < 1e-9, "five stray clicks at the far end give 20 %, not 100 %: \(x)")
+    }
+
+    func scrollWheelSteps() {
+        expect(ScrollStep.notches(deltaY: 3, precise: false) == 3 && abs(ScrollStep.notches(deltaY: 28, precise: true) - 2) < 1e-9, "a wheel click is one unit; a trackpad needs ~14 points")
+        let r = 0.0...100.0
+        expect(abs(ScrollStep.apply(value: 50, notches: 1, range: r) - 52) < 1e-9, "one click moves 2 % of the range")
+        expect(abs(ScrollStep.apply(value: 50, notches: -3, range: r) - 44) < 1e-9)
+        expect(ScrollStep.apply(value: 99, notches: 5, range: r) == 100 && ScrollStep.apply(value: 1, notches: -5, range: r) == 0, "clamped")
+        expect(abs(ScrollStep.apply(value: 50, notches: 100, range: r, perNotch: 0.01, maxMove: 0.03) - 53) < 1e-9, "a fling can never move a guarded slider more than 3 % in one event")
+        expect(ScrollStep.apply(value: 5, notches: .nan, range: r) == 5 && ScrollStep.apply(value: 5, notches: 1, range: 3...3) == 5, "degenerate input is ignored")
+        expect(abs(ScrollStep.apply(value: 0.3, notches: 1, range: -26...6, perNotch: 0.03) - (0.3 + 0.96)) < 1e-9, "works on any range")
     }
 
     func qualityTiers() {
