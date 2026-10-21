@@ -4,7 +4,7 @@ An open-source, audiophile-grade music player for macOS. Aureon keeps your music
 and lets you opt in to processing — upsampling, ReplayGain, EQ, crossfeed, room correction, plugins — only when you want it. The
 signal-path panel always tells you which it is.
 
-> Status: early (0.2). The engine and every service are covered by 193 automated tests; what could not be verified without special
+> Status: early (0.2). The engine and every service are covered by 220 automated tests; what could not be verified without special
 > hardware, accounts or signing is listed under [Limitations](#limitations) — read it before relying on those parts.
 
 ## Features
@@ -20,6 +20,10 @@ signal-path panel always tells you which it is.
 | **Live queue** | Remove, reorder, insert and append while playing; the audible track is never disturbed. |
 | **Headphones** | Bauer **BS2B crossfeed**; **AutoEQ** profiles fetched on demand from the open AutoEQ database (any number of filters, safety pre-amp). |
 | **Room correction** | **Partitioned FFT convolution** (Accelerate) of Room EQ Wizard–style impulse responses (WAV int/float, mono/stereo, any rate), resampled to the stream. 8 s of stereo IR runs ~57× faster than real time. |
+| **Internet radio** | Free stations worldwide from the radio-browser.info directory: Local radios, High Quality (including lossless FLAC streams), By genre, By location, By language, favourites and your own stream URLs. MP3, AAC/HE-AAC and FLAC over HTTP or HTTPS, live "now playing" titles (ICY metadata), automatic reconnection. Streams are **upscaled automatically** with the sinc resampler to the DAC's best rate (switchable). |
+| **Podcasts** | Top shows, categories and languages from Apple's public podcast directory; episodes from the show's own RSS feed, downloaded before playing so seeking and the whole signal path work as for any file. |
+| **Artists** | Round portraits (Deezer, then Wikipedia) with an offline fallback that builds a mosaic of the artist's own album covers; sorting, quality filters, A–Z grouping, grid or list, cover-size slider. Songs and albums sort and filter the same way. |
+| **Navigation** | Back / Forward (⌘[ ⌘]) retrace pages, albums, genres and shows. |
 | **Apple Music-style layout** | Grouped sidebar (Library, Classical, Sound, Discover, Devices) with search; albums as a cover grid with HD marks, album pages with Play / Shuffle / Add to Queue; a floating player bar on every page with transport, progress, format badge, volume and the queue (opened from the bar, no permanent column). |
 | **Immersive player** | Large cover over a drifting mesh gradient in the cover's own colours, serif title hierarchy (title, artist, album · year · genre, composer), hardware-style format badges (Hi-Res mark, FLAC, 24-BIT \| 96 kHz), a fluid scrubber and volume slider, animated tab transitions. |
 | **Signal path** | A node graph from file → decoder → stages → buffer → DAC with pulses flowing along the line; green while the signal is untouched, orange from the first stage that changes samples. Hover a station for details. |
@@ -55,6 +59,7 @@ Aureon play --crossfeed --headphone-eq "HD 650 ParametricEQ.txt" --convolve room
 Aureon play --dsd dop --hog track.dsf                  # only with a DoP-capable DAC!
 Aureon daemon --music ~/Music --name "Study"           # headless; prints the pairing token
 Aureon hwdebug --all --json report.json                # test your USB DAC
+Aureon radiocheck https://example.com/stream.mp3     # decode a live stream for a few seconds and report (plays nothing)
 Aureon inspect song.flac | Aureon verify a.flac b.wav | Aureon devices | Aureon selftest [filter]
 ```
 
@@ -65,7 +70,7 @@ Keys: <kbd>Space</kbd> pause · <kbd>←</kbd>/<kbd>→</kbd> ±10 s · <kbd>⌘
 ## Testing
 
 ```bash
-swift build -c release && .build/release/Aureon selftest        # 193 tests, ~1 min, no audio hardware needed
+swift build -c release && .build/release/Aureon selftest        # 220 tests, ~1 min, no audio hardware needed
 .build/release/Aureon selftest queue                             # a subset, by name
 ```
 
@@ -97,6 +102,9 @@ Honest list of what is **not** verified or **not** built:
 - Convolution adds one block (≈ 11 ms) of latency and its tail is cut at the end of the last track.
 - Real-time safety: our callback code is lock-free and allocation-free; Swift reference counting and Apple's `AVAudioEngine` render block are used as documented but outside our control.
 - **Artwork lookup is tested against canned responses**, not the live iTunes / MusicBrainz services. Only artist and album names are sent; it can be switched off in Audio → Artwork. DSF/DFF tags (stored at the end of the file) are not read yet.
+- **Radio is lossy** (except the FLAC stations). Upscaling replaces the system mixer's resampling with one long-filter step; it cannot restore detail the broadcaster removed. HLS (`.m3u8`) and Ogg/Opus stations are not offered. Verified against real MP3, HE-AAC and FLAC stations with `radiocheck`; the directory itself is a community service and some stations are offline.
+- **Podcast playback downloads the whole episode first** (progress is shown); there is no streaming start, queue of episodes or resume position yet.
+- **Artist portraits** come from Deezer's public search by exact name and Wikipedia; a common name can still match the wrong artist, in which case the album mosaic is a safer look.
 - **No TagLib:** the parsers are Aureon's own (a C++ dependency adds build complexity for no benefit here); unusual tag layouts may still need AVFoundation's fallback.
 - The interface is dark-only. Hover, drag and animation behaviour was reviewed from rendered snapshots and code, not by clicking through the live app.
 - Not built: streaming services, UPnP/Chromecast renderers, MQA.

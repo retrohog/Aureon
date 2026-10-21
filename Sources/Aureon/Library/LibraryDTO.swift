@@ -33,6 +33,7 @@ struct TrackDTO: Codable, Identifiable, Hashable {
     var credits: [CreditDTO]
     var genres: [String]
     var mbRecordingID: String?
+    var addedAt: Double? = nil
 
     func names(_ role: CreditRole) -> [String] { credits.filter { $0.role == role.rawValue }.map(\.name) }
     var artistLine: String { let a = names(.artist); return a.isEmpty ? names(.albumArtist).joined(separator: ", ") : a.joined(separator: ", ") }
@@ -66,6 +67,14 @@ struct ReleaseDTO: Codable, Identifiable, Hashable {
     var trackCount: Int
     var artistNames: [String]
     var mbReleaseID: String?
+    // aggregated from the album's tracks; optional so libraries and remote peers from older versions still decode
+    var maxSampleRate: Double?
+    var maxBitDepth: Int?
+    var genre: String?
+    var addedAt: Double?
+
+    var isHiRes: Bool { (maxSampleRate ?? 0) > 48_000 || (maxBitDepth ?? 0) > 16 }
+    var isDSD: Bool { maxBitDepth == 1 }
 }
 
 /// One recording of a work: the tracks of that work on one release, with who performed them.

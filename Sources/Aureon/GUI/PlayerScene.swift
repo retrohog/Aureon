@@ -10,11 +10,11 @@ struct NowPlayingView: View {
         GeometryReader { geo in
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
-                    hero(width: geo.size.width - 64)
+                    hero(width: geo.size.width - 56)
                     SignalPathView()
                     LiveVisualizerPanel()
                 }
-                .padding(.horizontal, 32).padding(.top, 36).padding(.bottom, 36)
+                .padding(.horizontal, 28).padding(.top, 52).padding(.bottom, 28)
             }
         }
         .environment(\.colorScheme, .dark)
@@ -22,10 +22,10 @@ struct NowPlayingView: View {
 
     @ViewBuilder private func hero(width: CGFloat) -> some View {
         let item = m.focusItem
-        let side = min(max(width * 0.44, 240), 430)
+        let side = min(max(width * 0.40, 220), 340)
         if width >= 700 {
-            HStack(alignment: .bottom, spacing: 40) {
-                CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20).frame(width: side, height: side)
+            HStack(alignment: .bottom, spacing: 34) {
+                CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note").frame(width: side, height: side)
                     .shadow(color: .black.opacity(0.5), radius: 34, y: 18)
                     .id(m.hero.token).transition(.opacity.combined(with: .scale(scale: 0.97)))
                 info(item).frame(maxWidth: .infinity, minHeight: side, alignment: .bottomLeading)
@@ -41,17 +41,18 @@ struct NowPlayingView: View {
 
     private func info(_ item: QueueItem?) -> some View {
         let tint = m.hero.palette.accent.color
+        let d = m.focusDisplay
         return VStack(alignment: .leading, spacing: 0) {
-            Text(kickerText(item)).kicker().foregroundStyle(.white.opacity(0.6)).padding(.bottom, 10)
-            Text(item?.title ?? "Nothing playing").font(Typo.title(item.map { $0.title.count > 28 ? 32 : 40 } ?? 40)).foregroundStyle(.white)
+            Text(kickerText(item)).microLabel().foregroundStyle(.white.opacity(0.55)).padding(.bottom, 10)
+            Text(d?.title ?? "Nothing playing").font(Typo.title((d?.title.count ?? 0) > 28 ? 28 : 34)).foregroundStyle(.white)
                 .lineLimit(3).minimumScaleFactor(0.75).fixedSize(horizontal: false, vertical: true)
-            if let a = item?.artist, !a.isEmpty { Text(a).font(Typo.artist).foregroundStyle(.white.opacity(0.92)).lineLimit(2).padding(.top, 8) }
-            if let line = albumLine(item) { Text(line).font(Typo.album).foregroundStyle(.white.opacity(0.62)).lineLimit(2).padding(.top, 3) }
+            if let a = d?.artist, !a.isEmpty { Text(a).font(.system(size: 18, weight: .medium)).foregroundStyle(.white.opacity(0.92)).lineLimit(2).padding(.top, 7) }
+            if let line = d?.detail, !line.isEmpty { Text(line).font(.system(size: 13.5)).foregroundStyle(.white.opacity(0.6)).lineLimit(2).padding(.top, 3) }
             if let c = item?.composer, !c.isEmpty {
                 HStack(spacing: 8) { Text("Composer").kicker().foregroundStyle(.white.opacity(0.45)); Text(c).font(Typo.composer).foregroundStyle(.white.opacity(0.8)) }.padding(.top, 10)
             }
             if let raw = m.status.sourceInfo, m.isActive {
-                FormatBadges(source: raw).padding(.top, 16)
+                FormatBadges(source: raw, output: m.status.info, bitrate: m.status.live?.bitrate).padding(.top, 14)
                 if let a = item?.analysis {
                     HStack(spacing: 8) {
                         HWBadge(text: "PEAK", detail: String(format: "%.1f dBFS", a.peakDB), tone: a.peakDB > -0.1 ? .orange : .neutral, lit: a.peakDB > -0.1)
@@ -63,17 +64,17 @@ struct NowPlayingView: View {
             if let p = m.status.loadProgress {
                 HStack(spacing: 10) { ProgressView(value: p).frame(width: 140).tint(tint); Text("Loading into RAM \(Int(p * 100))%").font(.caption).foregroundStyle(.white.opacity(0.6)) }.padding(.top, 10)
             }
-            Spacer(minLength: 22)
-            scrubber(tint)
-            transport.padding(.top, 6)
-            volume.padding(.top, 10)
+            Spacer(minLength: 18)
+            NowPlayingScrubber(tint: tint)
+            transport.padding(.top, 4)
+            volume.padding(.top, 8)
         }
     }
 
     private func kickerText(_ item: QueueItem?) -> String {
         guard item != nil else { return "Aureon" }
-        var parts = [m.isActive ? (m.status.state == .paused ? "Paused" : "Now playing") : "Up next"]
-        if let n = item?.trackNumber { parts.append(item?.trackTotal.map { "Track \(n) of \($0)" } ?? "Track \(n)") }
+        var parts = [m.isActive ? (m.status.state == .paused ? "Paused" : (item?.isStream == true ? "On air" : "Now playing")) : "Up next"]
+        if item?.isStream != true, let n = item?.trackNumber { parts.append(item?.trackTotal.map { "Track \(n) of \($0)" } ?? "Track \(n)") }
         return parts.joined(separator: "  ·  ")
     }
 
@@ -83,33 +84,21 @@ struct NowPlayingView: View {
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
-    private func scrubber(_ tint: Color) -> some View {
-        let dur = max(m.status.duration, 0.001)
-        let pos = m.scrub ?? m.status.position
-        return VStack(spacing: 2) {
-            FluidSlider(value: Binding(get: { m.scrub ?? m.status.position }, set: { m.scrub = $0 }), range: 0...dur, tint: tint, enabled: m.isActive,
-                        bubble: { clock($0) }) { editing in
-                if !editing, let t = m.scrub { m.player.send(.seekTo(t)); m.scrub = nil }
-            }
-            HStack {
-                Text(clock(pos)); Spacer(); Text("-" + clock(max(0, dur - pos)))
-            }.font(.system(size: 11.5, weight: .medium, design: .monospaced)).monospacedDigit().foregroundStyle(.white.opacity(0.55))
-        }
-    }
-
     private var transport: some View {
         HStack(spacing: 6) {
             Button { m.player.send(.previous) } label: { Image(systemName: "backward.fill") }.keyboardShortcut(.leftArrow, modifiers: .command).help("Previous")
             Button { m.player.send(.seekBy(-10)) } label: { Image(systemName: "gobackward.10") }.keyboardShortcut(.leftArrow, modifiers: []).help("Back 10 s")
+                .disabled(m.status.sourceInfo?.isLive == true)
             Button { m.togglePlay() } label: {
                 Image(systemName: m.isActive && m.status.state == .playing ? "pause.fill" : "play.fill")
-                    .contentTransition(.symbolEffect(.replace)).font(.system(size: 26))
+                    .contentTransition(.symbolEffect(.replace)).font(.system(size: 22))
             }
             .buttonStyle(PlayButtonStyle(tint: m.hero.palette.accent.color)).keyboardShortcut(.space, modifiers: []).help("Play / pause")
             Button { m.player.send(.seekBy(10)) } label: { Image(systemName: "goforward.10") }.keyboardShortcut(.rightArrow, modifiers: []).help("Forward 10 s")
+                .disabled(m.status.sourceInfo?.isLive == true)
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
         }
-        .buttonStyle(TransportButtonStyle(size: 17))
+        .buttonStyle(TransportButtonStyle(size: 15))
         .disabled(m.items.isEmpty)
         .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.2), value: m.status.state)
@@ -128,6 +117,26 @@ struct NowPlayingView: View {
     }
 }
 
+/// The big scrubber of the Now Playing page. Only this view observes the playhead.
+struct NowPlayingScrubber: View {
+    @EnvironmentObject var m: PlayerModel
+    @EnvironmentObject var progress: ProgressModel
+    let tint: Color
+
+    var body: some View {
+        let live = m.status.sourceInfo?.isLive == true && m.isActive
+        let dur = max(progress.duration, 0.001), pos = m.scrub ?? progress.position
+        VStack(spacing: 2) {
+            FluidSlider(value: Binding(get: { m.scrub ?? progress.position }, set: { m.scrub = $0 }), range: 0...dur, tint: tint, enabled: m.isActive && !live, bubble: { clock($0) }) { editing in
+                if !editing, let t = m.scrub { m.player.send(.seekTo(t)); m.scrub = nil }
+            }
+            HStack {
+                Text(live ? "LIVE" : clock(pos)).foregroundStyle(live ? Brand.pink : .white.opacity(0.55)); Spacer(); Text(live ? "" : "-" + clock(max(0, dur - pos))).foregroundStyle(.white.opacity(0.55))
+            }.font(.system(size: 11, weight: .medium, design: .monospaced)).monospacedDigit()
+        }
+    }
+}
+
 struct PlayButtonStyle: ButtonStyle {
     var tint: Color
     func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, tint: tint) }
@@ -138,7 +147,7 @@ struct PlayButtonStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .foregroundStyle(.black.opacity(0.85))
-                .frame(width: 62, height: 62)
+                .frame(width: 54, height: 54)
                 .background(Circle().fill(.white).shadow(color: tint.opacity(hover.v ? 0.7 : 0.4), radius: hover.v ? 18 : 10, y: 3))
                 .scaleEffect(configuration.isPressed ? 0.93 : (hover.v ? 1.05 : 1))
                 .animation(.spring(response: 0.28, dampingFraction: 0.62), value: configuration.isPressed)
@@ -196,6 +205,6 @@ struct LiveVisualizerPanel: View {
                 Text("The analyser is off. Turn it on in Audio → Visualiser.").font(.callout).foregroundStyle(.white.opacity(0.5)).padding(.vertical, 14)
             }
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading).glassPanel()
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading).glassPanel()
     }
 }

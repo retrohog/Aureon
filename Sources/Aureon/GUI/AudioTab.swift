@@ -16,6 +16,7 @@ struct AudioTab: View {
                 }
             }
             OutputCard()
+            radioCard
             artworkCard
             visualiserCard
             HeadphoneCard(hp: m.headphones)
@@ -30,6 +31,18 @@ struct AudioTab: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("DoP sends DSD data inside a PCM stream. A DAC that does not understand DoP will play it as very loud noise. Lower the volume first.")
+        }
+    }
+
+    private var radioCard: some View {
+        Card(title: "Internet radio", subtitle: "Free stations on the Radio page: MP3, AAC and FLAC streams") {
+            Toggle("Upscale streams to the DAC's best rate", isOn: $m.settings.radio.upscale)
+            if m.settings.radio.upscale {
+                Picker("Highest rate", selection: $m.settings.radio.maxRate) {
+                    ForEach([96_000.0, 176_400, 192_000, 384_000], id: \.self) { Text(formatRate($0)).tag($0) }
+                }
+            }
+            Note(text: "Radio is lossy, so this cannot bring back detail the broadcaster removed. What it does: one high-quality resampling step (long sinc filter) instead of the system mixer's, and the filter's images fall far above the audible band. Lossless FLAC stations are marked and play bit-perfect when upscaling is off.")
         }
     }
 

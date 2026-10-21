@@ -46,8 +46,19 @@ func extraTests() -> [(String, TestFn)] {
           ("art.matching", aw.matchingRules), ("art.itunes", aw.iTunesHitIsUpscaledAndCached), ("art.musicBrainz", aw.fallsBackToMusicBrainzAndCoverArtArchive),
           ("art.rejects", aw.rejectsWrongMatchesAndRemembersNothingFound), ("art.offline", aw.offlineIsNotRemembered), ("art.dedupe", aw.concurrentRequestsForOneAlbumShareOneLookup),
           ("art.tooSmall", aw.tooSmallImagesAreSkipped)]
+    let rd = RadioTests()
+    t += [("radio.demux", rd.icyDemuxerHandlesAnySplit), ("radio.fifo", rd.fifoIsBoundedAndOrdered), ("radio.http", rd.httpClientFollowsRedirectsAndDecodesChunks),
+          ("radio.decode", rd.radioDecodesMetadataAndTone), ("radio.servers", rd.otherServerStyles), ("radio.failures", rd.failuresAreReportedQuickly),
+          ("radio.reconnect", rd.reconnectsWhenTheServerDrops), ("radio.player", rd.playerPlaysAndUpscalesALiveStream), ("radio.flac", rd.losslessFLACStream), ("radio.settings", rd.radioSettingsDecodeFromOldSaves)]
+    let ai = ArtistImageTests()
+    t += [("artist.deezer", ai.deezerParsing), ("artist.portrait", ai.portraitFromDeezerThenCache), ("artist.wikipedia", ai.wikipediaIsTheSecondChoice),
+          ("artist.offline", ai.missingAndOfflineAreHandled), ("artist.mosaic", ai.mosaicLayouts)]
+    let dt = DirectoryTests()
+    t += [("directory.stations", dt.stationParsingKeepsOnlyPlayableStreams), ("directory.facets", dt.facetParsing), ("directory.queries", dt.radioQueriesAndFallbackServers),
+          ("directory.favorites", dt.favoritesAndCustomStations), ("podcast.feed", dt.feedParsing), ("podcast.directory", dt.podcastDirectoryParsing),
+          ("podcast.requests", dt.podcastRequestsAndLookups), ("podcast.download", dt.episodeDownloadsAreCachedAndVerified)]
     let ui = InterfaceTests()
-    t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers), ("ui.navigation", ui.navigationStructure)]
+    t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers), ("ui.navigation", ui.navigationStructure), ("ui.liveSignal", ui.liveStationsInTheSignalPath), ("ui.history", ui.navigationHistory), ("ui.republish", ui.playheadChangesDoNotRepublish), ("ui.ordering", ui.sortingFilteringAndGrouping)]
     let dc = DiscordTests()
     t += [("discord.quality", dc.qualityLabels), ("discord.text", dc.textRules), ("discord.presence", dc.presenceBuilder), ("discord.frame", dc.frameEncoding),
           ("discord.socket", dc.handshakeAndActivityOverARealSocket), ("discord.notRunning", dc.discordNotRunning), ("discord.errors", dc.discordErrorsAreSurfaced),

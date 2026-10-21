@@ -15,6 +15,7 @@ Aureon — bit-perfect music player
   Aureon selftest [filter]     run the built-in test suite
   Aureon daemon [options]      headless audio engine + network remote control (see below)
   Aureon hwdebug [options]     hardware path diagnostics (hog mode, integer mode, timing)
+  Aureon radiocheck URL [sec]  open a live radio stream and report what it decodes (plays nothing)
 
 play options:
   --device <name>          output device (substring match)
@@ -129,6 +130,32 @@ func cmdDevices() {
         let cur = OutputDevice(id: d.id)?.currentRate ?? 0
         print("\(d.name): now \(Int(cur)) Hz; rates \(d.rates.map { String(Int($0)) }.joined(separator: ", "))")
     }
+}
+
+/// Opens a live stream, decodes a few seconds and reports what arrived (codec, rate, level, the station's current title). Plays nothing.
+func cmdRadioCheck(_ address: String, seconds: Double) {
+    guard let url = URL(string: address) else { fail("not a web address: \(address)") }
+    let t0 = Date()
+    guard let src = try? RadioSource(url: url, timeout: 15) else { fail("could not open the stream") }
+    defer { src.stop() }
+    let info = src.info, ch = info.channels
+    print(String(format: "opened in %.1f s: %@, %.0f Hz, %d ch%@", Date().timeIntervalSince(t0), info.codec, info.sampleRate, ch, info.transparent ? " (lossless)" : ""))
+    let want = Int(seconds * info.sampleRate)
+    let buf = UnsafeMutablePointer<Int32>.allocate(capacity: 4096 * ch); defer { buf.deallocate() }
+    var got = 0, sumSq = 0.0, peak = 0.0, silent = 0
+    let end = Date().addingTimeInterval(seconds + 10)
+    while got < want && Date() < end {
+        let n = src.read(into: buf, frames: 4096)
+        if n == 0 { break }
+        var block = 0.0
+        for i in 0..<(n * ch) { let v = Double(buf[i]) / 2_147_483_648; sumSq += v * v; block += v * v; peak = max(peak, abs(v)) }
+        if block == 0 { silent += n }
+        got += n
+    }
+    let rms = sqrt(sumSq / Double(max(got * ch, 1)))
+    let live = src.live.snapshot
+    print(String(format: "decoded %.1f s: RMS %.1f dBFS, peak %.1f dBFS, %.1f s of silence/gaps", Double(got) / info.sampleRate, 20 * log10(max(rms, 1e-9)), 20 * log10(max(peak, 1e-9)), Double(silent) / info.sampleRate))
+    print("station: \(live.station ?? "-") | bitrate: \(live.bitrate.map(String.init) ?? "-") | genre: \(live.genre ?? "-") | now playing: \(live.title ?? "-")")
 }
 
 func cmdVerify(_ a: String, _ b: String) throws {
@@ -254,6 +281,7 @@ func runCLI(_ args: [String]) {
         switch args.first {
         case "inspect" where args.count == 2: try cmdInspect(args[1])
         case "devices": cmdDevices()
+        case "radiocheck" where args.count >= 2: cmdRadioCheck(args[1], seconds: args.count > 2 ? Double(args[2]) ?? 6 : 6)
         case "verify" where args.count == 3: try cmdVerify(args[1], args[2])
         case "play": try cmdPlay(Array(args.dropFirst()))
         case "selftest": exit(SelfTestRunner.run(filter: args.count > 1 ? args[1] : nil))

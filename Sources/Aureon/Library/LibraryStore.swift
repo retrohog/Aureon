@@ -280,7 +280,8 @@ final class LibraryStore: @unchecked Sendable {
                         year: int(t, "year"), releaseID: rel.flatMap { str($0, "uid") }, releaseTitle: rel.flatMap { str($0, "title") },
                         workID: work.flatMap { str($0, "uid") }, workTitle: work.flatMap { str($0, "title") }, catalog: work.flatMap { str($0, "catalogNumber") },
                         movementID: mv.flatMap { str($0, "uid") }, movementNumber: mv.flatMap { int($0, "number") }, movementTitle: mv.flatMap { str($0, "title") },
-                        credits: credits, genres: many(t, "genres").compactMap { str($0, "name") }.sorted(), mbRecordingID: str(t, "mbRecordingID"))
+                        credits: credits, genres: many(t, "genres").compactMap { str($0, "name") }.sorted(), mbRecordingID: str(t, "mbRecordingID"),
+                        addedAt: dbl(t, "addedAt") > 0 ? dbl(t, "addedAt") : nil)
     }
 
     private func partyDTO(_ p: NSManagedObject, role: CreditRole? = nil) -> PartyDTO {
@@ -303,7 +304,10 @@ final class LibraryStore: @unchecked Sendable {
         var seen = Set<String>(), artists: [String] = []
         for t in tracks { for c in many(t, "credits") where str(c, "role") == "albumArtist" || str(c, "role") == "artist" {
             if let n = (c.value(forKey: "party") as? NSManagedObject).flatMap({ str($0, "name") }), seen.insert(n).inserted { artists.append(n) } } }
-        return ReleaseDTO(id: str(r, "uid") ?? "", title: str(r, "title") ?? "", year: int(r, "year"), trackCount: tracks.count, artistNames: Array(artists.prefix(4)), mbReleaseID: str(r, "mbReleaseID"))
+        let genre = tracks.lazy.compactMap { self.many($0, "genres").compactMap { self.str($0, "name") }.sorted().first }.first
+        return ReleaseDTO(id: str(r, "uid") ?? "", title: str(r, "title") ?? "", year: int(r, "year"), trackCount: tracks.count, artistNames: Array(artists.prefix(4)), mbReleaseID: str(r, "mbReleaseID"),
+                          maxSampleRate: tracks.map { dbl($0, "sampleRate") }.max(), maxBitDepth: tracks.compactMap { int($0, "bitDepth") }.max(), genre: genre,
+                          addedAt: tracks.map { dbl($0, "addedAt") }.max())
     }
 
     // MARK: queries

@@ -372,10 +372,104 @@ struct InterfaceTests {
         let cats = Tab.allCases.compactMap(\.libraryCategory)
         expect(Set(cats).count == cats.count, "every library page has its own category")
         expect(Tab.allCases.filter { $0.section == .library }.count == 3 && Tab.allCases.filter { $0.section == .classical }.count == 4)
+        expect(Tab.allCases.filter { $0.section == .listen }.map(\.rawValue) == ["Now Playing", "Search", "Radio", "Podcasts"], "radio and podcasts sit with Now Playing")
         expect(Tab.search.libraryCategory == nil && Tab.player.libraryCategory == nil && Tab.audio.libraryCategory == nil)
         expect(Set(Tab.allCases.map(\.icon)).count == Tab.allCases.count, "no two destinations share an icon")
         expect(Set(Tab.allCases.map(\.rawValue)).count == Tab.allCases.count)
         expect(Set(LibraryModel.Category.allCases) == Set(cats), "every category is reachable from the sidebar")
+    }
+
+    func liveStationsInTheSignalPath() {
+        var s = PlayerStatus()
+        s.sourceInfo = StreamInfo(sampleRate: 44_100, channels: 2, sourceBits: 16, totalFrames: 1, codec: "AAC (lossy)", transparent: false, isLive: true)
+        s.info = StreamInfo(sampleRate: 176_400, channels: 2, sourceBits: 16, totalFrames: 1, codec: "AAC (lossy)", transparent: false, isLive: true)
+        s.pipeline = ["Internet radio: AAC, 96 kbps, lossy", "Resample 44100 → 176400 Hz, linear phase, 144 dB stop-band"]
+        s.deviceName = "DAC"
+        let n = SignalPath.nodes(s)
+        expect(n.map(\.title) == ["AAC", "Stream decoder", "Resampler", "Ring buffer", "DAC"], "\(n.map(\.title))")
+        expect(n[0].subtitle == "Live · 44.1 kHz" && n[0].alters, "a lossy live source is flagged as altering from the start")
+        expect(n[2].subtitle == "→ 176.4 kHz")
+    }
+
+    func navigationHistory() {
+        MainActor.assumeIsolated {
+        let nav = Navigator()
+        expect(!nav.canGoBack && !nav.canGoForward)
+        var visited: [Place] = []
+        nav.restore = { visited.append($0) }
+        nav.visit(Place(tab: .albums)); nav.visit(Place(tab: .albums, library: "a1")); nav.visit(Place(tab: .radio, radio: "By genre|jazz"))
+        expect(nav.canGoBack && !nav.canGoForward)
+        nav.visit(Place(tab: .radio, radio: "By genre|jazz"))
+        nav.goBack()
+        expect(visited.last == Place(tab: .albums, library: "a1") && nav.canGoForward, "Back returns to the album page, \(String(describing: visited.last))")
+        nav.goBack(); nav.goBack()
+        expect(visited.last == Place(tab: .player) && !nav.canGoBack, "back to the start")
+        nav.goBack()
+        expect(visited.count == 3, "Back at the start does nothing")
+        nav.goForward()
+        expect(visited.last == Place(tab: .albums) && nav.canGoForward && nav.canGoBack)
+        nav.visit(Place(tab: .songs))
+        expect(!nav.canGoForward, "a new destination discards the forward trail")
+        // visits made while a step is being applied (the interface restoring itself) must not be recorded
+        let n2 = Navigator()
+        n2.visit(Place(tab: .albums)); n2.visit(Place(tab: .artists))
+        n2.restore = { p in n2.visit(Place(tab: .songs)); _ = p }
+        n2.goBack()
+        n2.restore = nil
+        n2.goForward()
+        expect(n2.current == Place(tab: .artists), "history stays consistent: \(n2.current)")
+        }
+    }
+
+    func playheadChangesDoNotRepublish() {
+        var a = PlayerStatus(); a.state = .playing; a.deviceName = "DAC"; a.position = 1; a.bufferedSeconds = 2.0
+        var b = a; b.position = 1.1; b.bufferedSeconds = 2.2
+        expect(a.sameStructure(as: b), "the playhead and a small buffer change are not structural")
+        b.bufferedSeconds = 3.1
+        expect(!a.sameStructure(as: b), "a half-second change in the buffer is")
+        var c = a; c.position = 5; c.state = .paused
+        expect(!a.sameStructure(as: c))
+        var d = a; d.live = LiveMetadata.Snapshot(station: "x", title: "New song", bitrate: 96, codec: "AAC", genre: nil)
+        expect(!a.sameStructure(as: d), "a new radio title must reach the interface")
+        var e = a; e.underruns = 1
+        expect(!a.sameStructure(as: e))
+    }
+
+    func sortingFilteringAndGrouping() {
+        func album(_ t: String, _ artist: String, _ year: Int, rate: Double, bits: Int, added: Double, tracks: Int = 5) -> ReleaseDTO {
+            ReleaseDTO(id: t, title: t, year: year, trackCount: tracks, artistNames: [artist], mbReleaseID: nil, maxSampleRate: rate, maxBitDepth: bits, genre: nil, addedAt: added)
+        }
+        let a = [album("Écume", "Zed", 2001, rate: 44_100, bits: 16, added: 3), album("alpha", "Mia", 1999, rate: 96_000, bits: 24, added: 1, tracks: 12), album("Beta", "Abe", 2010, rate: 2_822_400, bits: 1, added: 2)]
+        var o = ViewOptions()
+        expect(LibraryOrdering.albums(a, o).map(\.title) == ["alpha", "Beta", "Écume"], "title order folds case and accents")
+        o.ascending = false; expect(LibraryOrdering.albums(a, o).map(\.title) == ["Écume", "Beta", "alpha"])
+        o = ViewOptions(); o.sort = .artist; expect(LibraryOrdering.albums(a, o).map(\.title) == ["Beta", "alpha", "Écume"])
+        o.sort = .year; expect(LibraryOrdering.albums(a, o).map(\.title) == ["alpha", "Écume", "Beta"])
+        o.sort = .added; o.ascending = false; expect(LibraryOrdering.albums(a, o).map(\.title) == ["Écume", "Beta", "alpha"], "recently added first")
+        o.sort = .count; o.ascending = false; expect(LibraryOrdering.albums(a, o).first?.title == "alpha")
+        o = ViewOptions(); o.quality = .hiRes; expect(LibraryOrdering.albums(a, o).map(\.title) == ["alpha"], "Hi-Res excludes DSD and CD")
+        o.quality = .dsd; expect(LibraryOrdering.albums(a, o).map(\.title) == ["Beta"])
+        o.quality = .cd; expect(LibraryOrdering.albums(a, o).map(\.title) == ["Écume"])
+        func song(_ t: String, _ artist: String, _ album: String, _ dur: Double, rate: Double = 44_100, bits: Int = 16) -> TrackDTO {
+            TrackDTO(id: t, path: "/\(t)", title: t, trackNumber: nil, discNumber: nil, duration: dur, codec: "FLAC", sampleRate: rate, bitDepth: bits, channels: 2, year: nil, releaseID: nil, releaseTitle: album,
+                     workID: nil, workTitle: nil, catalog: nil, movementID: nil, movementNumber: nil, movementTitle: nil, credits: [CreditDTO(role: "artist", name: artist, instrument: nil, partyID: artist)], genres: [], mbRecordingID: nil)
+        }
+        let s = [song("b", "Y", "A2", 200), song("a", "Z", "A1", 100, rate: 192_000, bits: 24), song("c", "X", "A3", 300)]
+        o = ViewOptions(); expect(LibraryOrdering.songs(s, o).map(\.title) == ["a", "b", "c"])
+        o.sort = .artist; expect(LibraryOrdering.songs(s, o).map(\.title) == ["c", "b", "a"])
+        o.sort = .album; expect(LibraryOrdering.songs(s, o).map(\.title) == ["a", "b", "c"])
+        o.sort = .duration; o.ascending = false; expect(LibraryOrdering.songs(s, o).map(\.title) == ["c", "b", "a"])
+        o = ViewOptions(); o.sort = .quality; o.ascending = false; expect(LibraryOrdering.songs(s, o).first?.title == "a")
+        o = ViewOptions(); o.quality = .hiRes; expect(LibraryOrdering.songs(s, o).map(\.title) == ["a"])
+        let rows = [LibraryModel.Row(id: "1", title: "Zoë", subtitle: "", count: 3), LibraryModel.Row(id: "2", title: "Ábel", subtitle: "", count: 9), LibraryModel.Row(id: "3", title: "123 Band", subtitle: "", count: 1)]
+        expect(LibraryOrdering.rows(rows, ViewOptions()).map(\.title) == ["123 Band", "Ábel", "Zoë"])
+        var by = ViewOptions(); by.sort = .count; by.ascending = false
+        expect(LibraryOrdering.rows(rows, by).map(\.title) == ["Ábel", "Zoë", "123 Band"])
+        let g = LibraryOrdering.grouped(LibraryOrdering.rows(rows, ViewOptions()), title: \.title)
+        expect(g.map(\.letter) == ["#", "A", "Z"] && LibraryOrdering.letter("éclair") == "E" && LibraryOrdering.letter("日本") == "#" && LibraryOrdering.letter("") == "#", "\(g.map(\.letter))")
+        expect(ViewOptions.defaults(for: .songs).list && !ViewOptions.defaults(for: .albums).list)
+        expect(ViewOptions.available(for: .albums).contains(.added) && ViewOptions.available(for: .songs).contains(.quality) && ViewOptions.available(for: .composers) == [.title, .count])
+        expect((try? JSONDecoder().decode(ViewOptions.self, from: JSONEncoder().encode(by))) == by, "options persist as JSON")
     }
 
     func qualityTiers() {
@@ -383,5 +477,86 @@ struct InterfaceTests {
         expect(tier(44_100, 16).name == "CD quality" && !tier(44_100, 16).hiRes)
         expect(tier(44_100, 24).hiRes && tier(96_000, 16).hiRes && tier(192_000, 24).name == "Hi-Res")
         expect(tier(48_000, 16).name == "Lossless")
+    }
+}
+
+struct ArtistImageTests {
+    let dir = tempDir("artistimg")
+
+    private func fetcher(_ http: StubHTTP, _ name: String) -> ArtistImageFetcher {
+        let d = dir.appendingPathComponent(name); try? FileManager.default.removeItem(at: d)
+        return ArtistImageFetcher(http: http, directory: d, wikipedia: WikipediaClient(http: http, cache: MetadataCache(directory: dir.appendingPathComponent(name + "-wiki"))))
+    }
+    private func get(_ f: ArtistImageFetcher, _ n: String) -> Data? { ((try? runAsync { await f.image(for: n) }.get()) ?? nil) }
+
+    func deezerParsing() {
+        let json = "{\"data\":[{\"name\":\"Drake\",\"nb_fan\":900,\"picture_xl\":\"https://cdn/drake_big.jpg\"},{\"name\":\"Drake Bell\",\"nb_fan\":50000,\"picture_xl\":\"https://cdn/bell.jpg\"},{\"name\":\"drake\",\"nb_fan\":10,\"picture_xl\":\"https://cdn/fake.jpg\"},{\"name\":\"Drake\",\"nb_fan\":5000,\"picture_xl\":\"https://cdn/images/artist//1000x1000-000000-80-0-0.jpg\"}]}"
+        expect(ArtistImageFetcher.parseDeezer(Data(json.utf8), wanted: "Drake") == "https://cdn/drake_big.jpg", "exact name, most followers, and never Deezer's blank placeholder")
+        expect(ArtistImageFetcher.parseDeezer(Data(json.utf8), wanted: "Nobody") == nil)
+        expect(ArtistImageFetcher.parseDeezer(Data("x".utf8), wanted: "Drake") == nil)
+    }
+
+    func portraitFromDeezerThenCache() {
+        let http = StubHTTP(); let img = testPNG(1000, 1000)
+        http.on("api.deezer.com/search/artist", "{\"data\":[{\"name\":\"Miles Davis\",\"nb_fan\":100,\"picture_xl\":\"https://cdn-images.dzcdn.net/miles.jpg\"}]}")
+        http.on("dzcdn.net/miles.jpg", [(img, 200)])
+        let f = fetcher(http, "dz")
+        expect(get(f, "Miles Davis") == img)
+        expect(http.urls().first?.contains("q=Miles%20Davis") == true && http.requests.allSatisfy { $0.value(forHTTPHeaderField: "User-Agent")?.hasPrefix("Aureon/") == true })
+        let n = http.count
+        expect(get(f, "miles  davis") == img && http.count == n, "served from the cache, whatever the spelling of the key")
+        expect(get(f, "Various Artists") == nil && get(f, "  ") == nil && http.count == n, "compilation placeholders are never looked up")
+    }
+
+    func wikipediaIsTheSecondChoice() {
+        let http = StubHTTP(); let img = testPNG(600, 600)
+        http.on("api.deezer.com", "{\"data\":[]}")
+        http.on("wikipedia.org/api/rest_v1/page/summary/Ensemble_Nord", "{\"title\":\"Ensemble Nord\",\"description\":\"Norwegian chamber orchestra\",\"extract\":\"Ensemble Nord is a chamber orchestra.\",\"thumbnail\":{\"source\":\"https://upload.wikimedia.org/nord.jpg\"}}")
+        http.on("wikimedia.org/nord.jpg", [(img, 200)])
+        http.on("wikipedia.org/api/rest_v1/page/summary/Mercury", "{\"title\":\"Mercury\",\"description\":\"Chemical element\",\"extract\":\"Mercury is a planet.\",\"thumbnail\":{\"source\":\"https://upload.wikimedia.org/hg.jpg\"}}")
+        http.on("wikimedia.org/hg.jpg", [(img, 200)])
+        let f = fetcher(http, "wk")
+        expect(get(f, "Ensemble Nord") == img, "found through Wikipedia")
+        expect(get(f, "Mercury") == nil, "an article that is not about a musician is not used")
+    }
+
+    func missingAndOfflineAreHandled() {
+        let none = StubHTTP()
+        none.on("api.deezer.com", "{\"data\":[]}")
+        let f = fetcher(none, "none")
+        expect(get(f, "Unknown Person") == nil)
+        let n = none.count
+        expect(get(f, "Unknown Person") == nil && none.count == n, "\"no portrait\" is remembered")
+        final class Down: HTTPClient { func send(_ r: URLRequest) async throws -> (Data, Int) { throw URLError(.notConnectedToInternet) } }
+        let d = dir.appendingPathComponent("down"); try? FileManager.default.removeItem(at: d)
+        let off = ArtistImageFetcher(http: Down(), directory: d)
+        expect(get(off, "Someone") == nil)
+        let up = StubHTTP(); let img = testPNG(500, 500)
+        up.on("api.deezer.com", "{\"data\":[{\"name\":\"Someone\",\"nb_fan\":1,\"picture_xl\":\"https://cdn/s.jpg\"}]}"); up.on("cdn/s.jpg", [(img, 200)])
+        let back = ArtistImageFetcher(http: up, directory: d)
+        expect(get(back, "Someone") == img, "being offline once is not remembered as \"no portrait\"")
+        expect(get(fetcher(StubHTTP(), "tiny"), "x") == nil)
+        let small = StubHTTP(); small.on("api.deezer.com", "{\"data\":[{\"name\":\"Tiny\",\"nb_fan\":1,\"picture_xl\":\"https://cdn/t.jpg\"}]}"); small.on("cdn/t.jpg", [(testPNG(60, 60), 200)])
+        expect(get(fetcher(small, "small"), "Tiny") == nil, "a thumbnail-sized image is not a portrait")
+    }
+
+    func mosaicLayouts() {
+        let red = ImageTools.cgImage(testPNG(300, 300, left: .red, right: .red), maxPixel: 300)!
+        let blue = ImageTools.cgImage(testPNG(300, 300, left: .blue, right: .blue), maxPixel: 300)!
+        let green = ImageTools.cgImage(testPNG(300, 300, left: .green, right: .green), maxPixel: 300)!
+        expect(ArtistMosaic.render([]) == nil)
+        func color(_ img: NSImage, _ fx: Double, _ fy: Double) -> (r: Double, g: Double, b: Double) {
+            let rep = NSBitmapImageRep(cgImage: img.cgImage(forProposedRect: nil, context: nil, hints: nil)!)
+            let c = rep.colorAt(x: Int(Double(rep.pixelsWide - 1) * fx), y: Int(Double(rep.pixelsHigh - 1) * fy))!.usingColorSpace(.sRGB)!
+            return (Double(c.redComponent), Double(c.greenComponent), Double(c.blueComponent))
+        }
+        let one = ArtistMosaic.render([red])!
+        expect(color(one, 0.1, 0.1).r > 0.8 && color(one, 0.9, 0.9).r > 0.8, "one cover fills the frame")
+        let four = ArtistMosaic.render([red, blue, green, red, blue])!
+        expect(color(four, 0.2, 0.2).r > 0.8 && color(four, 0.8, 0.2).b > 0.8 && color(four, 0.2, 0.8).g > 0.8 && color(four, 0.8, 0.8).r > 0.8, "four covers in reading order, a fifth is ignored")
+        let two = ArtistMosaic.render([red, blue])!
+        expect(color(two, 0.2, 0.5).r > 0.8 && color(two, 0.8, 0.5).b > 0.8, "two covers side by side")
+        let three = ArtistMosaic.render([red, blue, green])!
+        expect(color(three, 0.2, 0.5).r > 0.8 && color(three, 0.8, 0.2).b > 0.8 && color(three, 0.8, 0.8).g > 0.8)
     }
 }

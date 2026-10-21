@@ -30,6 +30,7 @@ final class LibraryModel: ObservableObject {
     var onAdd: (([TrackDTO], Bool) -> Void)?
     var onReplace: (([TrackDTO]) -> Void)?
     @Published var albums: [ReleaseDTO] = []
+    @Published var artistAlbums: [ReleaseDTO] = []
     @Published var songs: [TrackDTO] = []
 
     init() {
@@ -73,7 +74,10 @@ final class LibraryModel: ObservableObject {
             case .works:
                 let w = store.works(search: nil).first { $0.id == id }
                 d = w.map { .recordings($0, store.recordings(workID: id)) } ?? .none
-            case .artists: d = .tracks("Tracks", store.tracks(partyID: id, role: .artist))
+            case .artists:
+                d = .tracks("Tracks", store.tracks(partyID: id, role: .artist))
+                let alb = store.releases(partyID: id)
+                await MainActor.run { self.artistAlbums = alb }
             case .conductors: d = .tracks("Conducted", store.tracks(partyID: id, role: .conductor))
             case .ensembles: d = .tracks("Performed", store.tracks(partyID: id, role: .ensemble))
             case .albums: d = .tracks("Tracks", store.tracks(releaseID: id))

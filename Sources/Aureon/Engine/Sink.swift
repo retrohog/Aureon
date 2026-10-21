@@ -20,7 +20,15 @@ struct RTSettings: Codable, Equatable {
 
 /// Everything the user can change about how audio is processed. Changes to anything except `dsp` and `rt` rebuild the
 /// decoded stream (a short re-buffer); DSP and real-time processing changes apply live.
+/// Internet radio is lossy and arrives at 32/44.1/48 kHz. Resampling it once, with a long sinc filter, to the best rate the DAC supports keeps the
+/// system mixer out of the path and moves the filter's image rejection far above the audible band. It cannot restore detail the codec threw away.
+struct RadioSettings: Equatable, Codable {
+    var upscale = true
+    var maxRate: Double = 192_000
+}
+
 struct PlaybackSettings: Equatable, Codable {
+    var radio = RadioSettings()
     var replayGain = ReplayGainSettings()
     var upsampling = UpsamplingSettings()
     var dsd = DSDSettings()
@@ -34,6 +42,7 @@ struct PlaybackSettings: Equatable, Codable {
     /// Tolerant decoding: settings saved by an older version (missing keys) still load.
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
+        radio = try c.decodeIfPresent(RadioSettings.self, forKey: .radio) ?? radio
         replayGain = try c.decodeIfPresent(ReplayGainSettings.self, forKey: .replayGain) ?? replayGain
         upsampling = try c.decodeIfPresent(UpsamplingSettings.self, forKey: .upsampling) ?? upsampling
         dsd = try c.decodeIfPresent(DSDSettings.self, forKey: .dsd) ?? dsd

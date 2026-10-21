@@ -42,6 +42,7 @@ struct StreamInfo: Equatable {
     var isDoP = false            // DSD packed as PCM: must never be gained, resampled or filtered
     var sourceRate: Double? = nil// original file rate when a stage changed it
     var transparent = true       // false once any stage alters sample values (gain, SRC, DSD→PCM, polarity)
+    var isLive = false           // an endless stream (internet radio): no duration, no seeking
 
     var duration: Double { sampleRate > 0 ? Double(totalFrames) / sampleRate : 0 }
 }

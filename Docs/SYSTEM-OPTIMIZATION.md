@@ -44,7 +44,7 @@ will refuse to register it; the settings then show "Helper not installed". The h
 
 ### What is tested, and what is not
 
-Tested (172+ self-tests): the suspender against real stand-in processes (SIGSTOP/SIGCONT verified through the kernel's process state),
+Tested (220+ self-tests): the suspender against real stand-in processes (SIGSTOP/SIGCONT verified through the kernel's process state),
 crash recovery including pid reuse, the heartbeat watchdog and hard cap, the whole XPC protocol over an in-process anonymous listener,
 refusal of out-of-range priorities, resume when the client vanishes, and the app-side controller with a fake helper.
 

@@ -142,6 +142,35 @@ extension DemoData {
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
     if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
+    // a local fake radio station, so the live Now Playing display can be shown without a network
+    if env["AUREON_FAKE_RADIO"] != nil, let aac = RadioTests().aacData(seconds: 6), let srv = try? FakeRadio(audio: aac, mode: .icy(metaint: 4096)) {
+        let st = RadioStation(id: "demo", name: "Aurora FM", url: srv.url.absoluteString, favicon: nil, country: "Norway", countryCode: "NO", language: "english", tags: ["ambient"], codec: "AAC", bitrate: 96, votes: 1, homepage: nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { MainActor.assumeIsolated { model.play(station: st) } }
+    }
+    // radio and podcast pages fetch from the network when they appear; an offscreen snapshot never "appears", so drive them explicitly
+    if env["AUREON_TAB"] == "Radio" {
+        Task { @MainActor in
+            if let sec = env["AUREON_RADIO_SECTION"], let s = RadioModel.Section(rawValue: sec) { model.radio.section = s }
+            await model.radio.load()
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            for st in model.radio.stations.prefix(40) { if let f = st.favicon { _ = await RemoteImages.shared.image(f, maxPixel: 300) } }
+            model.radio.objectWillChange.send()
+        }
+    }
+    if env["AUREON_TAB"] == "Podcasts" {
+        Task { @MainActor in
+            await model.podcasts.loadShows()
+            for sh in model.podcasts.shows.prefix(40) { if let a = sh.artwork { _ = await RemoteImages.shared.image(a, maxPixel: 360) } }
+            model.podcasts.objectWillChange.send()
+            if env["AUREON_SHOW_FIRST"] != nil, let first = model.podcasts.shows.first {
+                model.podcasts.selected = first
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                for u in [model.podcasts.feed?.image, first.artwork].compactMap({ $0 }) { _ = await RemoteImages.shared.image(u, maxPixel: 480) }
+                model.podcasts.objectWillChange.send()
+            }
+        }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { for r in model.library.rows { model.artistArt.load(id: r.id, name: r.title) } } }
     // grid cells load their cover when they scroll into view; an offscreen snapshot never "appears", so load them up front
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { for a in model.library.albums { model.albumArt.load(a) } } }
     if env["AUREON_OPEN_FIRST"] != nil {
@@ -161,6 +190,25 @@ extension DemoData {
             let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             win.contentView = host; win.appearance = NSAppearance(named: .darkAqua)
             host.layoutSubtreeIfNeeded()
+            if env["AUREON_BENCH"] != nil {
+                // how long does it take to swap between two heavy pages? (layout + display, synchronous)
+                var times: [Double] = []
+                let tabs: [Tab] = [.audio, .dsp]
+                for i in 0..<16 {
+                    let t0 = CFAbsoluteTimeGetCurrent()
+                    model.tab = tabs[i % 2]
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+                    host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                    times.append((CFAbsoluteTimeGetCurrent() - t0 - 0.02) * 1000)
+                }
+                // and the idle cost: 3 s of playback ticks with nothing else going on
+                let c0 = CFAbsoluteTimeGetCurrent(); var redraws = 0
+                let sub = model.objectWillChange.sink { redraws += 1 }
+                RunLoop.current.run(until: Date().addingTimeInterval(3)); sub.cancel()
+                FileHandle.standardError.write(Data(String(format: "BENCH switch ms: first %.0f, median %.0f, max %.0f [all: \(times.map { String(Int($0)) }.joined(separator: " "))]; model publishes during 3 s of playback: %d (%.1f s)\n",
+                    times[0], times.sorted()[times.count / 2], times.max() ?? 0, redraws, CFAbsoluteTimeGetCurrent() - c0).utf8))
+                model.player.stop(); exit(0)
+            }
             let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
             host.cacheDisplay(in: host.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))

@@ -19,15 +19,16 @@ enum SignalPath {
         guard let raw = s.sourceInfo, let out = s.info else { return [] }
         var n: [PathNode] = []
         let isDSD = raw.sourceBits == 1
-        let spec = isDSD ? "\(dsdRateName(raw.sampleRate)) · \(formatRate(raw.sampleRate))" : "\(raw.sourceBits)-bit · \(formatRate(raw.sampleRate))"
-        n.append(PathNode(id: "source", kind: .source, symbol: "opticaldisc", title: raw.codec.replacingOccurrences(of: " (lossy)", with: ""), subtitle: spec,
-                          detail: "Source file: \(raw.codec), \(spec), \(raw.channels) channel\(raw.channels == 1 ? "" : "s")", alters: !raw.transparent))
-        n.append(PathNode(id: "decode", kind: .decode, symbol: "cpu", title: isDSD ? "DSD reader" : "Decoder", subtitle: isDSD ? "DSF / DFF" : "CoreAudio → 32-bit",
-                          detail: isDSD ? "The DSD bit stream is read straight from the container." : "CoreAudio decodes to 32-bit integers, left-justified: a lossless bit shift for 16 and 24-bit files."))
+        let spec = raw.isLive ? "Live · \(formatRate(raw.sampleRate))" : isDSD ? "\(dsdRateName(raw.sampleRate)) · \(formatRate(raw.sampleRate))" : "\(raw.sourceBits)-bit · \(formatRate(raw.sampleRate))"
+        n.append(PathNode(id: "source", kind: .source, symbol: raw.isLive ? "dot.radiowaves.left.and.right" : "opticaldisc", title: raw.codec.replacingOccurrences(of: " (lossy)", with: ""), subtitle: spec,
+                          detail: (raw.isLive ? "Live stream: " : "Source file: ") + "\(raw.codec), \(spec), \(raw.channels) channel\(raw.channels == 1 ? "" : "s")", alters: !raw.transparent))
+        n.append(PathNode(id: "decode", kind: .decode, symbol: "cpu", title: isDSD ? "DSD reader" : raw.isLive ? "Stream decoder" : "Decoder", subtitle: isDSD ? "DSF / DFF" : raw.isLive ? "AudioToolbox → 32-bit" : "CoreAudio → 32-bit",
+                          detail: isDSD ? "The DSD bit stream is read straight from the container." : raw.isLive ? "The stream is demultiplexed (ICY metadata removed), parsed and decoded by AudioToolbox to 32-bit integers." : "CoreAudio decodes to 32-bit integers, left-justified: a lossless bit shift for 16 and 24-bit files."))
         for (i, line) in s.pipeline.enumerated() {
             let l = line.lowercased()
             let node: PathNode
-            if l.contains("bypassed") || l.contains("lossy") { continue }
+            if l.contains("bypassed") || (l.contains("lossy") && !l.contains("internet radio")) { continue }
+            if l.contains("internet radio") { continue }           // already shown by the source and decoder stations
             if l.contains("ram") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "memorychip", title: "RAM", subtitle: l.contains("exceeds") || l.contains("streaming") ? "Streaming" : "Preloaded", detail: line) }
             else if l.contains("dop") && !l.contains("bypassed") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "dot.radiowaves.left.and.right", title: "DoP", subtitle: "DSD bits intact", detail: line) }
             else if l.contains("fir decimation") || l.contains("converting to pcm") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "waveform.path", title: "DSD → PCM", subtitle: formatRate(out.sampleRate), detail: line, alters: true) }

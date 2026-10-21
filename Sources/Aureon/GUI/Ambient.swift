@@ -35,9 +35,17 @@ struct AmbientBackground: View {
                 // sized by the available space, never by the picture's own pixel size
                 GeometryReader { g in
                     Image(nsImage: image).resizable().scaledToFill().frame(width: g.size.width, height: g.size.height).clipped()
-                        .blur(radius: 90).saturation(1.3).opacity(0.28 * intensity).blendMode(.plusLighter)
+                        .blur(radius: 140).saturation(1.3).opacity(0.22 * intensity).blendMode(.plusLighter)
                 }
             }
+            // an instrument-panel dot grid, very faint
+            Canvas { ctx, size in
+                let step: CGFloat = 26
+                var path = Path()
+                for x in stride(from: step / 2, to: size.width, by: step) { for y in stride(from: step / 2, to: size.height, by: step) { path.addEllipse(in: CGRect(x: x - 0.6, y: y - 0.6, width: 1.2, height: 1.2)) } }
+                ctx.fill(path, with: .color(.white.opacity(0.07)))
+            }
+            .allowsHitTesting(false)
             // legibility: darken towards the bottom, soften the corners
             LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.5)], startPoint: .top, endPoint: .bottom)
             RadialGradient(colors: [.clear, .black.opacity(0.35)], center: .center, startRadius: 200, endRadius: 900)

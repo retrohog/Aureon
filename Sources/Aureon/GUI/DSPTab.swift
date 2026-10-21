@@ -3,6 +3,7 @@ import SwiftUI
 struct DSPTab: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var sel = Box(5)
+    @StateObject private var picking = Box(false)
 
     var body: some View {
         VStack(spacing: 18) {
@@ -33,9 +34,7 @@ struct DSPTab: View {
                 ForEach(m.settings.dsp.eq.bands.indices, id: \.self) { i in
                     VStack(spacing: 6) {
                         Text(String(format: "%+.1f", m.settings.dsp.eq.bands[i].gainDB)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
-                        Slider(value: band(i).gainDB, in: -12...12, step: 0.5)
-                            .frame(width: 130).rotationEffect(.degrees(-90)).frame(width: 30, height: 130)
-                            .opacity(m.settings.dsp.eq.bands[i].enabled ? 1 : 0.35)
+                        VerticalFader(value: band(i).gainDB, enabled: m.settings.dsp.eq.bands[i].enabled)
                         Text(freqLabel(m.settings.dsp.eq.bands[i].frequency)).font(.caption2.weight(sel.v == i ? .bold : .regular))
                             .foregroundStyle(sel.v == i ? Color.accentColor : .secondary)
                     }
@@ -80,14 +79,8 @@ struct DSPTab: View {
 
     private var pluginCard: some View {
         Card(title: "Audio Unit plugins", subtitle: "Host third-party effects such as room correction (Dirac, Sonarworks), in signal order after the EQ") {
-            Menu {
-                if m.availableEffects.isEmpty { Text("No Audio Unit effects found") }
-                ForEach(Dictionary(grouping: m.availableEffects, by: \.manufacturer).keys.sorted(), id: \.self) { maker in
-                    Menu(maker) {
-                        ForEach(m.availableEffects.filter { $0.manufacturer == maker }) { info in Button(info.name) { m.addPlugin(info) } }
-                    }
-                }
-            } label: { Label("Add plugin…", systemImage: "plus") }.fixedSize()
+            Button { picking.v = true } label: { Label("Add plugin…", systemImage: "plus") }
+                .popover(isPresented: $picking.v, arrowEdge: .bottom) { PluginPicker(done: { picking.v = false }).environmentObject(m) }
 
             if m.hosted.isEmpty {
                 Note(text: "No plugins loaded. \(m.availableEffects.count) effect(s) are installed on this Mac.")
@@ -127,4 +120,35 @@ struct EQPreset {
         EQPreset(name: "Loudness", gains: [5, 4, 2, 0, -1, -1, 0, 2, 4, 5]),
         EQPreset(name: "Warm", gains: [2, 2, 1, 0, 0, 0, -1, -2, -3, -4]),
     ]
+}
+
+
+/// A searchable list of the installed Audio Unit effects. Built only when opened, so a Mac with hundreds of units does not slow the page down.
+struct PluginPicker: View {
+    @EnvironmentObject var m: PlayerModel
+    let done: () -> Void
+    @StateObject private var query = Box("")
+
+    var body: some View {
+        let q = query.v.trimmingCharacters(in: .whitespaces).lowercased()
+        VStack(alignment: .leading, spacing: 8) {
+            SearchPill(prompt: "Search \(m.availableEffects.count) effects", text: $query.v, width: 240)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if m.availableEffects.isEmpty { Text("No Audio Unit effects found").foregroundStyle(.secondary).padding(8) }
+                    ForEach(m.effectGroups, id: \.maker) { g in
+                        let hits = q.isEmpty ? g.effects : g.effects.filter { ($0.name + " " + $0.manufacturer).lowercased().contains(q) }
+                        if !hits.isEmpty {
+                            Text(g.maker).microLabel().foregroundStyle(.tertiary).padding(.top, 6).padding(.leading, 6)
+                            ForEach(hits) { info in
+                                Button { m.addPlugin(info); done() } label: { Text(info.name).font(.system(size: 12.5)).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }
+                                    .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }.frame(height: 320)
+        }
+        .padding(12).frame(width: 290)
+    }
 }

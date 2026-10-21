@@ -10,26 +10,33 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: m.tab == .player && ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil,
-                              intensity: m.tab == .player ? 1 : 0.3)
-            HStack(spacing: 0) {
+                              intensity: m.tab == .player ? 1 : 0.34)
+            HStack(spacing: 10) {
                 Sidebar()
                 ZStack(alignment: .bottom) {
-                    page.id(m.tab).transition(.tabSwap).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity)
                     if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
                 }
+                .overlay(alignment: .topLeading) { NavButtons().padding(.leading, 16).padding(.top, 14) }
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.black.opacity(m.tab == .player ? 0.0 : 0.28)))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.03), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
             }
+            .padding(10)
             if dropping.v {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Brand.accent.opacity(0.9), style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
-                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Brand.accent.opacity(0.1)))
+                RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Brand.gradient, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
+                    .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Brand.violet.opacity(0.1)))
                     .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(.title3.weight(.semibold)))
                     .padding(10).transition(.opacity.combined(with: .scale(scale: 0.99))).allowsHitTesting(false)
             }
         }
-        .animation(.smooth(duration: 0.35), value: m.tab == .player)
+        .animation(.smooth(duration: 0.3), value: m.tab == .player)
         .animation(.smooth(duration: 0.22), value: dropping.v)
-        .environmentObject(m.albumArt)
+        .animation(.easeOut(duration: 0.16), value: m.tab)
+        .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
+        .environmentObject(m.radio).environmentObject(m.podcasts)
         .preferredColorScheme(.dark)
-        .background(Color(white: 0.06))
+        .background(Color(white: 0.04))
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
             for p in providers {
                 _ = p.loadObject(ofClass: URL.self) { url, _ in
@@ -44,6 +51,8 @@ struct ContentView: View {
         switch m.tab {
         case .player: NowPlayingView()
         case .search: SearchPage()
+        case .radio: RadioPage()
+        case .podcasts: PodcastsPage()
         case .albums, .artists, .songs, .composers, .works, .conductors, .ensembles: LibraryPage(lib: m.library, tab: m.tab)
         case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
@@ -51,6 +60,21 @@ struct ContentView: View {
         case .connect: PageScaffold(title: "Connect", subtitle: "Discord, scrobbling and remote control") { ConnectTab() }
         case .diagnostics: PageScaffold(title: "System", subtitle: "Optimisation and hardware diagnostics") { DiagnosticsTab() }
         }
+    }
+}
+
+/// Back and Forward through everything visited: pages, albums, genres, shows.
+struct NavButtons: View {
+    @EnvironmentObject var nav: Navigator
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { withAnimation(.easeOut(duration: 0.16)) { nav.goBack() } } label: { Image(systemName: "chevron.left") }
+                .disabled(!nav.canGoBack).keyboardShortcut("[", modifiers: .command).help("Back (⌘[)")
+            Button { withAnimation(.easeOut(duration: 0.16)) { nav.goForward() } } label: { Image(systemName: "chevron.right") }
+                .disabled(!nav.canGoForward).keyboardShortcut("]", modifiers: .command).help("Forward (⌘])")
+        }
+        .buttonStyle(IconButtonStyle())
+        .padding(3).background(Capsule().fill(.black.opacity(0.3))).overlay(Capsule().strokeBorder(.white.opacity(0.1), lineWidth: 0.8))
     }
 }
 

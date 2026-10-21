@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 let audioExtensions: Set<String> = ["flac", "wav", "aif", "aiff", "alac", "m4a", "caf", "dsf", "dff"]
 
 struct QueueItem: Identifiable {
-    enum ArtSource: Equatable { case unknown, embedded, fetched, none }
+    enum ArtSource: Equatable { case unknown, embedded, fetched, none, remote(String) }
     let id: UUID
     let url: URL
     var title: String
@@ -24,6 +24,9 @@ struct QueueItem: Identifiable {
     var artSource = ArtSource.unknown   // where the full-size cover comes from; .unknown until tags are read
     var analysis: TrackAnalysis?
     var analyzing = false
+    var isStream = false                // internet radio: endless, no tags, no analysis
+    var station: RadioStation?
+    var locked = false                  // title/artist were set by the app (radio, podcasts): never overwrite them from file tags
     var isDSD: Bool { ["dsf", "dff"].contains(url.pathExtension.lowercased()) }
 }
 
@@ -34,7 +37,7 @@ struct HostedPlugin: Identifiable {
 }
 
 enum Tab: String, CaseIterable, Identifiable {
-    case player = "Now Playing", search = "Search"
+    case player = "Now Playing", search = "Search", radio = "Radio", podcasts = "Podcasts"
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
     case audio = "Audio", dsp = "DSP"
     case deepDive = "Deep Dive"
@@ -43,7 +46,7 @@ enum Tab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .player: "play.circle"; case .search: "magnifyingglass"
+        case .player: "play.circle"; case .search: "magnifyingglass"; case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
         case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .deepDive: "sparkle.magnifyingglass"
@@ -54,7 +57,7 @@ enum Tab: String, CaseIterable, Identifiable {
     enum Section: String { case listen = "", library = "Library", classical = "Classical", sound = "Sound", discover = "Discover", system = "Devices" }
     var section: Section {
         switch self {
-        case .player, .search: .listen
+        case .player, .search, .radio, .podcasts: .listen
         case .albums, .artists, .songs: .library
         case .composers, .works, .conductors, .ensembles: .classical
         case .audio, .dsp: .sound
@@ -82,15 +85,28 @@ struct HeroArt {
 @MainActor
 final class PlayerModel: ObservableObject {
     @Published var items: [QueueItem] = []
-    @Published var status = PlayerStatus()
+    /// The engine's latest status. Deliberately not @Published: it changes ten times a second (the playhead), and publishing every tick made every
+    /// page redraw continuously. `objectWillChange` fires only when something other than the playhead changed; time lives in `progress`.
+    private(set) var status = PlayerStatus()
+    let progress = ProgressModel()
     @Published var devices: [OutputDeviceInfo] = []
     @Published var tab: Tab = .player {
         didSet {
             updateAnalysisActivity()
             if tab == .deepDive { loadDeepDiveForCurrent() }
             if let c = tab.libraryCategory, library.category != c { library.category = c }
+            navigator.visit(place)
         }
     }
+    let navigator = Navigator()
+    let radio = RadioModel()
+    let podcasts = PodcastModel()
+    let artistArt = ArtistArt()
+    @Published var viewOptions: [String: ViewOptions] = [:] { didSet { if let d = try? JSONEncoder().encode(viewOptions), ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(d, forKey: "aureon.viewOptions") } } }
+
+    var place: Place { Place(tab: tab, library: library.selectedID, radio: radio.navKey, podcast: podcasts.navKey) }
+    func options(for t: Tab) -> ViewOptions { viewOptions[t.rawValue] ?? ViewOptions.defaults(for: t) }
+    func setOptions(_ o: ViewOptions, for t: Tab) { viewOptions[t.rawValue] = o }
     @Published var searchText = "" {
         didSet {
             library.runSearch(searchText.trimmingCharacters(in: .whitespaces))
@@ -116,7 +132,9 @@ final class PlayerModel: ObservableObject {
     @Published var volume: Float = 1 { didSet { if !syncingVolume { volumeDevice?.hardwareVolume = volume } } }
 
     // plugins
-    @Published var availableEffects: [PluginInfo] = []
+    @Published var availableEffects: [PluginInfo] = [] { didSet { effectGroups = Dictionary(grouping: availableEffects, by: \.manufacturer).map { (maker: $0.key, effects: $0.value) }.sorted { $0.maker < $1.maker } } }
+    /// Installed effects grouped by manufacturer, computed once instead of on every redraw.
+    private(set) var effectGroups: [(maker: String, effects: [PluginInfo])] = []
     @Published var hosted: [HostedPlugin] = []
     @Published var pluginError: String?
     private var pluginWindows: [UUID: NSWindow] = [:]
@@ -154,6 +172,7 @@ final class PlayerModel: ObservableObject {
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
+        if let d = defaults.data(forKey: "aureon.viewOptions"), let v = try? JSONDecoder().decode([String: ViewOptions].self, from: d) { viewOptions = v }
         refreshDevices()
         availableEffects = DSPChain.availableEffects()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -167,6 +186,21 @@ final class PlayerModel: ObservableObject {
         library.onReplace = { [weak self] t in self?.replaceQueue(with: t) }
         albumArt.store = library.store; albumArt.fetcher = artFetcher
         albumArt.fetchOnline = { [weak self] in (self?.fetchMissingArt ?? false) && ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
+        artistArt.store = library.store
+        artistArt.fetchOnline = { [weak self] in (self?.fetchMissingArt ?? false) && ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
+        radio.onPlay = { [weak self] st in self?.play(station: st) }
+        podcasts.onPlay = { [weak self] ep, show, file in self?.playEpisode(ep, of: show, file: file) }
+        // history: every page change, library selection and radio/podcast sub-page is a step that Back and Forward can retrace
+        navigator.restore = { [weak self] p in
+            guard let self else { return }
+            self.tab = p.tab
+            if self.library.selectedID != p.library { self.library.selectedID = p.library }
+            if let r = p.radio, r != self.radio.navKey { self.radio.restore(r) }
+            if let q = p.podcast, q != self.podcasts.navKey { self.podcasts.restore(q) }
+        }
+        library.$selectedID.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.navigator.visit(self.place) } }.store(in: &cancellables)
+        radio.$navKey.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.navigator.visit(self.place) } }.store(in: &cancellables)
+        podcasts.$navKey.dropFirst().sink { [weak self] _ in DispatchQueue.main.async { guard let self else { return }; self.navigator.visit(self.place) } }.store(in: &cancellables)
         remote.makeController = { [unowned self] in self.makeRemoteController() }
         social.$settings.map { ($0.remoteEnabled, $0.remotePort, $0.remoteName) }.removeDuplicates { $0 == $1 }
             .sink { [weak self] enabled, port, name in self?.applyRemote(enabled, port, name) }.store(in: &cancellables)
@@ -222,6 +256,45 @@ final class PlayerModel: ObservableObject {
         for n in new { Task { await loadMetadata(n.id) } }
     }
 
+    /// Live radio: the queue becomes this one station.
+    func play(station: RadioStation) {
+        clear()
+        guard let url = URL(string: station.url) else { return }
+        let entries = player.append([station.url])
+        var item = QueueItem(id: entries[0].id, url: url, title: station.name)
+        item.artist = "Internet radio"; item.album = station.country ?? ""; item.genre = station.tags.first ?? ""
+        item.isStream = true; item.station = station; item.locked = true
+        item.artSource = station.favicon.map { .remote($0) } ?? .none
+        items = [item]; lastQueueRev = player.queueRevision
+        play(item.id)
+        if let f = station.favicon { Task { if let img = await RemoteImages.shared.image(f, maxPixel: 128), let i = items.firstIndex(where: { $0.id == item.id }) { items[i].thumb = img } } }
+        Task { await radio.directory.registerClick(station) }
+    }
+
+    /// A downloaded podcast episode replaces the queue.
+    func playEpisode(_ ep: PodcastEpisode, of show: PodcastShow, file: URL) {
+        clear()
+        let entries = player.append([file.path])
+        var item = QueueItem(id: entries[0].id, url: file, title: ep.title)
+        item.artist = show.name; item.album = "Podcast"; item.genre = show.genre ?? ""; item.locked = true
+        let art = ep.image ?? show.artwork
+        item.artSource = art.map { .remote($0) } ?? .none
+        items = [item]; lastQueueRev = player.queueRevision
+        play(item.id)
+        if let a = art { Task { if let img = await RemoteImages.shared.image(a, maxPixel: 128), let i = items.firstIndex(where: { $0.id == item.id }) { items[i].thumb = img } } }
+    }
+
+    /// What to show for the current item: for radio the title comes from the stream's own metadata.
+    var focusDisplay: (title: String, artist: String, detail: String)? {
+        guard let it = focusItem else { return nil }
+        guard it.isStream else { return (it.title, it.artist, [it.album, it.year.map(String.init), it.genre].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "  ·  ")) }
+        let live = status.trackID == it.id ? status.live : nil
+        let title = live?.title ?? it.title
+        let station = live?.station ?? it.title
+        let detail = ["Live radio", it.album.isEmpty ? nil : it.album, live?.bitrate.map { "\($0) kbps" }].compactMap { $0 }.joined(separator: "  ·  ")
+        return (title, live?.title != nil ? station : "Internet radio", detail)
+    }
+
     /// "Play": replace the queue with these tracks and start the first.
     func replaceQueue(with tracks: [TrackDTO]) {
         guard !tracks.isEmpty else { return }
@@ -229,7 +302,9 @@ final class PlayerModel: ObservableObject {
         addTracks(tracks, play: true)
     }
 
-    func clear() { player.stop(); player.clearQueue(); started = false; items = []; status = PlayerStatus() }
+    func clear() { player.stop(); player.clearQueue(); started = false; items = []; resetStatus() }
+
+    private func resetStatus() { status = PlayerStatus(); progress.update(position: 0, duration: 0); objectWillChange.send() }
 
     func remove(ids: Set<UUID>) { player.remove(ids: ids); items.removeAll { ids.contains($0.id) } }
     func remove(at offsets: IndexSet) { remove(ids: Set(offsets.map { items[$0].id })) }
@@ -237,7 +312,8 @@ final class PlayerModel: ObservableObject {
 
     /// Reads tags and the embedded cover with Aureon's own parsers (AVFoundation fills gaps), then looks for a cover online when the file has none.
     private func loadMetadata(_ id: UUID) async {
-        guard let url = items.first(where: { $0.id == id })?.url else { return }
+        guard let item = items.first(where: { $0.id == id }), !item.locked, !item.isStream else { return }
+        let url = item.url
         let tags = await MetadataEngine.load(path: url.path)
         let thumb = await Task.detached(priority: .utility) { tags.picture.flatMap { ImageTools.nsImage($0.data, maxPixel: 128) } }.value
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
@@ -285,6 +361,7 @@ final class PlayerModel: ObservableObject {
             let data: Data? = switch source {
             case .embedded: await MetadataEngine.artwork(path: path)
             case .fetched: await fetcher.cached(artist: artist, album: album)
+            case .remote(let u): await RemoteImageStore.shared.data(u)
             default: nil
             }
             let result = await Task.detached(priority: .userInitiated) { () -> (NSImage?, ArtPalette) in
@@ -297,7 +374,7 @@ final class PlayerModel: ObservableObject {
     }
 
     private func analyzeIfNeeded(_ id: UUID?) {
-        guard let id, let i = items.firstIndex(where: { $0.id == id }), items[i].analysis == nil, !items[i].analyzing, !items[i].isDSD else { return }
+        guard let id, let i = items.firstIndex(where: { $0.id == id }), items[i].analysis == nil, !items[i].analyzing, !items[i].isDSD, !items[i].isStream else { return }
         items[i].analyzing = true
         let path = items[i].url.path
         Task.detached(priority: .utility) {
@@ -323,7 +400,7 @@ final class PlayerModel: ObservableObject {
     func play(_ id: UUID, at seconds: Double = 0) {
         if isActive && seconds == 0 { player.send(.jump(id)); return }
         started = true
-        status = PlayerStatus()
+        resetStatus()
         syncRemoteOptions()
         player.start(startID: id, startSeconds: seconds, options: options)
     }
@@ -346,7 +423,12 @@ final class PlayerModel: ObservableObject {
         // playback can also be started by a remote app: follow the engine, not just our own buttons
         let running = player.isRunning
         if running != started { started = running }
-        if started || s.finished { status = s }
+        if started || s.finished {
+            let structural = !status.sameStructure(as: s)
+            status = s
+            progress.update(position: s.position, duration: s.duration)
+            if structural { objectWillChange.send() }
+        }
         if player.queueRevision != lastQueueRev { reconcileItems() }
         refreshHero()
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }

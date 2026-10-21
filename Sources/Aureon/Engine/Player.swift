@@ -52,6 +52,7 @@ struct PlayerStatus {
     var dspSummary: String?
     var engineThreadPromoted = false
     var rtStages: [String] = []      // real-time processors in use (convolution, crossfeed, headphone EQ)
+    var live: LiveMetadata.Snapshot? // station, bit rate and current title while a radio stream plays
     var rtLatencyFrames = 0
     var deviceName = ""
     var finished = false
@@ -206,13 +207,21 @@ final class Player: @unchecked Sendable {
 
     // MARK: opening a track (builds the whole ingestion chain)
 
-    private struct Opened { var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double? }
+    private struct Opened { var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double?; var live: LiveMetadata? = nil }
 
-    private struct DecodePlan { var base: FrameSource; var raw: StreamInfo; var key: String; var isDoP: Bool; var stages: [String] }
+    private struct DecodePlan { var base: FrameSource; var raw: StreamInfo; var key: String; var isDoP: Bool; var stages: [String]; var live: LiveMetadata? = nil }
+
+    static func isStreamURL(_ path: String) -> Bool { path.hasPrefix("http://") || path.hasPrefix("https://") }
 
     private func nearest(_ rate: Double, in rates: [Double]) -> Bool { rates.contains { abs($0 - rate) < 0.5 } }
 
     private func decodePlan(path: String, settings s: PlaybackSettings, rates: [Double]) throws -> DecodePlan {
+        if Self.isStreamURL(path) {
+            guard let url = URL(string: path) else { throw AureonError.message("bad stream address") }
+            let r = try RadioSource(url: url)
+            let br = r.live.snapshot.bitrate.map { ", \($0) kbps" } ?? ""
+            return DecodePlan(base: r, raw: r.info, key: path, isDoP: false, stages: ["Internet radio: \(r.live.snapshot.codec ?? "stream")\(br), lossy"], live: r.live)
+        }
         let ext = (path as NSString).pathExtension.lowercased()
         guard ext == "dsf" || ext == "dff" else {
             let f = try LosslessFile(path: path)
@@ -250,7 +259,8 @@ final class Player: @unchecked Sendable {
         var base = plan.base
         var stages = plan.stages
 
-        if s.ram.enabled {
+        let isLive = plan.raw.isLive
+        if s.ram.enabled && !isLive {
             cache.budgetBytes = s.ram.budgetMB << 20
             if let m = cache.get(plan.key) {
                 base = MemorySource(m); stages.append("RAM: preloaded, no disk reads")
@@ -273,6 +283,10 @@ final class Player: @unchecked Sendable {
             // sample rate
             let rate = chain.info.sampleRate
             var target = upsamplingTarget(source: rate, mode: s.upsampling.mode, deviceRates: rates, maxRate: s.upsampling.maxRate)
+            if isLive, s.radio.upscale, !rates.isEmpty {
+                target = upsamplingTarget(source: rate, mode: .deviceMax, deviceRates: rates, maxRate: s.radio.maxRate)
+                if target == nil, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
+            }
             if target == nil, s.upsampling.downsampleToFit, !rates.isEmpty, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             if s.upsampling.mode != .off && target == nil {
                 stages.append("Upsampling: no suitable device rate above \(Int(rate)) Hz, keeping native rate")
@@ -282,7 +296,7 @@ final class Player: @unchecked Sendable {
                 stages.append("Resample \(Int(rate)) → \(Int(t)) Hz, \(s.upsampling.filter.phase.title.lowercased()), \(Int(s.upsampling.filter.stopbandDB)) dB stop-band")
             }
             // ReplayGain
-            if s.replayGain.mode != .off {
+            if s.replayGain.mode != .off && !isLive {
                 let r = replayGain.resolve(path: entry.path, settings: s.replayGain, allowMeasuring: loadRAMNow)
                 if r.linear != 1 {
                     chain = GainSource(chain, gain: r.linear); gainDB = r.appliedDB
@@ -291,14 +305,14 @@ final class Player: @unchecked Sendable {
             }
             if s.polarityInverted { chain = InvertSource(chain); stages.append("Polarity inverted") }
         }
-        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB)
+        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live)
     }
 
     /// Decodes upcoming tracks into RAM (and warms ReplayGain data) on a background queue.
     private func prefetch(after id: UUID, heard: UUID, settings s: PlaybackSettings, rates: [Double]) {
         let q = snapshot().entries
         guard let i = q.firstIndex(where: { $0.id == id }) else { return }
-        let upcoming = Array(q[(i + 1)..<min(i + 3, q.count)])
+        let upcoming = Array(q[(i + 1)..<min(i + 3, q.count)]).filter { !Self.isStreamURL($0.path) }
         replayGain.prefetch(paths: upcoming.map(\.path), settings: s.replayGain)
         guard s.ram.enabled else { cache.clear(); return }
         let keepPaths = Set(([q[i]] + upcoming).map(\.path))
@@ -475,13 +489,13 @@ final class Player: @unchecked Sendable {
                 switch c {
                 case .togglePause: userPaused.toggle(); if prefilled { ring.paused.store(userPaused, ordering: .relaxed) }
                 case .setPaused(let p): userPaused = p; if prefilled { ring.paused.store(p, ordering: .relaxed) }
-                case .seekBy(let s): try seekHeard(to: pos + Int(s * b.info.sampleRate))
-                case .seekTo(let s): try seekHeard(to: Int(s * b.info.sampleRate))
+                case .seekBy(let s): if !b.info.isLive { try seekHeard(to: pos + Int(s * b.info.sampleRate)) }
+                case .seekTo(let s): if !b.info.isLive { try seekHeard(to: Int(s * b.info.sampleRate)) }
                 case .next: if let n = neighbour(of: b.entryID, 1) { return .continueAt(n.id, seconds: 0) }
                 case .previous:
-                    if Double(pos) / b.info.sampleRate > 3 { try seekHeard(to: 0) }
+                    if Double(pos) / b.info.sampleRate > 3 && !b.info.isLive { try seekHeard(to: 0) }
                     else if let p = neighbour(of: b.entryID, -1) { return .continueAt(p.id, seconds: 0) }
-                    else { try seekHeard(to: 0) }
+                    else if !b.info.isLive { try seekHeard(to: 0) }
                 case .jump(let id): if entry(id) != nil { return .continueAt(id, seconds: 0) }
                 case .stop: stopFlag.store(true, ordering: .relaxed)
                 }
@@ -593,6 +607,7 @@ final class Player: @unchecked Sendable {
                     $0.transparentStream = b.info.transparent && !renderer.useDSP.load(ordering: .relaxed) && $0.rtStages.isEmpty
                     $0.bitPerfect = report.bitPerfect && $0.transparentStream
                     $0.replayGainDB = b.opened.gainDB
+                    $0.live = b.opened.live?.snapshot
                     $0.ramBytes = cache.usedBytes
                     $0.dspActive = renderer.useDSP.load(ordering: .relaxed)
                     $0.dspSummary = $0.dspActive ? "Parametric EQ" + (dsp.plugins.isEmpty ? "" : " + " + dsp.plugins.map { $0.name }.joined(separator: ", ")) : nil
