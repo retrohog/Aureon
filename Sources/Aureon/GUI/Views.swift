@@ -1,0 +1,73 @@
+import SwiftUI
+import AppKit
+
+// MARK: - Shared components
+
+/// View-local state without the @State macro (its compiler plugin ships only with full Xcode).
+final class Box<T>: ObservableObject { @Published var v: T; init(_ v: T) { self.v = v } }
+
+struct Card<Content: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.tertiary) }
+            }
+            content
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.09)))
+    }
+}
+
+struct Badge: View {
+    let text: String; let color: Color
+    var body: some View {
+        Text(text).font(.caption.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.22))).foregroundStyle(color)
+    }
+}
+
+struct Note: View {
+    let text: String; var color: Color = .secondary
+    var body: some View { Text(text).font(.caption).foregroundStyle(color).fixedSize(horizontal: false, vertical: true) }
+}
+
+func formatRate(_ hz: Double) -> String { hz.truncatingRemainder(dividingBy: 1000) == 0 ? "\(Int(hz / 1000)) kHz" : String(format: "%.1f kHz", hz / 1000) }
+
+func formatBytes(_ b: Int) -> String { ByteCountFormatter.string(fromByteCount: Int64(b), countStyle: .memory) }
+
+struct OutputCard: View {
+    @EnvironmentObject var m: PlayerModel
+
+    var body: some View {
+        Card(title: "Output") {
+            Picker("Device", selection: $m.deviceID) { ForEach(m.devices) { Text($0.name).tag($0.id) } }
+            if let d = m.selectedDevice { Note(text: "Supported rates: " + d.rates.map { formatRate($0) }.joined(separator: ", ")) }
+            Toggle("Follow each track's sample rate", isOn: $m.followRate)
+            Toggle("Exclusive access (hog mode)", isOn: $m.exclusive)
+            Toggle("Invert polarity (not bit-transparent)", isOn: $m.settings.polarityInverted)
+            Divider()
+            if m.hasVolume {
+                HStack {
+                    Image(systemName: "speaker.fill")
+                    Slider(value: Binding(get: { Double(m.volume) }, set: { m.volume = Float($0) }), in: 0...1)
+                    Image(systemName: "speaker.wave.3.fill")
+                    Text("\(Int(m.volume * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
+                }
+                Note(text: m.volume > 0.9 ? "High device volume: check your amplifier before playing." : "Volume is applied by the device itself, so the samples stay untouched.",
+                     color: m.volume > 0.9 ? .orange : .secondary)
+            } else {
+                Note(text: "This device has no software-controllable volume. Use your DAC or amplifier: samples are never scaled here.")
+            }
+            if !m.status.errors.isEmpty {
+                Divider()
+                ForEach(m.status.errors, id: \.self) { Note(text: $0, color: .red) }
+            }
+        }
+    }
+}
+
