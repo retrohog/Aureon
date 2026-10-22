@@ -287,6 +287,7 @@ final class ArtistArt: ObservableObject {
     struct Info { var image: NSImage?; var portrait: Bool }
     @Published private(set) var info: [String: Info] = [:]
     private var loading = Set<String>()
+    private let gate = ArtLoadGate(), batch = ArtBatch<Info>()
     var store: LibraryStore?
     var fetchOnline: () -> Bool = { false }
     let fetcher = ArtistImageFetcher()
@@ -300,24 +301,31 @@ final class ArtistArt: ObservableObject {
         guard info[p.id] == nil, !loading.contains(p.id), let store else { return }
         loading.insert(p.id)
         let online = fetchOnline(), fetcher = fetcher
-        Task {
-            let mosaic = await Task.detached(priority: .utility) { () -> NSImage? in
-                var covers: [CGImage] = []
-                for r in store.releases(partyID: p.id, limit: 12) {
-                    guard covers.count < 4 else { break }
-                    for t in store.tracks(releaseID: r.id, limit: 3) {
-                        if let d = await MetadataEngine.artwork(path: t.path), let cg = ImageTools.cgImage(d, maxPixel: 300) { covers.append(cg); break }
+        gate.submit { [weak self] done in
+            Task {
+                let mosaic = await Task.detached(priority: .utility) { () -> NSImage? in
+                    var covers: [CGImage] = []
+                    for r in store.releases(partyID: p.id, limit: 12) {
+                        guard covers.count < 4 else { break }
+                        for t in store.tracks(releaseID: r.id, limit: 3) {
+                            if let d = await MetadataEngine.artwork(path: t.path), let cg = ImageTools.cgImage(d, maxPixel: 300) { covers.append(cg); break }
+                        }
                     }
+                    return ArtistMosaic.render(covers, size: 360)
+                }.value
+                await MainActor.run {
+                    guard let self else { done(); return }
+                    self.batch.add(p.id, Info(image: mosaic, portrait: false)) { items in withAnimation(.smooth(duration: 0.3)) { self.info.merge(items) { _, new in new } } }
+                    done()                               // the portrait (a web request) does not hold the gate
                 }
-                return ArtistMosaic.render(covers, size: 360)
-            }.value
-            withAnimation(.smooth(duration: 0.3)) { info[p.id] = Info(image: mosaic, portrait: false) }
-            var portrait = await fetcher.cached(name: p.name)
-            if portrait == nil, online { portrait = await fetcher.image(for: p.name) }
-            if let d = portrait, let img = await Task.detached(priority: .utility, operation: { ImageTools.nsImage(d, maxPixel: 480) }).value {
-                withAnimation(.smooth(duration: 0.4)) { info[p.id] = Info(image: img, portrait: true) }
+                guard let self else { return }
+                var portrait = await fetcher.cached(name: p.name)
+                if portrait == nil, online { portrait = await fetcher.image(for: p.name) }
+                if let d = portrait, let img = await Task.detached(priority: .utility, operation: { ImageTools.nsImage(d, maxPixel: 480) }).value {
+                    await MainActor.run { withAnimation(.smooth(duration: 0.4)) { self.info[p.id] = Info(image: img, portrait: true) } }
+                }
+                await MainActor.run { self.loading.remove(p.id) }
             }
-            loading.remove(p.id)
         }
     }
 }

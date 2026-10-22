@@ -88,8 +88,7 @@ struct ThemePicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Picker("", selection: $m.appearance) { ForEach(AppearanceMode.allCases) { Label($0.title, systemImage: $0.icon).tag($0) } }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 230)
+                SegmentedChoice(selection: $m.appearance, items: Array(AppearanceMode.allCases), label: { $0.title }, icon: { $0.icon }).frame(width: 260)
                 Text(m.appearance == .system ? "Follows your Mac's appearance" : "Every theme has a dark and a light version").font(.caption).foregroundStyle(.secondary)
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12)], alignment: .leading, spacing: 12) {

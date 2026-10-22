@@ -44,7 +44,7 @@ enum SignalPath {
                           detail: String(format: "Lock-free queue between the decoder and the audio thread: %.1f s decoded ahead, %d underruns.", s.bufferedSeconds, s.underruns)))
         for (i, line) in s.rtStages.enumerated() {
             let l = line.lowercased()
-            let (sym, title) = l.contains("room") || l.contains("convol") ? ("building.columns", "Room") : l.contains("crossfeed") ? ("headphones", "Crossfeed") : l.contains("eq") ? ("slider.horizontal.3", "AutoEQ") : ("slider.horizontal.3", "Real-time")
+            let (sym, title) = l.contains("room") || l.contains("convol") ? ("building.columns", "Room") : l.contains("dither") ? ("waveform.badge.minus", "Dither") : l.contains("crossfeed") ? ("headphones", "Crossfeed") : l.contains("eq") ? ("slider.horizontal.3", "AutoEQ") : ("slider.horizontal.3", "Real-time")
             n.append(PathNode(id: "rt\(i)", kind: .stage, symbol: sym, title: title, subtitle: "Real-time", detail: line, alters: true))
         }
         if let d = s.dspSummary { n.append(PathNode(id: "dsp", kind: .dsp, symbol: "slider.vertical.3", title: "DSP", subtitle: "Float", detail: d + " — processed in floating point.", alters: true)) }

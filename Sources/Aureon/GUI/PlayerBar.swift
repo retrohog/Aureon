@@ -56,7 +56,8 @@ struct BarDisplay: View {
                     Text(d.map { [$0.artist, item?.isStream == true ? nil : item?.album].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ") } ?? "Add music or tune a station").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
                 .layoutPriority(1)
-                HeartButton(path: item.flatMap { $0.isStream ? nil : $0.path }, size: 12)
+                HeartButton(path: item.flatMap { $0.isStream ? nil : $0.path }, size: 12, ink: .white)
+                AddToPlaylistButton(path: item.flatMap { $0.isStream ? nil : $0.path }, size: 12, ink: .white)
                 Spacer(minLength: 6)
                 if let raw = m.status.sourceInfo, m.isActive {
                     ViewThatFits(in: .horizontal) {

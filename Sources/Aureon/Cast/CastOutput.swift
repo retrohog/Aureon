@@ -122,6 +122,8 @@ final class CastOutput: @unchecked Sendable {
     var onState: ((CastState) -> Void)?
     var onVolume: ((Double, Bool) -> Void)?
     var title = "Aureon", artist = "Processed output"
+    /// Every paced block of interleaved PCM (format.channels wide), on the pacing thread: how a multi-room zone gets its own copy per speaker.
+    var onBlock: ((UnsafePointer<Int32>, Int) -> Void)?
 
     init(format: CastFormat = CastFormat()) {
         self.format = format
@@ -196,6 +198,7 @@ final class CastOutput: @unchecked Sendable {
                 out.update(repeating: 0, count: block * ch)
             }
             lock.unlock()
+            onBlock?(out, block)
             for f in encoder.encode(out, frames: block) { hub.publish(f) }
             produced += Double(block)
         }

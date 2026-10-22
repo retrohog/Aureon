@@ -377,7 +377,7 @@ struct InterfaceTests {
         expect(order.firstIndex(of: "Deep Dive")! < order.firstIndex(of: "Audio")!, "Deep Dive sits above the Sound section")
         expect(Tab.allCases.filter { $0.section == .tools }.map(\.rawValue) == ["Rip CD", "Convert", "Cloud"], "ripping and converting live under Tools")
         expect(Tab.settings.section == .footer && Tab.allCases.filter { $0.section == .footer } == [.settings], "Settings lives at the foot of the sidebar")
-        expect(SettingsSection.allCases.map(\.rawValue) == ["General", "Connect", "System"], "Connect and System moved into Settings")
+        expect(SettingsSection.allCases.map(\.rawValue) == ["General", "Sidebar", "Connect", "System"], "Sidebar, Connect and System live in Settings")
         expect(Tab.search.libraryCategory == nil && Tab.player.libraryCategory == nil && Tab.audio.libraryCategory == nil)
         expect(Set(Tab.allCases.map(\.icon)).count == Tab.allCases.count, "no two destinations share an icon")
         expect(Set(Tab.allCases.map(\.rawValue)).count == Tab.allCases.count)

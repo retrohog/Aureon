@@ -151,9 +151,11 @@ struct HTTPRangeFetcher: RangeFetcher {
     let url: URL
     let size: Int64
     let http: HTTPClient
+    var headers: [String: String] = [:]
 
     func fetch(offset: Int64, length: Int) async throws -> Data {
         var req = URLRequest(url: url)
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         req.setValue("bytes=\(offset)-\(offset + Int64(length) - 1)", forHTTPHeaderField: "Range")
         req.timeoutInterval = 30
         let (d, status) = try await http.send(req)

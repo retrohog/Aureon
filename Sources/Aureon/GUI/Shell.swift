@@ -57,13 +57,17 @@ struct ContentView: View {
             Button("Don't Save") { m.resolveDSPPrompt(save: false) }
             Button("Stay Here", role: .cancel) { m.cancelDSPPrompt() }
         } message: { Text("You changed the equalizer or plug-ins. Saved settings come back next time; if you don't save them they stay for this session only and are gone when Aureon quits.") }
+        .alert("These settings clash", isPresented: Binding(get: { m.conflict != nil }, set: { if !$0 && m.conflict != nil { m.resolveConflict(accept: false) } })) {
+            Button(m.conflict?.fixLabel ?? "OK") { m.resolveConflict(accept: true) }
+            Button("Cancel", role: .cancel) { m.resolveConflict(accept: false) }
+        } message: { Text(m.conflict?.message ?? "") }
         .background(DuplicateSheetHost(lib: m.library))
         .animation(.easeOut(duration: 0.2), value: m.djMode)
         .animation(.smooth(duration: 0.28), value: m.showQueue)
         .animation(.easeOut(duration: 0.16), value: m.tab)
         .animation(.smooth(duration: 0.22), value: dropping.v)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
-        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.cast)
+        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.lms).environmentObject(m.cast).environmentObject(m.zone).environmentObject(m.speakers).environmentObject(m.bridge)
         .preferredColorScheme(m.theme.isLight ? .light : .dark)
         .foregroundStyle(Brand.ink)
         .background(Brand.canvas)

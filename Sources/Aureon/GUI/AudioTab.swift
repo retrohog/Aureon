@@ -16,10 +16,13 @@ struct AudioTab: View {
                 }
             }
             OutputCard()
+            SpeakerSetupCard()
             CastCard()
+            ZoneCard()
             radioCard
             visualiserCard
             HeadphoneCard(hp: m.headphones)
+            DitherCard()
             RoomCard()
             upsampling
             dsd
@@ -79,16 +82,14 @@ struct AudioTab: View {
         Card(title: "Upsampling", subtitle: "Native polyphase sinc resampler, any rational ratio. Changes the samples, so it is off by default") {
             Picker("Target", selection: $m.settings.upsampling.mode) { ForEach(UpsamplingMode.allCases) { Text($0.title).tag($0) } }
             if m.settings.upsampling.mode != .off {
-                Picker("Filter", selection: $m.settings.upsampling.filter.phase) { ForEach(ResamplerConfig.Phase.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                SegmentedChoice(selection: $m.settings.upsampling.filter.phase, items: Array(ResamplerConfig.Phase.allCases)) { $0.title }
                 Note(text: m.settings.upsampling.filter.phase == .linear ? "Constant delay, symmetric ringing before and after transients." : "No pre-ringing; slight frequency-dependent delay.")
                 HStack {
                     Text("Pass-band")
                     Slider(value: $m.settings.upsampling.filter.passband, in: 0.90...0.99, step: 0.005)
                     Text(String(format: "%.1f%%", m.settings.upsampling.filter.passband * 100)).monospacedDigit().frame(width: 52, alignment: .trailing)
                 }
-                Picker("Stop-band", selection: $m.settings.upsampling.filter.stopbandDB) {
-                    ForEach([96.0, 120, 144], id: \.self) { Text("\(Int($0)) dB").tag($0) }
-                }.pickerStyle(.segmented)
+                HStack { Text("Stop-band"); SegmentedChoice(selection: $m.settings.upsampling.filter.stopbandDB, items: [96.0, 120, 144]) { "\(Int($0)) dB" } }
                 Picker("Highest rate", selection: $m.settings.upsampling.maxRate) {
                     Text("Device maximum").tag(0.0)
                     ForEach([96_000.0, 192_000, 384_000, 768_000, 1_536_000], id: \.self) { Text(formatRate($0)).tag($0) }
@@ -105,7 +106,7 @@ struct AudioTab: View {
                 if newValue == .dop { confirm.v = true } else { m.settings.dsd.mode = newValue }
             })) { ForEach(DSDMode.allCases) { Text($0.title).tag($0) } }
             if m.settings.dsd.mode == .pcm {
-                Picker("PCM rate", selection: $m.settings.dsd.pcmRate) { ForEach([88_200.0, 176_400, 352_800, 705_600, 1_411_200], id: \.self) { Text(formatRate($0)).tag($0) } }.pickerStyle(.segmented)
+                SegmentedChoice(selection: $m.settings.dsd.pcmRate, items: [88_200.0, 176_400, 352_800, 705_600, 1_411_200]) { formatRate($0) }
                 HStack {
                     Text("Level")
                     Slider(value: $m.settings.dsd.gainDB, in: -12...12, step: 0.5)
@@ -140,7 +141,7 @@ struct AudioTab: View {
 
     private var multichannel: some View {
         Card(title: "Multichannel (5.1 / 7.1)", subtitle: "Surround FLAC, ALAC, WAV, AIFF and DSD files") {
-            Picker("Mode", selection: $m.settings.multichannel.mode) { ForEach(MultichannelMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+            SegmentedChoice(selection: $m.settings.multichannel.mode, items: Array(MultichannelMode.allCases)) { $0.title }
             Note(text: m.settings.multichannel.mode.blurb)
             Toggle("Include the LFE (subwoofer) channel when mixing down", isOn: $m.settings.multichannel.includeLFE)
             Note(text: "A surround file on a device with enough outputs is sent to every speaker unchanged. Mixing down is the only processing, so it is the only thing that makes a stream not bit-perfect.")
@@ -149,7 +150,7 @@ struct AudioTab: View {
 
     private var replayGain: some View {
         Card(title: "Volume leveling", subtitle: "ReplayGain tags (FLAC Vorbis, ID3, iTunes), or EBU R128 loudness measured from the audio itself") {
-            Picker("Mode", selection: $m.settings.replayGain.mode) { ForEach(ReplayGainMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+            SegmentedChoice(selection: $m.settings.replayGain.mode, items: Array(ReplayGainMode.allCases)) { $0.title }
             if m.settings.replayGain.mode != .off {
                 HStack {
                     Text("Pre-amp")

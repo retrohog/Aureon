@@ -136,13 +136,42 @@ struct PromoTile: View {
 struct SettingsPage: View {
     @EnvironmentObject var m: PlayerModel
 
+    /// Settings sections, then the pages the person hid from the sidebar that belong with sound and tools: they live here instead.
+    private struct Chip: Hashable, Identifiable { var id: String; var title: String; var icon: String }
+    private var chips: [Chip] {
+        SettingsSection.allCases.map { Chip(id: "s:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
+            + m.sidebar.hiddenTabs.filter { [.audio, .dsp, .deepDive, .rip, .convert, .cloud].contains($0) }.map { Chip(id: "p:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
+    }
+    private var selection: Binding<Chip> {
+        Binding(get: {
+            let id = m.settingsPage.map { "p:" + $0.rawValue } ?? "s:" + m.settingsSection.rawValue
+            return chips.first { $0.id == id } ?? chips[0]
+        }, set: { c in
+            if c.id.hasPrefix("p:") { m.settingsPage = Tab(rawValue: String(c.id.dropFirst(2))) }
+            else { m.settingsPage = nil; m.settingsSection = SettingsSection(rawValue: String(c.id.dropFirst(2))) ?? .general }
+        })
+    }
+
     var body: some View {
         PageScaffold(title: "Settings") {
-            SectionChips(items: SettingsSection.allCases, selection: $m.settingsSection, label: \.rawValue, icon: \.icon)
-            switch m.settingsSection {
-            case .general: GeneralSettings()
-            case .connect: ConnectTab()
-            case .system: DiagnosticsTab()
+            SectionChips(items: chips, selection: selection, label: \.title, icon: \.icon)
+            if let t = m.settingsPage, m.sidebar.isHidden(t) {
+                switch t {
+                case .audio: AudioTab()
+                case .dsp: DSPTab()
+                case .deepDive: DeepDiveTab()
+                default:
+                    Card(title: t.rawValue, subtitle: "Hidden from the sidebar") {
+                        Button("Open \(t.rawValue)") { m.djMode = false; m.tab = t }
+                    }
+                }
+            } else {
+                switch m.settingsSection {
+                case .general: GeneralSettings()
+                case .sidebar: SidebarSettings()
+                case .connect: ConnectTab()
+                case .system: DiagnosticsTab()
+                }
             }
         }
     }
@@ -157,7 +186,7 @@ struct GeneralSettings: View {
                 ThemePicker()
             }
             Card(title: "Layout", subtitle: "The same player, arranged for listening or for mixing") {
-                Picker("", selection: $m.djMode) { Text("Normal").tag(false); Text("DJ console").tag(true) }.pickerStyle(.segmented).labelsHidden().frame(maxWidth: 280)
+                SegmentedChoice(selection: $m.djMode, items: [false, true]) { $0 ? "DJ console" : "Normal" }.frame(maxWidth: 280)
                 Note(text: "The DJ console has two decks, a mixer and a crossfader. You can switch at any time with the button in the top-right corner.")
             }
             Card(title: "Volume safety", subtitle: "Volume controls move only when you grab the knob; a click elsewhere nudges by a few per cent") {
@@ -171,6 +200,12 @@ struct GeneralSettings: View {
             Card(title: "Artwork", subtitle: "Covers come from the file's own tags first (FLAC pictures, ID3, ALAC covr)") {
                 Toggle("Look up missing covers and artist portraits online", isOn: $m.fetchMissingArt)
                 Note(text: "Only the artist and album names are sent — to the iTunes Search API, MusicBrainz / Cover Art Archive, Deezer and Wikipedia. Results are cached on this Mac.")
+            }
+            Card(title: "About", subtitle: "") {
+                HStack(spacing: 14) {
+                    AppLogo(size: 56)
+                    VStack(alignment: .leading, spacing: 2) { Text("Aureon").font(.system(size: 17, weight: .semibold)); Text("An audiophile music player for the Mac").font(.caption).foregroundStyle(.secondary) }
+                }
             }
             Card(title: "Window", subtitle: "") {
                 Button("Reset window size") { if let w = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.canBecomeMain }) { w.setContentSize(NSSize(width: 1080, height: 700)); w.center() } }

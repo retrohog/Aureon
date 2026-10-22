@@ -148,3 +148,19 @@ struct SystemCard: View {
         }
     }
 }
+
+struct DitherCard: View {
+    @EnvironmentObject var m: PlayerModel
+
+    var body: some View {
+        Card(title: "Dither", subtitle: "For DACs and outputs that take 16 or 20 bits. Off by default; leave it off for 24-bit DACs") {
+            Picker("Type", selection: $m.settings.rt.dither.mode) {
+                ForEach(DitherMode.allCases, id: \.self) { Text($0.title).tag($0) }
+            }.pickerStyle(.menu).fixedSize()
+            if m.settings.rt.dither.enabled {
+                HStack { Text("Output word length"); SegmentedChoice(selection: $m.settings.rt.dither.bits, items: [16, 20, 24]) { "\($0)-bit" }.frame(maxWidth: 260) }
+            }
+            Note(text: "Rounding to fewer bits without dither makes distortion that follows the music and is most audible in quiet passages and fades. TPDF dither (±1 LSB) turns it into steady, signal-independent noise. High-pass TPDF and noise-shaped TPDF move that noise toward high frequencies, where hearing is least sensitive. It runs last in the chain, on the real-time thread, in integer arithmetic.")
+        }
+    }
+}

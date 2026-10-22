@@ -98,8 +98,8 @@ struct RipPage: View {
 
     private var settingsCard: some View {
         Card(title: "Settings", subtitle: nil) {
-            Picker("Format", selection: $rip.format) { ForEach(RipFormat.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-            Picker("Read mode", selection: $rip.options.mode) { ForEach(RipMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+            SegmentedChoice(selection: $rip.format, items: Array(RipFormat.allCases)) { $0.title }
+            SegmentedChoice(selection: $rip.options.mode, items: Array(RipMode.allCases)) { $0.title }
             Note(text: rip.options.mode.blurb)
             Toggle("Use the drive's C2 error pointers (\(rip.supportsC2 ? "this drive provides them" : "this drive does not provide them"))", isOn: $rip.options.useC2).disabled(!rip.supportsC2)
             HStack {

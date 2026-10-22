@@ -5,7 +5,7 @@ struct Sidebar: View {
     @EnvironmentObject var m: PlayerModel
     @FocusState private var searchFocused: Bool
 
-    private let sections: [Tab.Section] = [.listen, .library, .classical, .discover, .sound, .tools]
+    private let sections = SidebarLayout.sections
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -14,20 +14,22 @@ struct Sidebar: View {
                 Color.clear.frame(width: 92, height: 1)
                 NavButtons()
                 Spacer(minLength: 0)
+                AppLogo(size: 24).padding(.trailing, 14).help("Aureon")
             }.frame(height: WindowChrome.band)
             searchField.padding(.horizontal, 12).padding(.bottom, 10)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(sections, id: \.self) { sec in
-                        let items = Tab.allCases.filter { $0.section == sec && $0 != .search }
-                        VStack(alignment: .leading, spacing: 1) {
+                        let items = m.sidebar.visible(in: sec)
+                        if !items.isEmpty { VStack(alignment: .leading, spacing: 1) {
                             if sec != .listen { Text(sec.rawValue).font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary).padding(.horizontal, 20).padding(.bottom, 2).padding(.top, 2) }
                             ForEach(items) { t in SidebarItem(tab: t) }
-                        }
+                        } }
                     }
                 }.padding(.horizontal, 8).padding(.bottom, 12)
             }
             VStack(spacing: 2) {
+                OutputSwitcher()
                 DJSwitch()
                 HStack(spacing: 6) {
                     SidebarItem(tab: .settings)
@@ -78,6 +80,12 @@ struct SidebarItem: View {
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(selected ? 0.13 : (hover.v ? 0.06 : 0))))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
+        .contextMenu {
+            if tab != .settings {
+                Button("Hide from sidebar") { m.sidebar.setHidden(tab, true); if m.tab == tab { m.tab = .settings; m.settingsSection = .sidebar } }
+            }
+            Button("Customize sidebar…") { m.djMode = false; m.settingsPage = nil; m.settingsSection = .sidebar; m.tab = .settings }
+        }
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

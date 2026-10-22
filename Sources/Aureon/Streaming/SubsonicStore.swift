@@ -16,16 +16,17 @@ enum SubsonicPath {
 
 /// Everything that plays from somewhere other than a local file goes through here.
 enum RemoteMedia {
-    static func isRemote(_ path: String) -> Bool { CloudPath.isCloud(path) || SubsonicPath.isSubsonic(path) }
+    static func isRemote(_ path: String) -> Bool { CloudPath.isCloud(path) || SubsonicPath.isSubsonic(path) || LMSPath.isLMS(path) }
 
     static func openFile(_ path: String) throws -> LosslessFile {
         if CloudPath.isCloud(path) { return try CloudRegistry.shared.openFile(path) }
         if SubsonicPath.isSubsonic(path) { return try SubsonicRegistry.shared.openFile(path) }
+        if LMSPath.isLMS(path) { return try LMSRegistry.shared.openFile(path) }
         return try LosslessFile(path: path)
     }
 
     static func warm(_ path: String) {
-        if CloudPath.isCloud(path) { CloudRegistry.shared.warm(path) } else if SubsonicPath.isSubsonic(path) { SubsonicRegistry.shared.warm(path) }
+        if CloudPath.isCloud(path) { CloudRegistry.shared.warm(path) } else if SubsonicPath.isSubsonic(path) { SubsonicRegistry.shared.warm(path) } else if LMSPath.isLMS(path) { LMSRegistry.shared.warm(path) }
     }
 
     /// A small local file holding a remote track's tags, for the parsers that read paths (buckets only: servers send tags with the listing).

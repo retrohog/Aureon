@@ -72,3 +72,34 @@ struct OutputCard: View {
     }
 }
 
+
+/// A row of buttons of which one is chosen. Made of plain buttons rather than the system's segmented control, which did not react to clicks inside this window.
+struct SegmentedChoice<T: Hashable>: View {
+    @Binding var selection: T
+    let items: [T]
+    let label: (T) -> String
+    var icon: ((T) -> String)? = nil
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(items, id: \.self) { it in
+                let on = it == selection
+                Button { selection = it } label: {
+                    HStack(spacing: 4) {
+                        if let icon { Image(systemName: icon(it)).font(.system(size: 11)) }
+                        Text(label(it)).font(.system(size: 12, weight: on ? .semibold : .regular)).lineLimit(2).multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 26).padding(.horizontal, 6)
+                    .foregroundStyle(on ? Color.white : Color.primary.opacity(0.85))
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Brand.accent : Color.clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(0.09)))
+        .animation(.easeOut(duration: 0.12), value: selection)
+    }
+}

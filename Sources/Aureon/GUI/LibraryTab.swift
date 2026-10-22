@@ -658,17 +658,27 @@ struct SongList: View {
     var sortHeader = false
     /// Set when the list is a playlist: adds "Remove from Playlist" to the context menu.
     var playlistID: String? = nil
+    /// The letter groups are expensive for a big library: computed once per list, not on every redraw (the player state redraws this view often).
+    @StateObject private var groups = Box<(key: Int, value: [(letter: String, items: [TrackDTO])])?>(nil)
+
+    private func grouped() -> [(letter: String, items: [TrackDTO])] {
+        var h = Hasher(); h.combine(tracks.count); h.combine(tracks.first?.id); h.combine(tracks.last?.id); h.combine(tracks.dropFirst(tracks.count / 2).first?.id)
+        let key = h.finalize()
+        if let c = groups.v, c.key == key { return c.value }
+        let g = LibraryOrdering.grouped(tracks, title: \.title)
+        DispatchQueue.main.async { groups.v = (key, g) }
+        return g
+    }
 
     var body: some View {
-        let position = Dictionary(tracks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
         let nowPath = m.isActive ? m.current?.path : nil
         VStack(spacing: 0) {
             if sortHeader { header }
             LazyVStack(spacing: 0) {
                 if letters {
-                    ForEach(LibraryOrdering.grouped(tracks, title: \.title), id: \.letter) { g in
+                    ForEach(grouped(), id: \.letter) { g in
                         LetterHeader(letter: g.letter)
-                        ForEach(Array(g.items.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: position[t.id] ?? i, playingPath: nowPath) }
+                        ForEach(Array(g.items.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: nil, playingPath: nowPath) }
                     }
                 } else {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: i, playingPath: nowPath) }
@@ -678,10 +688,12 @@ struct SongList: View {
         }
     }
 
-    private func row(_ t: TrackDTO, shown i: Int, at index: Int, playingPath: String?) -> some View {
-        SongRow(track: t, index: i + 1, showArtist: showArtist, numbered: numbered, playing: playingPath == t.path) { m.play(tracks: tracks, at: index) }
+    private func row(_ t: TrackDTO, shown i: Int, at known: Int?, playingPath: String?) -> some View {
+        // the position in the whole list is only needed when something is clicked
+        func index() -> Int { known ?? tracks.firstIndex { $0.id == t.id } ?? i }
+        return SongRow(track: t, index: i + 1, showArtist: showArtist, numbered: numbered, playing: playingPath == t.path) { m.play(tracks: tracks, at: index()) }
             .contextMenu {
-                Button("Play") { m.play(tracks: tracks, at: index) }
+                Button("Play") { m.play(tracks: tracks, at: index()) }
                 TrackMenu(tracks: [t], playlistID: playlistID)
             }
     }

@@ -17,6 +17,8 @@ struct CloudPage: View {
                 }
                 ForEach(cloud.servers) { p in serverCard(p) }
                 ForEach(cloud.profiles) { p in profileCard(p) }
+                LMSSection()
+                BridgeCard()
                 if let r = cloud.report { Note(text: r, color: cloud.reportIsError ? .red : .green) }
             }
         }

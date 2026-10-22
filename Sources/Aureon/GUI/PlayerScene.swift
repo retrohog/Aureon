@@ -112,7 +112,8 @@ struct NowPlayingView: View {
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
             RepeatButton(size: 14, tint: .white)
             Divider().frame(height: 18).overlay(.white.opacity(0.2))
-            HeartButton(path: m.current.flatMap { $0.isStream ? nil : $0.path }, size: 15)
+            HeartButton(path: m.focusItem.flatMap { $0.isStream ? nil : $0.path }, size: 15, ink: .white)
+            AddToPlaylistButton(path: m.focusItem.flatMap { $0.isStream ? nil : $0.path }, size: 15, ink: .white)
             QueueButton()
         }
         .buttonStyle(TransportButtonStyle(size: 15))

@@ -94,6 +94,13 @@ func extraTests() -> [(String, TestFn)] {
     t += [("cast.flac", cs.flacEncoderIsLossless), ("cast.join", cs.joiningMidStream), ("cast.speed", cs.flacEncoderKeepsUpWithTheEngine), ("cast.codec", cs.castMessagesRoundTrip), ("cast.session", cs.castSessionStartsAndPlays), ("cast.trouble", cs.castTroubleIsReportedPlainly), ("cast.server", cs.streamServerServesLiveFrames), ("cast.player", cs.playerFeedsTheCastStream), ("cast.tls", cs.castOverRealTLS)]
     t += [("stream.client", sm.subsonicClientTalksToTheServer), ("stream.import", sm.importingAServer), ("stream.play", sm.serverTracksPlayLikeFiles)]
     t += [("smartdj.intent", sdj.requestsAreUnderstood), ("smartdj.rank", sdj.rankingFavoursWhatWasAsked), ("smartdj.context", sdj.contextIsSmallAndRelevant), ("smartdj.answers", sdj.answersAreCheckedAndRepaired), ("smartdj.pipeline", sdj.theWholePipeline), ("smartdj.service", sdj.modelLivesOnlyWhileSwitchedOn), ("smartdj.fallback", sdj.withoutAModelTheRankingStillAnswers), ("smartdj.process", sdj.theHelperProcessFollowsTheProtocol), ("smartdj.misbehave", sdj.theHelperProcessMisbehaves), ("smartdj.driver", sdj.theServiceDrivesTheHelperProcess), ("smartdj.real", sdj.theRealModelPicksTracks), ("smartdj.decks", sdj.aSetLandsOnTheDecks)]
+    let p5 = Phase5Tests()
+    t += [("dither.stats", p5.ditherStatistics), ("dither.quiet", p5.ditherKeepsQuietSignals), ("dither.safety", p5.ditherSafety), ("dither.player", p5.ditherInThePlayer),
+          ("zone.delay", p5.delayLineIsSampleExact), ("zone.balance", p5.balancerAndProbe), ("zone.feed", p5.feedDelaysTheStreamExactly), ("upnp.parse", p5.upnpDescriptionsAndSOAP),
+          ("upnp.discovery", p5.discoveryByBroadcast), ("zone.start", p5.zoneStartsRoomsAndGroupsSonos), ("zone.refusal", p5.zoneSurvivesARoomThatRefuses), ("zone.align", p5.zoneAlignsRoomsThatLag),
+          ("lms.client", p5.lmsClientAndPaths), ("lms.import", p5.lmsImportAndPlay), ("bridge.sync", p5.bridgePairingAndSync)]
+    let ux = UXTests()
+    t += [("ux.conflicts", ux.conflictRules), ("ux.sidebar", ux.sidebarLayout), ("ux.scroll", ux.scrollingNeverSticks), ("speakers.plan", ux.speakerPlan), ("speakers.roles", ux.speakerRoles), ("speakers.ring", ux.speakerDelayAndRing), ("speakers.devices", ux.speakersOnRealDevices)]
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]

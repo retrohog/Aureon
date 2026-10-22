@@ -86,13 +86,15 @@ struct HeartButton: View {
     let path: String?
     var size: CGFloat = 13
     var alwaysVisible = true
+    /// Overrides the theme's ink where the surface is always dark (the player).
+    var ink: Color? = nil
     @StateObject private var hover = Box(false)
 
     var body: some View {
         let on = path.map { c.isLiked($0) } ?? false
         Button { if let path { c.toggleLike(path: path) } } label: {
             Image(systemName: on ? "heart.fill" : "heart").font(.system(size: size, weight: .medium))
-                .foregroundStyle(on ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.9 : 0.5)))
+                .foregroundStyle(on ? AnyShapeStyle(Brand.accent) : AnyShapeStyle((ink ?? Brand.ink).opacity(hover.v ? 0.95 : 0.7)))
                 .scaleEffect(on ? 1.08 : 1).symbolEffect(.bounce, value: on)
                 .frame(width: size + 10, height: size + 10).contentShape(Rectangle())
                 .opacity(on || alwaysVisible || hover.v ? 1 : 0)
@@ -296,5 +298,55 @@ extension View {
             .shadow(color: .black.opacity(on ? 0.5 : 0.28), radius: on ? 14 : 7, y: on ? 8 : 3)
             .scaleEffect(on ? scale : 1)
             .animation(.spring(response: 0.32, dampingFraction: 0.72), value: on)
+    }
+}
+
+/// "Add the playing song to a playlist": a menu next to the heart in the player and the bar.
+struct AddToPlaylistButton: View {
+    @EnvironmentObject var c: CollectionsModel
+    let path: String?
+    var size: CGFloat = 13
+    var ink: Color? = nil
+    @StateObject private var added = Box<String?>(nil)
+    @StateObject private var resolved = Box<(path: String, track: TrackDTO?)?>(nil)
+
+    var body: some View {
+        let track = lookup()
+        Menu {
+            if let track {
+                Button("New Playlist…") {
+                    if let name = promptForText(title: "New Playlist", message: "“\(track.title)” will be added to it.", placeholder: "Playlist name", confirm: "Create") {
+                        if let p = c.create(name: name, with: [track]) { flash(p.name) }
+                    }
+                }
+                if !c.playlists.isEmpty { Divider() }
+                ForEach(c.playlists) { p in
+                    Button(p.name) { let n = c.add([track], to: p.id); flash(n > 0 ? p.name : "\(p.name) (already there)") }
+                }
+            } else {
+                Text("This song is not in your library")
+            }
+        } label: {
+            Image(systemName: added.v != nil ? "checkmark" : "text.badge.plus").font(.system(size: size, weight: .medium))
+                .foregroundStyle(added.v != nil ? AnyShapeStyle(Brand.accent) : AnyShapeStyle((ink ?? Brand.ink).opacity(0.7)))
+                .frame(width: size + 10, height: size + 10).contentShape(Rectangle())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .disabled(path == nil)
+        .help(added.v.map { "Added to \($0)" } ?? "Add to a playlist")
+    }
+
+    /// A database lookup, done once per song rather than on every redraw.
+    private func lookup() -> TrackDTO? {
+        guard let path else { return nil }
+        if let c = resolved.v, c.path == path { return c.track }
+        let t = c.store?.track(path: path)
+        DispatchQueue.main.async { resolved.v = (path, t) }
+        return t
+    }
+
+    private func flash(_ name: String) {
+        added.v = name
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [added] in added.v = nil }
     }
 }

@@ -37,7 +37,7 @@ enum MetadataEngine {
     private static var stubConfig: ChunkedReader.Config { var c = ChunkedReader.Config(); c.chunkSize = 256 << 10; c.defaultAhead = 1; c.minAhead = 1; return c }
 
     static func load(path: String) async -> TrackTags {
-        if SubsonicPath.isSubsonic(path) { return TrackTags() }                 // a server's tags come with its listing
+        if SubsonicPath.isSubsonic(path) || LMSPath.isLMS(path) { return TrackTags() }                 // a server's tags come with its listing
         if CloudPath.isCloud(path) {
             guard let stub = await Task.detached(operation: { tagStub(for: path) }).value else { return TrackTags() }
             defer { try? FileManager.default.removeItem(at: stub) }
@@ -99,6 +99,7 @@ enum MetadataEngine {
     /// Just the picture bytes (native first, AVFoundation second).
     static func artwork(path: String) async -> Data? {
         if SubsonicPath.isSubsonic(path) { return await Task.detached { SubsonicRegistry.shared.coverArt(for: path) }.value }
+        if LMSPath.isLMS(path) { return await Task.detached { LMSRegistry.shared.coverArt(for: path) }.value }
         if CloudPath.isCloud(path) {
             guard let stub = await Task.detached(operation: { tagStub(for: path) }).value else { return nil }
             defer { try? FileManager.default.removeItem(at: stub) }

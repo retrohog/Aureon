@@ -16,6 +16,8 @@ final class CastModel: ObservableObject {
     private let browser = CastBrowser()
     /// Told when the audio has to move to or from the speaker (the player restarts the current track in place).
     var onRouteChange: (() -> Void)?
+    /// Told just before a Chromecast session starts (a multi-room zone shares the output and must let go of it).
+    var willConnect: (() -> Bool)?
 
     init() {
         let d = UserDefaults.standard
@@ -29,6 +31,7 @@ final class CastModel: ObservableObject {
     func scan() { guard !scanning else { return }; scanning = true; browser.start() }
 
     func connect(_ device: CastDevice) {
+        if let ok = willConnect, !ok() { return }
         disconnect(quiet: true)
         message = nil
         let out = CastOutput(format: CastFormat(sampleRate: sampleRate, bitsPerSample: bits, channels: 2))

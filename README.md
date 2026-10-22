@@ -144,3 +144,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Most valuable: a USB-DAC `hwdebug --json
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+## Phase 5
+Dither, multi-room zones (Sonos, DLNA, Chromecast), Lyrion Music Server, and a Wi-Fi bridge for a companion app: see [Docs/FEATURES-3.md](Docs/FEATURES-3.md).

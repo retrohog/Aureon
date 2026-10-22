@@ -70,7 +70,7 @@ struct ConvertPage: View {
 
     private var settings: some View {
         Card(title: "Settings", subtitle: nil) {
-            Picker("Format", selection: $cv.format) { ForEach(TranscodeFormat.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented).disabled(cv.running)
+            SegmentedChoice(selection: $cv.format, items: Array(TranscodeFormat.allCases)) { $0.title }.disabled(cv.running)
             if cv.format == .aac {
                 Picker("AAC bit rate", selection: $cv.bitrate) { ForEach([128_000, 192_000, 256_000, 320_000], id: \.self) { Text("\($0 / 1000) kbps").tag($0) } }.disabled(cv.running)
                 Toggle("Never go above 48 kHz (always on for AAC; this also applies to lossless copies)", isOn: .constant(true)).disabled(true).font(.caption)

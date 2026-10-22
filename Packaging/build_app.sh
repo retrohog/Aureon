@@ -21,7 +21,7 @@ swift build -c release
 BINDIR="$(swift build -c release --show-bin-path)"
 
 W="$(mktemp -d)"
-swift Packaging/make_icon.swift "$W/icon.png"
+swift Packaging/make_icon.swift "$W/icon.png" Packaging/AppIcon-source.png
 mkdir "$W/AppIcon.iconset"
 for s in 16 32 128 256 512; do
   sips -z $s $s "$W/icon.png" --out "$W/AppIcon.iconset/icon_${s}x${s}.png" >/dev/null
@@ -50,8 +50,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSMicrophoneUsageDescription</key><string>Some Audio Unit plugins request audio input access.</string>
-  <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, finds other Aureon servers, and finds Chromecast and Google Home speakers to cast to.</string>
-  <key>NSBonjourServices</key><array><string>_aureon._tcp</string><string>_googlecast._tcp</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, finds other Aureon servers, finds Chromecast, Sonos and DLNA speakers to play to, and syncs your library to the companion app.</string>
+  <key>NSBonjourServices</key><array><string>_aureon._tcp</string><string>_googlecast._tcp</string><string>_aureonsync._tcp</string><string>_aureonpair._tcp</string></array>
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>Audio</string>
     <key>CFBundleTypeRole</key><string>Viewer</string>

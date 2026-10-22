@@ -15,7 +15,17 @@ struct RTSettings: Codable, Equatable {
     var convolution = ConvolutionSettings()
     var crossfeed = CrossfeedSettings()
     var headphoneEQ = HeadphoneEQSettings()
+    var dither = DitherSettings()
     var anyEnabled: Bool { convolution.enabled || crossfeed.enabled || headphoneEQ.enabled }
+
+    init() {}
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        convolution = try c.decodeIfPresent(ConvolutionSettings.self, forKey: .convolution) ?? convolution
+        crossfeed = try c.decodeIfPresent(CrossfeedSettings.self, forKey: .crossfeed) ?? crossfeed
+        headphoneEQ = try c.decodeIfPresent(HeadphoneEQSettings.self, forKey: .headphoneEQ) ?? headphoneEQ
+        dither = try c.decodeIfPresent(DitherSettings.self, forKey: .dither) ?? dither
+    }
 }
 
 /// Everything the user can change about how audio is processed. Changes to anything except `dsp` and `rt` rebuild the
@@ -98,6 +108,8 @@ final class Renderer: @unchecked Sendable {
     let underruns: Counter
     /// Hot-swappable post-processing (convolution, crossfeed, headphone EQ). Empty by default: the direct path stays untouched.
     let chain = RCUBox<RTChainState>()
+    /// Word-length reduction, always last (after the DJ fader).
+    let dither = RCUBox<DitherStage>()
     let tap: AnalysisTap
     /// Set before the stream starts (DJ decks). Changes are smoothed over each render block to avoid clicks.
     var deckGain: DeckGain?
@@ -134,6 +146,7 @@ final class Renderer: @unchecked Sendable {
                     lastGain = target
                 }
             }
+            _ = dither.read { $0.process(dst, frames: n) }
             tap.write(dst, frames: n, channels: channels)
         }
         return n

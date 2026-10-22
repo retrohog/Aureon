@@ -277,7 +277,7 @@ final class Player: @unchecked Sendable {
             let f = try openLossless(path: path)
             var stages: [String] = []
             if RemoteMedia.isRemote(path) {
-                stages.append("Streamed from \(SubsonicPath.isSubsonic(path) ? "your music server" : "cloud storage"), in \(CloudRegistry.shared.playbackConfig.chunkSize >> 20) MB pieces, read ahead of the playhead")
+                stages.append("Streamed from \(SubsonicPath.isSubsonic(path) || LMSPath.isLMS(path) ? "your music server" : "cloud storage"), in \(CloudRegistry.shared.playbackConfig.chunkSize >> 20) MB pieces, read ahead of the playhead")
                 warmNeighbour(of: path)
             }
             if !f.info.transparent { stages.append("Lossy source: not bit-perfect by definition") }
@@ -458,7 +458,9 @@ final class Player: @unchecked Sendable {
             let (state, notes) = makeRTChain(s, rate: rate, channels: channels)
             guard rtGeneration.load(ordering: .sequentiallyConsistent) == gen else { return }     // superseded by a newer request
             renderer.chain.publish(state)
-            update { $0.rtStages = state?.description ?? []; $0.rtLatencyFrames = state?.latencyFrames ?? 0 }
+            let dither: DitherStage? = s.dither.enabled ? DitherStage(settings: s.dither, channels: channels) : nil
+            renderer.dither.publish(dither)
+            update { $0.rtStages = (state?.description ?? []) + (dither.map { [$0.name] } ?? []); $0.rtLatencyFrames = state?.latencyFrames ?? 0 }
             notes.forEach(note)
         }
         if async { rtQueue.async(execute: work) } else { work() }
@@ -509,7 +511,7 @@ final class Player: @unchecked Sendable {
             }
         }
         applyDSP(cfg.dsp)
-        publishRT(cfg.rt, renderer: renderer, rate: fmt.sampleRate, channels: fmt.channels, async: false)
+        publishRT(fmt.isDoP ? RTSettings() : cfg.rt, renderer: renderer, rate: fmt.sampleRate, channels: fmt.channels, async: false)
         try sink.start(renderer: renderer)
         defer { renderer.useDSP.store(false, ordering: .relaxed); sink.stop(); dsp.teardown() }
 
@@ -627,7 +629,7 @@ final class Player: @unchecked Sendable {
                     }
                 }
                 applyDSP(cfg.dsp)
-                if cfg.rt != old.rt { publishRT(cfg.rt, renderer: renderer, rate: fmt.sampleRate, channels: fmt.channels, async: true) }
+                if cfg.rt != old.rt { publishRT(fmt.isDoP ? RTSettings() : cfg.rt, renderer: renderer, rate: fmt.sampleRate, channels: fmt.channels, async: true) }
             }
 
             // hosted plugins

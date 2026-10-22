@@ -83,9 +83,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", connect = "Connect", system = "System"
+    case general = "General", sidebar = "Sidebar", connect = "Connect", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .connect: "network"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .sidebar: "sidebar.left"; case .connect: "network"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -142,6 +142,9 @@ final class PlayerModel: ObservableObject {
         dj.enter(options: o, rate: rate > 0 ? rate : 48_000)
     }
     @Published var settingsSection: SettingsSection = .general
+    /// A page that was hidden from the sidebar and is being used inside Settings instead.
+    @Published var settingsPage: Tab?
+    @Published var sidebar = SidebarLayout.load() { didSet { if sidebar != oldValue { sidebar.save() } } }
     /// The colour theme. Changing it rebuilds the whole interface (the root view is keyed on the theme's id).
     @Published private(set) var theme: Theme = Theme.current
     /// Which colour theme (its dark and light variants are chosen by `appearance`).
@@ -164,7 +167,11 @@ final class PlayerModel: ObservableObject {
     let rip = RipModel()
     let convert = ConvertModel()
     let cloud = CloudModel()
+    let lms = LMSModel()
     let cast = CastModel()
+    let zone = ZoneModel()
+    let speakers = SpeakerModel()
+    let bridge = BridgeModel()
     let dspModel = DSPModel()
     @Published var showDSPPrompt = false
     private var pendingTab: Tab?
@@ -204,7 +211,29 @@ final class PlayerModel: ObservableObject {
     @Published var followRate = true { didSet { if oldValue != followRate { restartInPlace(); defaults.set(followRate, forKey: "aureon.followRate") } } }
 
     @Published var settings = PlaybackSettings() {
-        didSet { if settings != oldValue { player.settings = settings; persist() } }
+        didSet {
+            guard settings != oldValue else { return }
+            // a change that would clash with something that is on is held back until the person says what to do (see SettingRules)
+            if !skipRules, let c = SettingRules.check(old: oldValue, new: settings) {
+                let proposed = settings
+                settings = oldValue
+                conflict = ConflictPrompt(message: c.message, fixLabel: c.fixLabel, proposed: proposed, fix: c.fix)
+                return
+            }
+            player.settings = settings; persist()
+        }
+    }
+    private var skipRules = false
+    /// A change waiting for an answer: the interface shows it as a question.
+    @Published var conflict: ConflictPrompt?
+
+    func resolveConflict(accept: Bool) {
+        guard let c = conflict else { return }
+        conflict = nil
+        guard accept else { return }
+        var s = c.proposed
+        c.fix(&s)
+        skipRules = true; settings = s; skipRules = false
     }
 
     /// The device volume, only when the device can report it. `volume` is never written from anywhere but `setVolume`, which only the
@@ -263,7 +292,17 @@ final class PlayerModel: ObservableObject {
         dspModel.restoreHosted = { [unowned self] saved in await self.restorePlugins(saved); self.dspModel.markPluginsClean() }
         dspModel.pluginCount = { [unowned self] in self.hosted.count }
         cloud.library = library
+        lms.library = library
+        bridge.library = library
         cast.onRouteChange = { [unowned self] in self.restartInPlace() }
+        zone.onRouteChange = { [unowned self] in self.restartInPlace() }
+        speakers.onRouteChange = { [unowned self] in self.restartInPlace() }
+        zone.cast = cast
+        cast.willConnect = { [unowned self] in
+            guard self.zone.isActive else { return true }
+            guard askToProceed(title: "A multi-room zone is playing", message: "Casting to a single speaker and a zone cannot both use the output. Stop the zone and cast?", proceed: "Stop zone and cast") else { return false }
+            self.zone.stop(); return true
+        }
         rip.onFinished = { [unowned self] folder in self.library.importOnce(folder) }
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
@@ -294,6 +333,7 @@ final class PlayerModel: ObservableObject {
         library.onAdd = { [weak self] t, p in self?.addTracks(t, play: p) }
         library.onReplace = { [weak self] t in self?.replaceQueue(with: t) }
         albumArt.store = library.store; albumArt.fetcher = artFetcher
+        collections.attach(library.store)
         albumArt.fetchOnline = { [weak self] in (self?.fetchMissingArt ?? false) && ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
         artistArt.store = library.store
         artistArt.fetchOnline = { [weak self] in (self?.fetchMissingArt ?? false) && ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
@@ -540,7 +580,7 @@ final class PlayerModel: ObservableObject {
     var options: PlayerOptions {
         var o = PlayerOptions(); o.hog = exclusive; o.rateSwitch = followRate; o.deviceID = deviceID == 0 ? nil : deviceID
         o.tuning = system.quietMode ? system.quiet : nil
-        if let f = cast.sinkFactory { o.sinkFactory = f }
+        if let f = zone.sinkFactory ?? cast.sinkFactory ?? speakers.sinkFactory(primary: deviceID) { o.sinkFactory = f }
         o.promoteEngineThread = system.promoteEngine
         o.ioCycleUsage = system.useCycleUsage ? Float(system.cycleUsage) : nil
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }      // snapshots make no sound

@@ -46,6 +46,14 @@ final class OutputDevice {
         originalRate = getValue(dev, addr(kAudioDevicePropertyNominalSampleRate), default: Float64(0)) ?? 0
     }
 
+    /// The persistent identifier of the device (stays the same across restarts and re-plugging).
+    var uid: String {
+        var u: Unmanaged<CFString>? = nil
+        var a = addr(kAudioDevicePropertyDeviceUID), sz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        guard AudioObjectGetPropertyData(id, &a, 0, nil, &sz, &u) == noErr else { return "" }
+        return (u?.takeRetainedValue() as String?) ?? ""
+    }
+
     var currentRate: Double { getValue(id, addr(kAudioDevicePropertyNominalSampleRate), default: Float64(0)) ?? 0 }
 
     /// Discrete rates the device can run its clock at.
@@ -187,12 +195,12 @@ final class OutputDevice {
 
 
 
-struct OutputDeviceInfo: Identifiable, Hashable { let id: AudioDeviceID; let name: String; let rates: [Double] }
+struct OutputDeviceInfo: Identifiable, Hashable { let id: AudioDeviceID; let name: String; let rates: [Double]; var uid = ""; var channels = 2 }
 
 func listOutputDevices() -> [OutputDeviceInfo] {
     getArray(AudioObjectID(kAudioObjectSystemObject), addr(kAudioHardwarePropertyDevices), of: AudioDeviceID.self)
         .compactMap { id in
             guard let d = OutputDevice(id: id), !d.outputStreams.isEmpty else { return nil }
-            return OutputDeviceInfo(id: id, name: d.name, rates: d.supportedRates)
+            return OutputDeviceInfo(id: id, name: d.name, rates: d.supportedRates, uid: d.uid, channels: d.outputChannelCount)
         }
 }

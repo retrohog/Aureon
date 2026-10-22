@@ -20,7 +20,7 @@ enum ScrollStep {
 @MainActor
 final class ScrollRouter {
     static let shared = ScrollRouter()
-    private var current: (id: UUID, handler: (Double) -> Bool)?
+    private var current: (id: UUID, handler: (Double) -> Bool, view: () -> NSView?)?
     private var monitor: Any?
 
     func install() {
@@ -31,20 +31,64 @@ final class ScrollRouter {
     }
 
     /// Called by a control when the pointer enters (handler) or leaves (nil) it. `handler` returns whether it used the movement.
-    func hover(_ id: UUID, _ handler: ((Double) -> Bool)?) {
-        if let handler { current = (id, handler) } else if current?.id == id { current = nil }
+    func hover(_ id: UUID, _ handler: ((Double) -> Bool)?, view: @escaping () -> NSView? = { nil }) {
+        if let handler { current = (id, handler, view) } else if current?.id == id { current = nil }
     }
 
+    /// The registered control counts only while the pointer really is over it (hover state goes stale when a page scrolls under a still pointer).
+    private func currentUnderPointer(_ e: NSEvent) -> (Double) -> Bool {
+        guard let c = current, let v = c.view(), v.window === e.window, v.window != nil else { return { _ in false } }
+        return v.bounds.contains(v.convert(e.locationInWindow, from: nil)) ? c.handler : { _ in false }
+    }
+
+    /// True while a trackpad gesture that began over a slider is still going: the page must not start scrolling halfway through it.
+    private var capturing = false
+
+    /// Scrolling must never get stuck on a slider. A trackpad gesture adjusts a slider only if it *began* over it; a mouse wheel (no gesture
+    /// phases) adjusts it only with ⌥ held. Everything else scrolls the page as usual.
     private func handle(_ e: NSEvent) -> NSEvent? {
         let notches = ScrollStep.notches(deltaY: Double(e.scrollingDeltaY), precise: e.hasPreciseScrollingDeltas)
-        guard notches != 0 else { return e }
-        if let c = current, c.handler(notches) { return nil }
-        if let w = e.window, let content = w.contentView, let sup = content.superview,
-           let hit = content.hitTest(sup.convert(e.locationInWindow, from: nil)) {
-            var v: NSView? = hit
-            while let x = v { if let s = x as? NSSlider, s.isEnabled { adjust(s, notches); return nil }; v = x.superview }
+        let phased = !e.phase.isEmpty || !e.momentumPhase.isEmpty
+        if phased {
+            if e.phase.contains(.began) || e.phase.contains(.mayBegin) { capturing = sliderUnderPointer(e) != nil || currentUnderPointer(e)(0) }
+            defer { if e.phase.contains(.ended) || e.phase.contains(.cancelled) || e.momentumPhase.contains(.ended) { capturing = false } }
+            if capturing, notches != 0, adjustUnderPointer(e, notches) { return nil }
+            if capturing { return nil }
+            return scrollUnderPointer(e) ? nil : e
         }
-        return e
+        if notches != 0, e.modifierFlags.contains(.option), adjustUnderPointer(e, notches) { return nil }
+        return scrollUnderPointer(e) ? nil : e
+    }
+
+    /// Hands the movement to the scroll view that is under the pointer *now*. AppKit remembers the view the pointer was last over, so after a
+    /// page is swapped for another beneath a still pointer, scrolling would otherwise go nowhere until the next click or mouse movement.
+    private func scrollUnderPointer(_ e: NSEvent) -> Bool {
+        guard let w = e.window, w.level == .normal, let content = w.contentView, let sup = content.superview,
+              let hit = content.hitTest(sup.convert(e.locationInWindow, from: nil)) else { return false }
+        let vertical = abs(e.scrollingDeltaY) >= abs(e.scrollingDeltaX)
+        var v: NSView? = hit
+        while let x = v {
+            if let sv = x as? NSScrollView, let doc = sv.documentView {
+                let room = vertical ? doc.frame.height - sv.contentView.bounds.height : doc.frame.width - sv.contentView.bounds.width
+                if room > 1 { sv.scrollWheel(with: e); return true }
+            }
+            v = x.superview
+        }
+        return false
+    }
+
+    private func sliderUnderPointer(_ e: NSEvent) -> NSSlider? {
+        guard let w = e.window, let content = w.contentView, let sup = content.superview,
+              let hit = content.hitTest(sup.convert(e.locationInWindow, from: nil)) else { return nil }
+        var v: NSView? = hit
+        while let x = v { if let s = x as? NSSlider, s.isEnabled { return s }; v = x.superview }
+        return nil
+    }
+
+    private func adjustUnderPointer(_ e: NSEvent, _ notches: Double) -> Bool {
+        if currentUnderPointer(e)(notches) { return true }
+        if let s = sliderUnderPointer(e) { adjust(s, notches); return true }
+        return false
     }
 
     private func adjust(_ s: NSSlider, _ notches: Double) {
@@ -63,10 +107,12 @@ private struct ScrollAdjustable: ViewModifier {
     let hovering: Bool
     let apply: (Double) -> Bool
     @StateObject private var id = Box(UUID())
+    @StateObject private var anchor = ViewAnchor()
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil) }
+            .background(AnchorView(anchor: anchor))
+            .onChange(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil, view: { [weak anchor] in anchor?.view }) }
             .onDisappear { ScrollRouter.shared.hover(id.v, nil) }
     }
 }
@@ -82,4 +128,14 @@ enum SliderDrag {
     static func clickNudge(current: Double, press: Double, step: Double) -> Double {
         min(1, max(0, current + min(step, max(-step, press - current))))
     }
+}
+
+/// Gives the router the on-screen view of a control, so it can tell whether the pointer is over it.
+final class ViewAnchor: ObservableObject { weak var view: NSView? }
+
+private struct AnchorView: NSViewRepresentable {
+    let anchor: ViewAnchor
+    final class Passive: NSView { override func hitTest(_ point: NSPoint) -> NSView? { nil } }
+    func makeNSView(context: Context) -> NSView { let v = Passive(); anchor.view = v; return v }
+    func updateNSView(_ v: NSView, context: Context) { anchor.view = v }
 }
