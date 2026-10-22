@@ -140,8 +140,8 @@ An honest list of what is **not verified** or **not built**.
 <summary><b>Known issue in 0.2.0</b></summary>
 
 - **Closing Now Playing with the chevron can leave part of the window unresponsive.** The chevron is at the top left of the
-  Now Playing page; afterwards parts of the window, including the sidebar, may stop reacting to clicks. It is reproduced by an
-  automated test and is not fixed in 0.2.0. It is the first thing to fix in 0.2.1.
+  Now Playing page; afterwards parts of the window, including the sidebar, may stop reacting to clicks. No workaround yet.
+  It is the first thing we will fix in 0.2.1.
 
 </details>
 
