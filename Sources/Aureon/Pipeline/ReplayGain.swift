@@ -5,9 +5,9 @@ import AVFoundation
 // Leveling changes sample values, so a stream with gain applied is no longer marked bit-transparent.
 
 enum ReplayGainMode: String, Codable, CaseIterable, Identifiable {
-    case off, track, album
+    case off, track, album, loudness
     var id: String { rawValue }
-    var title: String { switch self { case .off: "Off (bit-perfect)"; case .track: "Track gain"; case .album: "Album gain" } }
+    var title: String { switch self { case .off: "Off (bit-perfect)"; case .track: "Track gain"; case .album: "Album gain"; case .loudness: "Loudness (EBU R128)" } }
 }
 
 struct ReplayGainSettings: Equatable, Codable {
@@ -158,7 +158,7 @@ enum Loudness {
 
     /// Integrated loudness (LUFS) and sample peak (linear) of a file.
     static func analyze(path: String, cancelled: () -> Bool = { false }) -> (lufs: Double, peak: Double)? {
-        guard let f = try? LosslessFile(path: path), f.info.totalFrames > 0 else { return nil }
+        guard let f = try? openLossless(path: path), f.info.totalFrames > 0 else { return nil }
         let ch = f.info.channels, fs = f.info.sampleRate, hop = Int(fs / 10)
         var filters = (0..<ch).map { _ in kWeighting(sampleRate: fs) }
         let weights: [Double] = (0..<ch).map { c in ch == 6 ? (c == 3 ? 0 : (c >= 4 ? 1.41 : 1)) : 1 }   // 5.1: skip LFE, surround +1.5 dB
@@ -203,7 +203,10 @@ final class ReplayGainStore: @unchecked Sendable {
     func measurement(for path: String, computeIfMissing: Bool) -> (lufs: Double, peak: Double)? {
         lock.lock(); let c = measured[path]; lock.unlock()
         if let c { return c }
-        guard computeIfMissing, let m = Loudness.analyze(path: path) else { return nil }
+        // the analyser's cache first (it survives restarts), then a fresh measurement; the peak is the true peak, so levelling cannot push inter-sample peaks over full scale
+        let r = computeIfMissing ? LoudnessCache.shared.analysis(path: path) : LoudnessCache.shared.cached(path: path)
+        guard let r, let l = r.integratedLUFS else { return nil }
+        let m = (lufs: l, peak: r.truePeakLinear)
         lock.lock(); measured[path] = m; lock.unlock()
         return m
     }
@@ -216,7 +219,7 @@ final class ReplayGainStore: @unchecked Sendable {
             if busy { continue }
             DispatchQueue.global(qos: .utility).async { [self] in
                 let t = tags(for: p)
-                if t.isEmpty && settings.analyzeUntagged { _ = measurement(for: p, computeIfMissing: true) }
+                if settings.mode == .loudness || (t.isEmpty && settings.analyzeUntagged) { _ = measurement(for: p, computeIfMissing: true) }
                 lock.lock(); inFlight.remove(p); lock.unlock()
             }
         }
@@ -224,12 +227,14 @@ final class ReplayGainStore: @unchecked Sendable {
 
     func resolve(path: String, settings s: ReplayGainSettings, allowMeasuring: Bool) -> ReplayGainResult {
         guard s.mode != .off else { return ReplayGainResult(linear: 1, appliedDB: 0, origin: "none", limitedByPeak: false) }
-        let t = tags(for: path)
         var gain: Double?, peak: Double?, origin = "none"
-        if s.mode == .album { gain = t.albumGain ?? t.trackGain; peak = t.albumGain != nil ? t.albumPeak : t.trackPeak }
+        let t = s.mode == .loudness ? ReplayGainTags() : tags(for: path)        // loudness mode ignores tags: every file is levelled by its own measurement
+        if s.mode == .loudness {
+            if let m = measurement(for: path, computeIfMissing: allowMeasuring) { gain = s.referenceLUFS - m.lufs; peak = m.peak; origin = "measured" }
+        } else if s.mode == .album { gain = t.albumGain ?? t.trackGain; peak = t.albumGain != nil ? t.albumPeak : t.trackPeak }
         else { gain = t.trackGain ?? t.albumGain; peak = t.trackGain != nil ? t.trackPeak : t.albumPeak }
-        if gain != nil { origin = "tag" }
-        else if s.analyzeUntagged, let m = measurement(for: path, computeIfMissing: allowMeasuring) {
+        if gain != nil && s.mode != .loudness { origin = "tag" }
+        else if gain == nil && s.mode != .loudness, s.analyzeUntagged, let m = measurement(for: path, computeIfMissing: allowMeasuring) {
             gain = s.referenceLUFS - m.lufs; peak = m.peak; origin = "measured"
         }
         guard let g = gain else { return ReplayGainResult(linear: 1, appliedDB: 0, origin: "none", limitedByPeak: false) }

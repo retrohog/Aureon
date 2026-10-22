@@ -20,7 +20,15 @@ signal-path panel always tells you which it is.
 | **Live queue** | Remove, reorder, insert and append while playing; the audible track is never disturbed. |
 | **Headphones** | Bauer **BS2B crossfeed**; **AutoEQ** profiles fetched on demand from the open AutoEQ database (any number of filters, safety pre-amp). |
 | **Room correction** | **Partitioned FFT convolution** (Accelerate) of Room EQ Wizard–style impulse responses (WAV int/float, mono/stereo, any rate), resampled to the stream. 8 s of stereo IR runs ~57× faster than real time. |
-| **DJ mode** | A two-deck console on one mixer clock: waveform with hot cues and loop region, tempo (BPM) and musical key (Camelot) detection with a cached analysis, pitch fader (±8 / ±16 %) with pitch bend, SYNC and beat-aligned BEAT sync, quantize, 4 hot cues per track (remembered), IN/OUT and 1/2/4/8-beat loops with halve/double, per-channel trim, 3-band EQ with kill, sweep filter and an effect rack (echo, reverb, flanger, gate), channel faders, crossfader (smooth / blend / cut), master EQ, level and a brick-wall limiter, headphone cue (PFL) on a second device or outputs 3–4, a WAV mix recorder and a library browser with BPM / key / energy columns. **Auto DJ** picks the next track, matches tempo, and blends with a bass swap, using a ~200-weight on-device network that learns from your thumbs-up / thumbs-down (no cloud, not a language model). |
+| **DJ mode** | A two-deck console on one mixer clock: waveform with hot cues and loop region, tempo (BPM) and musical key (Camelot) detection with a cached analysis, pitch fader (±8 / ±16 %) with pitch bend, SYNC and beat-aligned BEAT sync, quantize, 4 hot cues per track (remembered), IN/OUT and 1/2/4/8-beat loops with halve/double, per-channel trim, 3-band EQ with kill, sweep filter and an effect rack (echo, reverb, flanger, gate), channel faders, crossfader (smooth / blend / cut), master EQ, level and a brick-wall limiter, headphone cue (PFL) on a second device or outputs 3–4, a WAV mix recorder and a library browser with BPM / key / energy columns. **Smart DJ** (see below) builds a set from a sentence. |
+| **Smart DJ** | Ask in your own words — "10 upbeat electronic tracks for a workout" — and an on-device language model (Qwen2.5-0.5B-Instruct, 4-bit, run with MLX Swift) picks the songs from your library. The request is first read by plain code (how many, genre, tempo, decade, artist), the library is narrowed to ~60 candidates and sent to the model as compact JSON (id, artist, title, genre, BPM, year, key, tags); the model's answer is **grammar-constrained** to `{"ids":[…]}` over those ids, then checked and completed by a ranking, so the result is always valid. The model lives in a helper process that is started when Smart DJ is switched on and **quits when it is switched off**, returning its memory. Without the helper the same requests are answered by the ranking alone. |
+| **Multichannel** | 5.1 / 7.1 FLAC, WAV, AIFF play at their own channel count when the device has the outputs (speaker labels are matched, not guessed); otherwise an ITU-R BS.775 downmix. DSD with more channels than the device falls back from DoP to PCM. |
+| **Loudness** | EBU R128 / ITU-R BS.1770-4 integrated loudness, LRA, 4× true peak and DR, measured with Accelerate and cached in the library; used for volume levelling and shown per track. |
+| **Extreme rates** | DSD512/1024 and 1.5 MHz PCM through a multi-stage decimator; a start-up benchmark sizes buffers and picks what this Mac can sustain in real time, so an old Intel Mac plays at a lower rate instead of stuttering. |
+| **Rip CD** | Native drive access (IOKit, raw 2352-byte sectors with C2 error pointers), secure re-reads with cache flushing and voting, read-offset correction, **AccurateRip** v1/v2 verification, MusicBrainz tags and cover art, FLAC / Apple Lossless / WAV, CUE sheet and log. BIN/CUE images rip the same way. |
+| **Convert** | Multithreaded batch transcoding to 256 kbps AAC, Apple Lossless or FLAC; optional EBU R128 levelling to a target that never lets a true peak pass the ceiling; tags and cover art are carried over; mirrors folder structure. `Aureon convert` does the same from the terminal. |
+| **Cloud & servers** | Your own Backblaze B2 / Amazon S3 / Cloudflare R2 / Wasabi / MinIO bucket (SigV4-signed, keys in the Keychain) or a Navidrome / Subsonic server, indexed into the library and streamed through a chunked reader that reads ahead of the playhead by seconds of audio, retries failed requests, keeps header and tail cached and warms the next track, so playback stays gapless. |
+| **Cast & AirPlay** | The processed output (after EQ, upsampling, everything) is encoded to lossless FLAC on the fly and sent to Chromecast / Google Home / Nest speakers (CASTV2 over TLS, Bonjour discovery); the system AirPlay picker sends to HomePods and AirPlay speakers. |
 | **Volume safety** | The volume controls never invent a reading (an unreadable device volume is shown as unavailable), move only when you grab the knob (a click elsewhere nudges a few per cent) and obey an optional ceiling in Settings. |
 | **Home & Settings** | A Home page with what you were playing, Radio and Podcasts doors and album rails; a Settings page holds General, Connect and System. |
 | **Internet radio** | Free stations worldwide from the radio-browser.info directory: Local radios, High Quality (including lossless FLAC streams), By genre, By location, By language, favourites and your own stream URLs. MP3, AAC/HE-AAC and FLAC over HTTP or HTTPS, live "now playing" titles (ICY metadata), automatic reconnection. Streams are **upscaled automatically** with the sinc resampler to the DAC's best rate (switchable). |
@@ -57,6 +65,11 @@ git clone <this repo> && cd Aureon
 Requirements: macOS 15+, Swift 6 toolchain (the Command Line Tools are enough — no Xcode needed). The app is ad-hoc signed by default;
 on first launch use right-click → Open.
 
+**Smart DJ's language model** is built separately because MLX needs Xcode's Metal compiler: with full Xcode installed
+(`xcodebuild -downloadComponent MetalToolchain` once), `build_app.sh` builds `Packages/SmartDJHelper` and embeds it in the app
+(`SKIP_SMARTDJ=1` skips it). Without it everything else works and Smart DJ answers by ranking alone. The model (~300 MB) is downloaded from
+Hugging Face the first time Smart DJ is switched on.
+
 ## Use
 
 Double-click the app, or from a terminal:
@@ -69,6 +82,7 @@ Aureon play --dsd dop --hog track.dsf                  # only with a DoP-capable
 Aureon daemon --music ~/Music --name "Study"           # headless; prints the pairing token
 Aureon hwdebug --all --json report.json                # test your USB DAC
 Aureon radiocheck https://example.com/stream.mp3     # decode a live stream for a few seconds and report (plays nothing)
+Aureon convert --format aac --lufs -16 ~/Converted ~/Music/Album   # batch transcode, levelled, tags and covers kept
 Aureon inspect song.flac | Aureon verify a.flac b.wav | Aureon devices | Aureon selftest [filter]
 ```
 
@@ -79,7 +93,7 @@ Keys: <kbd>Space</kbd> pause · <kbd>←</kbd>/<kbd>→</kbd> ±10 s · <kbd>⌘
 ## Testing
 
 ```bash
-swift build -c release && .build/release/Aureon selftest        # 236 tests, ~1 min, no audio hardware needed
+swift build -c release && .build/release/Aureon selftest        # ~380 tests, ~3 min, no audio hardware needed
 .build/release/Aureon selftest queue                             # a subset, by name
 ```
 
@@ -117,7 +131,11 @@ Honest list of what is **not** verified or **not** built:
 - **DJ mode limits.** No keylock (changing pitch changes key), no scratching / jog wheel, no MIDI controllers. The headphone cue routes to a second device or outputs 3–4; it has been tested with simulated devices only, not with real hardware. Beat sync is only as accurate as the position readout (about a few tens of milliseconds). Tempo and key are estimated and can be wrong on tracks without a clear beat or tonal centre (half/double time is common). Auto DJ needs analysed tracks (use “Analyse all”); its choices are a heuristic plus a tiny network, so expect the occasional poor pick — rate mixes to teach it. The mix runs through a limiter at −0.3 dBFS.
 - **No TagLib:** the parsers are Aureon's own (a C++ dependency adds build complexity for no benefit here); unusual tag layouts may still need AVFoundation's fallback.
 - The interface is dark-only. Hover, drag and animation behaviour was reviewed from rendered snapshots and code, not by clicking through the live app.
-- Not built: streaming services, UPnP/Chromecast renderers, MQA.
+- **Not built: Tidal, Qobuz and Spotify.** They hand out lossless streams only to their own apps and approved partners (encrypted manifests, per-app keys), so a third-party player cannot play them without circumventing that protection; Aureon does not. What it does instead: your own bucket and any Subsonic-compatible server. A partner integration would plug in as another `RangeFetcher` behind the same chunked reader. Also not built: UPnP renderers, MQA.
+- **Casting is verified against a software speaker, not a real one.** The CASTV2 protocol, the TLS connection (with an untrusted certificate, as Chromecasts present), the HTTP stream and the FLAC encoder (decoded bit-exact by CoreAudio) are tested end to end; I have no Chromecast to try. AirPlay uses the system's own route picker: macOS does the encoding (Apple Lossless at 44.1 / 48 kHz), so exclusive mode, rate switching and bit-perfect output do not apply, and Aureon has no AirPlay 2 sender of its own (the protocol is undocumented and uses Apple's device authentication).
+- **Cloud storage is tested against an in-memory S3 server that verifies every signature**, and the SigV4 implementation against Amazon's published examples; not against a live Backblaze or AWS account. DSD files cannot be streamed from a bucket or server (they need file access).
+- **CD ripping is tested against a simulated drive** (C2 errors, hidden errors, cache effects, read failures) and the disc IDs and AccurateRip checksums against real data; the IOKit read path itself has not run on a physical drive. No drive-offset database is bundled: enter your drive's offset (accuraterip.com lists them).
+- **Smart DJ's model is small.** A 0.5B-parameter model follows the answer format perfectly (it is constrained to it) but judges taste poorly, so its picks are checked against what you asked for and completed by the ranking; the panel shows how many picks were the model's. Tempo matching needs the library to be analysed (DJ browser → Analyse).
 
 ## Contributing
 

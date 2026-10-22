@@ -53,9 +53,8 @@ final class RemixController: ObservableObject {
         status = "Off"; current = .none; canRate = false
     }
 
-    /// The deck the remix plays on: the one Auto DJ has on air, else the playing deck that is louder in the mix.
+    /// The deck the remix plays on: the playing deck that is louder in the mix.
     private func target() -> DJDeck? {
-        if model.auto.enabled { return model.auto.onAirDeck }
         let playing = model.decks.filter { $0.playing && $0.analysis?.bpm != nil }
         return playing.max { $0.mix.gain.value < $1.mix.gain.value }
     }
@@ -123,8 +122,6 @@ final class RemixController: ObservableObject {
     /// Runs about thirty times a second: steps the move in progress, and on a new bar decides what to do about the next one.
     func step() {
         guard enabled else { return }
-        // a blend belongs to Auto DJ: do not decorate it
-        if model.auto.enabled && model.auto.phase == .blending { if running != nil { finishRunning() }; status = "Auto DJ is mixing"; return }
         if let r = running, let d = deck {
             let bpm = d.effectiveBPM ?? 120
             let beat = Date().timeIntervalSince(r.start) * bpm / 60

@@ -33,7 +33,8 @@ final class LibraryStore: @unchecked Sendable {
         let track = ent("Track", [("uid", s, false), ("path", s, false), ("title", s, true), ("trackNumber", i, true), ("discNumber", i, true),
                                   ("duration", d, true), ("sampleRate", d, true), ("bitDepth", i, true), ("channels", i, true), ("codec", s, true),
                                   ("fileSize", l, true), ("fileMTime", d, true), ("year", i, true), ("mbRecordingID", s, true), ("workInferred", bo, true), ("addedAt", d, true),
-                                  ("liked", bo, true), ("likedAt", d, true), ("playCount", i, true), ("lastPlayedAt", d, true)])
+                                  ("liked", bo, true), ("likedAt", d, true), ("playCount", i, true), ("lastPlayedAt", d, true),
+                                  ("lufs", d, true), ("truePeakDB", d, true), ("lra", d, true), ("drScore", d, true), ("loudnessAt", d, true)])
         let release = ent("Release", [("uid", s, false), ("key", s, false), ("title", s, true), ("year", i, true), ("mbReleaseID", s, true), ("label", s, true), ("catalogNumber", s, true)])
         let party = ent("Party", [("uid", s, false), ("key", s, false), ("name", s, false), ("sortName", s, true), ("kind", s, true), ("mbArtistID", s, true)])
         let credit = ent("Credit", [("role", s, false), ("instrument", s, true), ("order", i, true)])
@@ -288,7 +289,9 @@ final class LibraryStore: @unchecked Sendable {
                         credits: credits, genres: many(t, "genres").compactMap { str($0, "name") }.sorted(), mbRecordingID: str(t, "mbRecordingID"),
                         addedAt: dbl(t, "addedAt") > 0 ? dbl(t, "addedAt") : nil, fileSize: Int64(dbl(t, "fileSize")),
                         liked: (t.value(forKey: "liked") as? NSNumber)?.boolValue == true ? true : nil, playCount: int(t, "playCount").flatMap { $0 > 0 ? $0 : nil },
-                        lastPlayedAt: dbl(t, "lastPlayedAt") > 0 ? dbl(t, "lastPlayedAt") : nil)
+                        lastPlayedAt: dbl(t, "lastPlayedAt") > 0 ? dbl(t, "lastPlayedAt") : nil,
+                        lufs: (t.value(forKey: "lufs") as? NSNumber)?.doubleValue, truePeakDB: (t.value(forKey: "truePeakDB") as? NSNumber)?.doubleValue,
+                        lra: (t.value(forKey: "lra") as? NSNumber)?.doubleValue, dr: (t.value(forKey: "drScore") as? NSNumber)?.doubleValue)
     }
 
     private func partyDTO(_ p: NSManagedObject, role: CreditRole? = nil) -> PartyDTO {
@@ -722,6 +725,42 @@ extension LibraryStore {
             deleted += pruneOrphans()
             commit(Touched(), deleted: deleted)
             return deleted.filter { $0.kind == "track" }.count
+        }
+    }
+}
+
+// MARK: - Loudness (EBU R128) cache in the library
+
+extension LibraryStore {
+    /// Stores the analysis of a file (silent files record their other figures with no loudness).
+    func setLoudness(path: String, _ r: R128Result) {
+        ctx.performAndWait {
+            guard let t = one("Track", "path == %@", path) else { return }
+            set(t, "lufs", r.integratedLUFS); set(t, "truePeakDB", r.truePeakDB); set(t, "lra", r.loudnessRange); set(t, "drScore", r.dynamicRange)
+            set(t, "loudnessAt", Date().timeIntervalSince1970)
+            try? ctx.save()
+        }
+    }
+
+    /// Files whose loudness has not been measured yet (or was measured by an older analyser).
+    func pathsNeedingLoudness(limit: Int = 100_000) -> [String] {
+        ctx.performAndWait { fetch("Track", NSPredicate(format: "loudnessAt == nil"), sort: [NSSortDescriptor(key: "path", ascending: true)], limit: limit).compactMap { str($0, "path") } }
+    }
+
+    func loudnessProgress() -> (done: Int, total: Int) {
+        ctx.performAndWait {
+            let r = NSFetchRequest<NSManagedObject>(entityName: "Track")
+            let total = (try? ctx.count(for: r)) ?? 0
+            r.predicate = NSPredicate(format: "loudnessAt != nil")
+            return ((try? ctx.count(for: r)) ?? 0, total)
+        }
+    }
+
+    /// Forgets every measurement (after a change of analyser).
+    func clearLoudness() {
+        ctx.performAndWait {
+            for t in fetch("Track", NSPredicate(format: "loudnessAt != nil")) { for k in ["lufs", "truePeakDB", "lra", "drScore", "loudnessAt"] { set(t, k, nil) } }
+            try? ctx.save()
         }
     }
 }

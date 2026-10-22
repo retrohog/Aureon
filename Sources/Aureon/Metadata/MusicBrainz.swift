@@ -142,6 +142,11 @@ final class MusicBrainzClient: @unchecked Sendable {
         self.http = http; self.identity = identity; self.cache = cache; limiter = RateLimiter(interval: minInterval)
     }
 
+    var metadataCache: MetadataCache { cache }
+
+    /// An arbitrary GET with the client's rate limit, retries and identification.
+    func request(_ path: String, _ query: [String: String]) async throws -> Data { try await get(path, query) }
+
     private func get(_ path: String, _ query: [String: String]) async throws -> Data {
         var c = URLComponents(string: Self.base + path)!
         c.queryItems = (query.merging(["fmt": "json"]) { a, _ in a }).sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }

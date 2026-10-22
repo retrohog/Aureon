@@ -33,6 +33,7 @@ final class OutputDevice {
     let name: String
     private(set) var originalRate: Double
     private var hogged = false
+    private var ioBufferOriginal = 0
 
     init?(id: AudioDeviceID? = nil) {
         guard let dev = id ?? getValue(AudioObjectID(kAudioObjectSystemObject), addr(kAudioHardwarePropertyDefaultOutputDevice), default: AudioDeviceID(0)),
@@ -163,7 +164,22 @@ final class OutputDevice {
         return ok
     }
 
+    // MARK: IO buffer size
+
+    var ioBufferFrames: Int { Int(getValue(id, addr(kAudioDevicePropertyBufferFrameSize), default: UInt32(0)) ?? 0) }
+
+    /// Asks for an IO buffer of about `frames` (clamped to what the device allows). At megahertz sample rates the default 512 frames means thousands of callbacks a second.
+    @discardableResult
+    func setIOBufferFrames(_ frames: Int) -> Bool {
+        let ranges = getArray(id, addr(kAudioDevicePropertyBufferFrameSizeRange), of: AudioValueRange.self)
+        guard let r = ranges.first else { return false }
+        if ioBufferOriginal == 0 { ioBufferOriginal = ioBufferFrames }
+        let want = UInt32(max(r.mMinimum, min(r.mMaximum, Double(frames))))
+        return setValue(id, addr(kAudioDevicePropertyBufferFrameSize), want) == noErr
+    }
+
     func restore() {
+        if ioBufferOriginal > 0 { _ = setValue(id, addr(kAudioDevicePropertyBufferFrameSize), UInt32(ioBufferOriginal)); ioBufferOriginal = 0 }
         if hogged { _ = setValue(id, addr(kAudioDevicePropertyHogMode), pid_t(-1)); hogged = false }
         if originalRate > 0 { _ = setRate(originalRate) }
     }

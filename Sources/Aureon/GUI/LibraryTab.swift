@@ -661,7 +661,7 @@ struct SongList: View {
 
     var body: some View {
         let position = Dictionary(tracks.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let nowPath = m.isActive ? m.current?.url.path : nil
+        let nowPath = m.isActive ? m.current?.path : nil
         VStack(spacing: 0) {
             if sortHeader { header }
             LazyVStack(spacing: 0) {

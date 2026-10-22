@@ -12,10 +12,20 @@ Aureon — bit-perfect music player
   Aureon inspect <file>        stream format, tags and loudness
   Aureon verify <a> <b>        prove two files decode to identical samples
   Aureon devices               output devices and their rates
+  Aureon convert [options] <out-dir> <file|folder>...   batch transcode (see below)
   Aureon selftest [filter]     run the built-in test suite
   Aureon daemon [options]      headless audio engine + network remote control (see below)
   Aureon hwdebug [options]     hardware path diagnostics (hog mode, integer mode, timing)
   Aureon radiocheck URL [sec]  open a live radio stream and report what it decodes (plays nothing)
+
+convert options:
+  --format aac|alac|flac   output format (default aac, 256 kbps)
+  --bitrate <kbps>         AAC bit rate
+  --lufs <target>          level every file to this integrated loudness (e.g. -16); never past the true-peak ceiling
+  --ceiling <dBTP>         true-peak ceiling for --lufs (default -1)
+  --no-boost               with --lufs, only turn loud tracks down
+  --jobs <n>               files converted at once (default: cores - 1)
+  --flat                   do not mirror the folder structure
 
 play options:
   --device <name>          output device (substring match)
@@ -286,6 +296,7 @@ func runCLI(_ args: [String]) {
         case "radiocheck" where args.count >= 2: cmdRadioCheck(args[1], seconds: args.count > 2 ? Double(args[2]) ?? 6 : 6)
         case "verify" where args.count == 3: try cmdVerify(args[1], args[2])
         case "play": try cmdPlay(Array(args.dropFirst()))
+        case "convert": cmdConvert(Array(args.dropFirst()))
         case "selftest": exit(SelfTestRunner.run(filter: args.count > 1 ? args[1] : nil))
         case "daemon": try cmdDaemon(Array(args.dropFirst()))
         case "hwdebug": try cmdHardwareDebug(Array(args.dropFirst()))
@@ -393,4 +404,48 @@ func cmdDaemon(_ args: [String]) throws {
     withExtendedLifetime(sources) { done.wait() }          // the sources must stay alive while we wait, or the signals are lost
     server.stop(); player.stop()
     print("daemon stopped"); fflush(stdout)
+}
+
+func cmdConvert(_ args: [String]) {
+    var o = TranscodeOptions(), positional: [String] = [], flat = false
+    var lufs: Double?, ceiling = -1.0, boost = true
+    var it = args.makeIterator()
+    while let a = it.next() {
+        switch a {
+        case "--format": guard let f = TranscodeFormat(rawValue: it.next() ?? "") else { fail("--format takes aac, alac or flac") }; o.format = f
+        case "--bitrate": o.bitrate = (Int(it.next() ?? "") ?? 256) * 1000
+        case "--lufs": lufs = Double(it.next() ?? "")
+        case "--ceiling": ceiling = Double(it.next() ?? "") ?? -1
+        case "--no-boost": boost = false
+        case "--jobs": o.concurrency = Int(it.next() ?? "") ?? 0
+        case "--flat": flat = true
+        default: positional.append(a)
+        }
+    }
+    if let l = lufs { o.normalize = LoudnessTarget(lufs: l, truePeakCeilingDB: ceiling, allowBoost: boost) }
+    guard positional.count >= 2 else { fail("usage: Aureon convert [options] <out-dir> <file|folder>...") }
+    let out = URL(fileURLWithPath: positional[0])
+    let inputs = positional.dropFirst().map { URL(fileURLWithPath: $0) }
+    var jobs: [TranscodeJob] = [], taken = Set<String>()
+    for input in inputs {
+        let base: URL? = flat ? nil : (input.hasDirectoryPath || (try? input.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? input : nil)
+        for f in Transcoder.expand([input]) {
+            let d = Transcoder.destination(for: f, in: out, format: o.format, relativeTo: base, taken: taken)
+            taken.insert(d.path); jobs.append(TranscodeJob(source: f, destination: d))
+        }
+    }
+    guard !jobs.isEmpty else { fail("nothing to convert") }
+    print("converting \(jobs.count) file(s) to \(o.format.title)" + (lufs.map { " at \($0) LUFS" } ?? ""))
+    let lock = NSLock()
+    let results = Transcoder.run(jobs: jobs, options: o, finished: { i, r in
+        lock.lock(); defer { lock.unlock() }
+        switch r.outcome {
+        case .done: print("  ✓ \(jobs[i].source.lastPathComponent)" + (r.measured.map { m in String(format: "  %.1f LUFS %+.1f dB%@", m.integratedLUFS ?? 0, r.appliedGainDB, r.gainLimitedByPeak ? " (peak-limited)" : "") } ?? ""))
+        case .failed(let m): print("  ✗ \(jobs[i].source.lastPathComponent): \(m)")
+        case .cancelled: break
+        }
+    })
+    let bad = results.filter { !$0.ok }.count
+    print("\(results.count - bad) converted, \(bad) failed")
+    exit(bad == 0 ? 0 : 1)
 }

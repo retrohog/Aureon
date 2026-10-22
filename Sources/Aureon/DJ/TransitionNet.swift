@@ -1,12 +1,9 @@
 import Foundation
 
-// Auto DJ: what to play next, and how to get there.
-//
-// There is no language model here. The "AI" is a small feed-forward network (about 200 weights) that scores how good a transition between two
-// analysed tracks would sound. It starts from a network trained, in a fraction of a second at first use, on examples generated from ordinary
-// DJ rules of thumb (match the tempo, keep the key compatible, avoid big jumps in energy and loudness), and it keeps learning from the
-// thumbs-up / thumbs-down the listener gives mixes. Everything stays on this Mac. The mixing itself (when to start, how long to blend,
-// the bass swap) is plain, deterministic code that can be tested without any audio.
+// The transition network: a small feed-forward network (about 200 weights) that scores how well one analysed track follows another.
+// It starts from a network trained, in a fraction of a second at first use, on examples generated from ordinary DJ rules of thumb
+// (match the tempo, keep the key compatible, avoid big jumps in energy and loudness). Smart shuffle uses it to order a queue.
+// Everything stays on this Mac.
 
 /// What the network sees about a pair of tracks: A is playing, B is a candidate to follow it.
 struct TransitionFeatures: Equatable, Codable {
@@ -142,90 +139,4 @@ final class TransitionNet {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let d = data() { try? d.write(to: url, options: .atomic) }
     }
-}
-
-enum AutoVibe: String, CaseIterable, Identifiable, Codable {
-    case steady, build, wind
-    var id: String { rawValue }
-    var title: String { switch self { case .steady: "Steady"; case .build: "Build up"; case .wind: "Wind down" } }
-    /// How much the next track's energy relative to the current one is wanted: positive = higher.
-    var energyTrend: Float { switch self { case .steady: 0; case .build: 0.12; case .wind: -0.12 } }
-}
-
-struct AutoCandidate: Equatable {
-    var track: DJTrack
-    var analysis: DJTrackAnalysis
-}
-
-enum AutoPlanner {
-    /// Ranks the candidates to follow `current`. Recently played tracks are skipped; `strictKey` rules out clashing keys altogether.
-    static func rank(current: DJTrackAnalysis, candidates: [AutoCandidate], recent: [String], vibe: AutoVibe, strictKey: Bool, net: TransitionNet) -> [(candidate: AutoCandidate, score: Float)] {
-        var out: [(AutoCandidate, Float)] = []
-        for c in candidates where !recent.contains(c.track.path) {
-            guard let f = TransitionFeatures(from: current, to: c.analysis) else { continue }
-            if strictKey, let ka = current.key, let kb = c.analysis.key, !ka.compatible(with: kb) { continue }
-            var s = net.score(f)
-            // steer the energy curve: reward the wanted direction, mildly
-            let de = Float(c.analysis.energy - current.energy)
-            s += 0.12 * (1 - min(1, abs(de - vibe.energyTrend) / 0.5)) - 0.06
-            out.append((c, s))
-        }
-        return out.sorted { $0.1 > $1.1 }.map { (candidate: $0.0, score: $0.1) }
-    }
-}
-
-/// The timing of one transition, in seconds on each track's own clock.
-struct MixPlan: Equatable {
-    /// Position in track A at which B starts (and the blend begins).
-    var aStart: Double
-    /// Where B is started in its own timeline (a beat on its grid, usually the first beat after its intro silence).
-    var bStart: Double
-    var duration: Double
-    /// Speed ratio B must be played at to match A's tempo (1 = unchanged).
-    var bRatio: Double
-    var beats: Int
-}
-
-enum AutoMixer {
-    /// Plans a blend of `beats` beats (rounded to a phrase) that ends where A's outro ends.
-    static func plan(a: DJTrackAnalysis, aRatio: Double, b: DJTrackAnalysis, beats requested: Int, maxPitch: Double = 0.16) -> MixPlan? {
-        guard let bpmA = a.bpm, let bpmB = b.bpm, bpmA > 0, bpmB > 0 else { return nil }
-        let tempoA = bpmA * aRatio
-        let ratio = max(1 - maxPitch, min(1 + maxPitch, FeaturesTempo.ratio(tempoA, bpmB)))
-        let beatSec = 60 / (bpmA * aRatio)                   // seconds of real time per beat while A plays
-        let beats = max(4, min(requested, Int(a.duration * 0.5 / beatSec)))      // never more than half of a short track
-        let duration = Double(beats) * beatSec
-        // end the blend at A's outro end (its natural ending when the track has no marked outro), on a beat of A's grid
-        let end = a.duration
-        var start = end - duration
-        if let o = a.outroStart { start = max(o - duration * 0.25, min(start, o + duration * 0.1)) }
-        start = max(0, min(start, end - duration))
-        if let near = a.nearestBeat(to: start) { start = near >= 0 && near + duration <= end + 1e-6 ? near : start }
-        // B starts on a beat; if it has an intro, begin at its first beat, otherwise at the very start of its grid
-        let bFirst = b.firstBeat ?? 0
-        let bStart = bFirst
-        return MixPlan(aStart: start, bStart: bStart, duration: duration, bRatio: ratio, beats: beats)
-    }
-
-    /// Everything that moves during a blend, for progress `p` in 0…1.
-    struct Frame: Equatable {
-        var gainA: Double, gainB: Double        // crossfader gains (equal power)
-        var lowA: Double, lowB: Double          // low EQ in dB (bass swap)
-        var filterA: Double                     // high-pass sweep on the outgoing deck, 0…1
-    }
-
-    static func frame(_ p: Double) -> Frame {
-        let p = max(0, min(1, p.isFinite ? p : 0))
-        let s = p * p * (3 - 2 * p)                                     // smoothstep
-        let t = s * .pi / 2
-        // the bass changes hands in one move in the middle, two decks' low end never play together
-        let swap = max(0, min(1, (p - 0.45) / 0.1))
-        let sw = swap * swap * (3 - 2 * swap)
-        return Frame(gainA: cos(t), gainB: sin(t), lowA: DJMath.eqRange.lowerBound * sw, lowB: DJMath.eqRange.lowerBound * (1 - sw), filterA: max(0, (p - 0.5) * 1.2))
-    }
-}
-
-enum FeaturesTempo {
-    /// The speed factor that brings track B (bpm `b`) to tempo `a`, allowing half and double time.
-    static func ratio(_ a: Double, _ b: Double) -> Double { TransitionFeatures.bestTempoRatio(from: a, to: b) }
 }

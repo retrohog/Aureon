@@ -16,6 +16,7 @@ struct AudioTab: View {
                 }
             }
             OutputCard()
+            CastCard()
             radioCard
             visualiserCard
             HeadphoneCard(hp: m.headphones)
@@ -24,6 +25,8 @@ struct AudioTab: View {
             dsd
             memory
             replayGain
+            multichannel
+            extreme
         }
         .confirmationDialog("Enable DoP?", isPresented: $confirm.v, titleVisibility: .visible) {
             Button("My DAC supports DoP — enable", role: .destructive) { m.settings.dsd.mode = .dop }
@@ -88,7 +91,7 @@ struct AudioTab: View {
                 }.pickerStyle(.segmented)
                 Picker("Highest rate", selection: $m.settings.upsampling.maxRate) {
                     Text("Device maximum").tag(0.0)
-                    ForEach([96_000.0, 192_000, 384_000], id: \.self) { Text(formatRate($0)).tag($0) }
+                    ForEach([96_000.0, 192_000, 384_000, 768_000, 1_536_000], id: \.self) { Text(formatRate($0)).tag($0) }
                 }
                 Note(text: "Steeper filters use more CPU. Changes apply within a moment, at the current position.")
             }
@@ -102,7 +105,7 @@ struct AudioTab: View {
                 if newValue == .dop { confirm.v = true } else { m.settings.dsd.mode = newValue }
             })) { ForEach(DSDMode.allCases) { Text($0.title).tag($0) } }
             if m.settings.dsd.mode == .pcm {
-                Picker("PCM rate", selection: $m.settings.dsd.pcmRate) { ForEach([88_200.0, 176_400, 352_800], id: \.self) { Text(formatRate($0)).tag($0) } }.pickerStyle(.segmented)
+                Picker("PCM rate", selection: $m.settings.dsd.pcmRate) { ForEach([88_200.0, 176_400, 352_800, 705_600, 1_411_200], id: \.self) { Text(formatRate($0)).tag($0) } }.pickerStyle(.segmented)
                 HStack {
                     Text("Level")
                     Slider(value: $m.settings.dsd.gainDB, in: -12...12, step: 0.5)
@@ -127,8 +130,25 @@ struct AudioTab: View {
         }
     }
 
+    private var extreme: some View {
+        let p = PerformanceProfile.ready
+        return Card(title: "Extreme resolution", subtitle: "DSD512 / DSD1024 and PCM up to 1536 kHz") {
+            Note(text: p.summary, color: p.tier == .low ? .orange : .green)
+            Note(text: "DSD1024 runs \(String(format: "%.0f", p.dsdFactor(dsdRate: 45_158_400, channels: 2)))× real time here and PCM at 1536 kHz \(String(format: "%.0f", p.resampleFactor(rate: 1_536_000, channels: 2)))×. " + (p.tier == .high ? "Nothing to tune: buffers are generous and the output callback is kept infrequent." : p.tier == .medium ? "Buffers are enlarged at megahertz rates to stay clear of dropouts." : "This Mac is at its limit at megahertz rates: Aureon lowers the output rate when a stream would not keep up, and says so in the signal path."))
+        }
+    }
+
+    private var multichannel: some View {
+        Card(title: "Multichannel (5.1 / 7.1)", subtitle: "Surround FLAC, ALAC, WAV, AIFF and DSD files") {
+            Picker("Mode", selection: $m.settings.multichannel.mode) { ForEach(MultichannelMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+            Note(text: m.settings.multichannel.mode.blurb)
+            Toggle("Include the LFE (subwoofer) channel when mixing down", isOn: $m.settings.multichannel.includeLFE)
+            Note(text: "A surround file on a device with enough outputs is sent to every speaker unchanged. Mixing down is the only processing, so it is the only thing that makes a stream not bit-perfect.")
+        }
+    }
+
     private var replayGain: some View {
-        Card(title: "ReplayGain", subtitle: "Reads ReplayGain tags (FLAC Vorbis, ID3, iTunes); measures EBU R128 loudness when a file has none") {
+        Card(title: "Volume leveling", subtitle: "ReplayGain tags (FLAC Vorbis, ID3, iTunes), or EBU R128 loudness measured from the audio itself") {
             Picker("Mode", selection: $m.settings.replayGain.mode) { ForEach(ReplayGainMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
             if m.settings.replayGain.mode != .off {
                 HStack {
@@ -138,6 +158,25 @@ struct AudioTab: View {
                 }
                 Toggle("Prevent clipping using the track's peak", isOn: $m.settings.replayGain.preventClipping)
                 Toggle("Measure loudness for untagged files (−18 LUFS)", isOn: $m.settings.replayGain.analyzeUntagged)
+                HStack {
+                    Text("Target").frame(width: 80, alignment: .leading)
+                    Picker("", selection: $m.settings.replayGain.referenceLUFS) {
+                        Text("−23 LUFS  EBU R128 broadcast").tag(-23.0); Text("−18 LUFS  ReplayGain 2").tag(-18.0); Text("−16 LUFS  Podcasts, Apple Sound Check").tag(-16.0); Text("−14 LUFS  Streaming").tag(-14.0)
+                    }.labelsHidden().frame(width: 290)
+                }
+                if m.settings.replayGain.mode == .loudness {
+                    HStack(spacing: 10) {
+                        if m.library.analysingLoudness {
+                            ProgressView(value: Double(m.library.loudnessDone), total: Double(max(1, m.library.loudnessTotal))).frame(width: 160)
+                            Text("\(m.library.loudnessDone) / \(m.library.loudnessTotal) songs measured").font(.caption).foregroundStyle(.secondary)
+                            Button("Stop") { m.library.stopLoudnessAnalysis() }
+                        } else {
+                            Button("Measure the whole library") { m.library.startLoudnessAnalysis() }.disabled(m.library.loudnessTotal > 0 && m.library.loudnessDone >= m.library.loudnessTotal)
+                            Text(m.library.loudnessTotal == 0 ? "No songs in the library yet" : "\(m.library.loudnessDone) of \(m.library.loudnessTotal) songs measured").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }.onAppear { m.library.refreshLoudnessProgress() }
+                    Note(text: "Every song is levelled by its own measured loudness (integrated LUFS, true-peak limited), so a quiet 1970s master and a loud modern one play at the same volume. Measuring happens once per file and is stored in your library.")
+                }
                 if let g = m.status.replayGainDB { Note(text: String(format: "Applying %+.2f dB to the current track.", g)) }
                 Note(text: "Leveling scales the samples, so playback is no longer bit-perfect while it is on.", color: .orange)
             }

@@ -334,38 +334,83 @@ struct MasterBar: View {
     }
 }
 
-// MARK: - Auto DJ
+// MARK: - Smart DJ
 
-struct AutoDJPanel: View {
+struct SmartDJPanel: View {
+    @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var model: DJModel
-    @ObservedObject var auto: AutoDJController
+    @ObservedObject var smart: SmartDJService
+    @StateObject private var prompt = Box("")
+
+    private static let examples = ["10 upbeat electronic tracks for a workout", "calm music to study", "8 songs from the 90s", "something slow and sad"]
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Image(systemName: "sparkles").foregroundStyle(Brand.accent)
-                Text("AUTO DJ").microLabel()
-                Text(auto.status).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                if let s = auto.nextScore, auto.next != nil { Text(String(format: "fit %.0f%%", s * 100)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary).help("How well the on-device model thinks this transition will sound") }
+                Text("SMART DJ").microLabel()
+                statusView
                 Spacer()
-                Text("library analysed \(auto.analysed)/\(max(auto.poolSize, auto.analysed))").font(.system(size: 11)).foregroundStyle(.secondary)
+                if smart.modelActive { Text("on-device model").font(.system(size: 11)).foregroundStyle(.secondary).help("\(SmartDJService.modelID), running in a separate process that quits when Smart DJ is switched off") }
             }
-            if auto.phase == .blending { ProgressView(value: auto.progress).tint(Brand.accent) }
-            HStack(spacing: 12) {
-                Picker("Mix", selection: $auto.mixBeats) { ForEach([8, 16, 32, 64], id: \.self) { Text("\($0) beats").tag($0) } }.pickerStyle(.segmented).frame(width: 230).help("How long each blend lasts")
-                Picker("Vibe", selection: $auto.vibe) { ForEach(AutoVibe.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented).frame(width: 230).help("Where the energy of the set should go")
-                Toggle("Harmonic only", isOn: $auto.strictKey).toggleStyle(.checkbox).font(.system(size: 12)).help("Only choose tracks whose key mixes with the current one")
-                Spacer()
-                Button { auto.skip() } label: { Label("Mix now", systemImage: "forward.end.fill") }.disabled(auto.phase != .playing && auto.phase != .armed)
-                Button { auto.rate(liked: true) } label: { Image(systemName: "hand.thumbsup.fill") }.disabled(!auto.canRate).help("That was a good mix — do more like it")
-                Button { auto.rate(liked: false) } label: { Image(systemName: "hand.thumbsdown.fill") }.disabled(!auto.canRate).help("That was a bad mix — do less like it")
-                Text("\(auto.feedbackCount) opinions learned").font(.system(size: 11)).foregroundStyle(.tertiary)
+            HStack(spacing: 8) {
+                TextField("Ask for a set: “10 upbeat electronic tracks for a workout”", text: Binding(get: { prompt.v }, set: { prompt.v = $0 }), onCommit: ask)
+                    .textFieldStyle(.roundedBorder).disabled(!canAsk)
+                Button { ask() } label: { Label("Pick", systemImage: "wand.and.stars") }.buttonStyle(.borderedProminent).controlSize(.small).disabled(!canAsk || prompt.v.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .buttonStyle(.bordered).controlSize(.small)
+            if smart.suggestion == nil, canAsk {
+                HStack(spacing: 6) {
+                    ForEach(Self.examples, id: \.self) { e in Button(e) { prompt.v = e; ask() }.buttonStyle(.bordered).controlSize(.mini) }
+                }
+            }
+            if let p = smart.modelProblem { Text(p).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+            if let s = smart.suggestion { result(s) }
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent.opacity(0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent.opacity(0.35), lineWidth: 0.8))
+        .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Brand.ink.opacity(0.06)))
+        .onReceive(smart.$suggestion.dropFirst()) { s in if let s, !s.tracks.isEmpty { model.loadSet(s.tracks.map { model.track($0) }) } }
+    }
+
+    private var canAsk: Bool { if case .ready = smart.state { return true }; return false }
+
+    @ViewBuilder private var statusView: some View {
+        switch smart.state {
+        case .off: Text("off").font(.system(size: 12.5)).foregroundStyle(.secondary)
+        case .loading(let f, let msg): HStack(spacing: 6) { ProgressView(value: f).frame(width: 90).controlSize(.small); Text(msg + (f > 0 && f < 1 ? " \(Int(f * 100))%" : "")).font(.system(size: 12)).foregroundStyle(.secondary) }
+        case .ready: Text("ready").font(.system(size: 12.5, weight: .medium))
+        case .thinking: HStack(spacing: 6) { ProgressView().controlSize(.small); Text("choosing…").font(.system(size: 12.5)) }
+        }
+    }
+
+    private func ask() { let q = prompt.v; Task { await smart.suggest(q) } }
+
+    private func result(_ s: SmartDJSuggestion) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(s.intent.summary).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Text(s.usedModel ? "\(s.modelPicked) chosen by the model" + (s.filled > 0 ? ", \(s.filled) by ranking" : "") : "chosen by ranking").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text(String(format: "%.1f s", s.seconds)).font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+            }
+            if let n = s.note { Text(n).font(.system(size: 11)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true) }
+            ForEach(Array(s.tracks.enumerated()), id: \.offset) { i, t in
+                HStack(spacing: 8) {
+                    Text("\(i + 1)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary).frame(width: 22, alignment: .trailing)
+                    Text(t.title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                    Text(t.artistLine).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    if let b = model.info[t.path]?.bpm { Text("\(Int(b.rounded()))").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
+                    Button("A") { model.a.load(model.track(t)) }.buttonStyle(.bordered).controlSize(.mini).help("Load on deck A")
+                    Button("B") { model.b.load(model.track(t)) }.buttonStyle(.bordered).controlSize(.mini).help("Load on deck B")
+                }
+            }
+            if !s.tracks.isEmpty {
+                HStack(spacing: 8) {
+                    Button { model.startSet() } label: { Label("Start set", systemImage: "play.fill") }
+                    Button { model.loadSet(s.tracks.map { model.track($0) }) } label: { Label("Reload decks", systemImage: "arrow.counterclockwise") }
+                    Button { m.addTracks(s.tracks, play: false) } label: { Label("Add to player queue", systemImage: "text.badge.plus") }
+                }.buttonStyle(.bordered).controlSize(.small)
+            }
+        }
     }
 }
 
@@ -417,17 +462,25 @@ struct DJView: View {
                 DeckPanel(deck: dj.b)
             }
             .fixedSize(horizontal: false, vertical: true)
-            MasterBar()
-            if dj.auto.enabled { AutoDJPanel(auto: dj.auto) }
-            if dj.remix.enabled { RemixPanel(remix: dj.remix) }
-            DJBrowser()
+            ScrollView {
+                VStack(spacing: 10) {
+                    MasterBar()
+                    if dj.smart.isEnabled { SmartDJPanel(smart: dj.smart) }
+                    if dj.remix.enabled { RemixPanel(remix: dj.remix) }
+                    DJBrowser().frame(minHeight: 340)
+                }
+            }
         }
         .padding(.horizontal, 16).padding(.top, 0).padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             m.library.category = .songs
             let lib = m.library
-            dj.auto.library = { lib.songs.map { dj.track($0) } }
+            dj.smart.library = { [weak lib, weak dj] in
+                guard let lib, let dj else { return [] }
+                let all = lib.store?.allTracks(offset: 0, limit: 200_000) ?? lib.songs
+                return SmartDJService.tracks(from: all) { dj.info[$0] ?? AnalysisCache.shared.cached(path: $0) }
+            }
         }
     }
 
@@ -435,13 +488,13 @@ struct DJView: View {
         HStack(spacing: 12) {
             Text("DJ").font(.system(size: 22, weight: .heavy, design: .rounded)).tracking(1)
             Button {
-                dj.auto.enabled.toggle()
+                if dj.smart.isEnabled { dj.smart.disable() } else { dj.smart.enable() }
             } label: {
-                Label(dj.auto.enabled ? "Auto DJ on" : "Auto DJ", systemImage: "sparkles").font(.system(size: 12.5, weight: .semibold))
+                Label(dj.smart.isEnabled ? "Smart DJ on" : "Smart DJ", systemImage: "sparkles").font(.system(size: 12.5, weight: .semibold))
                     .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Capsule().fill(dj.auto.enabled ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink.opacity(0.10))))
-                    .foregroundStyle(dj.auto.enabled ? Color.black.opacity(0.85) : Brand.ink)
-            }.buttonStyle(.plain).help("Let Aureon choose the next track, match its tempo and mix it in")
+                    .background(Capsule().fill(dj.smart.isEnabled ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink.opacity(0.10))))
+                    .foregroundStyle(dj.smart.isEnabled ? Color.black.opacity(0.85) : Brand.ink)
+            }.buttonStyle(.plain).help("Ask for a set in your own words: an on-device language model picks the songs. It is loaded when you switch this on and unloaded when you switch it off.")
             Button { dj.remix.enabled.toggle() } label: {
                 Label(dj.remix.enabled ? "Remix on" : "Remix", systemImage: "wand.and.stars").font(.system(size: 12.5, weight: .semibold))
                     .padding(.horizontal, 12).padding(.vertical, 5)
@@ -488,7 +541,7 @@ struct DJBrowser: View {
                 Spacer()
                 if let p = dj.analysisProgress { ProgressView(value: Double(p.done), total: Double(max(1, p.total))).frame(width: 90).controlSize(.small); Text("\(p.done)/\(p.total)").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary) }
                 Button { dj.analyzeLibrary(songs.map { $0.path }) } label: { Label(dj.analysisProgress == nil ? "Analyse all" : "Stop", systemImage: dj.analysisProgress == nil ? "waveform.path.ecg" : "stop.fill") }
-                    .buttonStyle(.bordered).controlSize(.small).help("Detect tempo and key for every song so they show here and Auto DJ can use them")
+                    .buttonStyle(.bordered).controlSize(.small).help("Detect tempo and key for every song so they show here and Smart DJ can match tempo")
                 SearchPill(prompt: "Filter", text: $lib.search, width: 170)
             }
             HStack(spacing: 10) {

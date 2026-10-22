@@ -62,10 +62,21 @@ final class LosslessFile: FrameSource {
     private var ref: ExtAudioFileRef?
     let info: StreamInfo
 
-    init(path: String) throws {
-        let url = URL(fileURLWithPath: path) as CFURL
-        try check(ExtAudioFileOpenURL(url, &ref), "open \((path as NSString).lastPathComponent)")
-        guard let ref else { throw AureonError.message("could not open \(path)") }
+    /// Keeps whatever the file reads from alive (a remote file's reader), released only after the file is disposed.
+    private var owner: AnyObject?
+
+    convenience init(path: String) throws {
+        var opened: ExtAudioFileRef?
+        try check(ExtAudioFileOpenURL(URL(fileURLWithPath: path) as CFURL, &opened), "open \((path as NSString).lastPathComponent)")
+        guard let opened else { throw AureonError.message("could not open \(path)") }
+        try self.init(opened: opened, owner: nil)
+    }
+
+    /// Takes over an open ExtAudioFile (the remote-file path builds one on top of AudioFileOpenWithCallbacks).
+    init(opened: ExtAudioFileRef, owner: AnyObject?) throws {
+        ref = opened
+        self.owner = owner
+        let ref = opened
 
         var fileFmt = AudioStreamBasicDescription()
         var sz = UInt32(MemoryLayout.size(ofValue: fileFmt))
@@ -117,6 +128,11 @@ final class LosslessFile: FrameSource {
         guard let ref, ExtAudioFileRead(ref, &n, &abl) == noErr else { return 0 }
         return Int(n)
     }
+}
+
+/// Opens a local file or a `cloud://` track (streamed from a bucket) for decoding.
+func openLossless(path: String) throws -> LosslessFile {
+    RemoteMedia.isRemote(path) ? try RemoteMedia.openFile(path) : try LosslessFile(path: path)
 }
 
 /// Fully canonical path (every symlink resolved, `/var` → `/private/var`), as the file system itself reports it.

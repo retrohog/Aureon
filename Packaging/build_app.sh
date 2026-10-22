@@ -3,6 +3,10 @@
 #
 #   ./Packaging/build_app.sh [--with-helper] [DEST_FOLDER]
 #
+# The Smart DJ language model is a separate program (Packages/SmartDJHelper, built with MLX). It is built with xcodebuild and embedded
+# when full Xcode with the Metal toolchain is installed; otherwise the app is built without it and Smart DJ falls back to plain ranking.
+#   SKIP_SMARTDJ=1  never build it       REBUILD_SMARTDJ=1  rebuild even if a build exists
+#
 # --with-helper embeds the privileged quiet-mode helper (Contents/MacOS/AureonHelper) and its launchd plist
 #               (Contents/Library/LaunchDaemons/org.aureon.helper.plist) for SMAppService. macOS only lets a *signed* app register it:
 #               set CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)". Without it the bundle is ad-hoc signed.
@@ -46,8 +50,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSMicrophoneUsageDescription</key><string>Some Audio Unit plugins request audio input access.</string>
-  <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, and finds other Aureon servers.</string>
-  <key>NSBonjourServices</key><array><string>_aureon._tcp</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, finds other Aureon servers, and finds Chromecast and Google Home speakers to cast to.</string>
+  <key>NSBonjourServices</key><array><string>_aureon._tcp</string><string>_googlecast._tcp</string></array>
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>Audio</string>
     <key>CFBundleTypeRole</key><string>Viewer</string>
@@ -71,6 +75,29 @@ if [ "$WITH_HELPER" = 1 ]; then
 </dict></plist>
 PLIST
   codesign --force --options runtime -s "$IDENTITY" "$APP/Contents/MacOS/AureonHelper" 2>&1 | tail -1
+fi
+
+# Smart DJ language model helper
+SMART_SRC="Packages/SmartDJHelper"
+SMART_OUT="$SMART_SRC/.build/xcode/Build/Products/Release"
+if [ "${SKIP_SMARTDJ:-0}" != 1 ]; then
+  if [ ! -x "$SMART_OUT/AureonSmartDJ" ] || [ "${REBUILD_SMARTDJ:-0}" = 1 ]; then
+    if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find metal >/dev/null 2>&1; then
+      echo "Building the Smart DJ language model helper (first time: a few minutes)…"
+      ( cd "$SMART_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonSmartDJ -configuration Release -destination 'platform=macOS' \
+          -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-smartdj-build.log 2>&1 ) \
+        || echo "note: the Smart DJ helper did not build (see /tmp/aureon-smartdj-build.log); the app will use plain ranking."
+    else
+      echo "note: Xcode with the Metal toolchain was not found, so the Smart DJ language model is not included (xcodebuild -downloadComponent MetalToolchain)."
+    fi
+  fi
+  if [ -x "$SMART_OUT/AureonSmartDJ" ]; then
+    H="$APP/Contents/Helpers/AureonSmartDJ"
+    mkdir -p "$H"
+    cp "$SMART_OUT/AureonSmartDJ" "$H/"
+    for b in "$SMART_OUT"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$H/"; done
+    echo "Smart DJ language model helper included ($(du -sh "$H" | cut -f1))"
+  fi
 fi
 
 codesign --force --deep -s "$IDENTITY" "$APP" 2>&1 | tail -1

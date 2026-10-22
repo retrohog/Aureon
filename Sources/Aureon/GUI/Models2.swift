@@ -48,6 +48,11 @@ final class LibraryModel: ObservableObject {
         if let m = albumMemo, m.version == albumsVersion, m.options == o { return m.result }
         let r = LibraryOrdering.albums(albums, o); albumMemo = (albumsVersion, o, r); return r
     }
+    // loudness analysis
+    @Published private(set) var loudnessDone = 0
+    @Published private(set) var loudnessTotal = 0
+    @Published private(set) var analysingLoudness = false
+    private var loudnessTask: Task<Void, Never>?
     // duplicates
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var showDuplicates = false
@@ -146,6 +151,50 @@ final class LibraryModel: ObservableObject {
     }
 
     func rescan() { scan(folders) }
+
+    /// Indexes a folder once without remembering it as a library folder (ripped discs, for example).
+    func importOnce(_ url: URL) { scan([realPath(url).path]) }
+
+    func refreshLoudnessProgress() {
+        guard let store else { return }
+        Task.detached { let p = store.loudnessProgress(); await MainActor.run { self.loudnessDone = p.done; self.loudnessTotal = p.total } }
+    }
+
+    /// Measures EBU R128 loudness, true peak and DR for every song that has none yet, two at a time in the background, and stores the figures in the library.
+    func startLoudnessAnalysis() {
+        guard let store, !analysingLoudness else { return }
+        analysingLoudness = true
+        loudnessTask = Task { [weak self] in
+            let paths = await Task.detached(priority: .utility) { store.pathsNeedingLoudness() }.value
+            await withTaskGroup(of: Void.self) { group in
+                var next = 0
+                func feed(_ g: inout TaskGroup<Void>) {
+                    guard next < paths.count, !Task.isCancelled else { return }
+                    let p = paths[next]; next += 1
+                    g.addTask(priority: .utility) {
+                        if let r = LoudnessCache.shared.analysis(path: p) { store.setLoudness(path: p, r) }
+                        else if let t = store.track(path: p), t.lufs == nil { _ = t }           // unreadable files are left for the next run
+                    }
+                }
+                for _ in 0..<2 { feed(&group) }
+                var finished = 0
+                while await group.next() != nil {
+                    finished += 1
+                    if finished % 5 == 0 { await self?.updateLoudnessProgress(store) }
+                    feed(&group)
+                }
+            }
+            await self?.updateLoudnessProgress(store)
+            self?.analysingLoudness = false
+        }
+    }
+
+    func stopLoudnessAnalysis() { loudnessTask?.cancel(); loudnessTask = nil; analysingLoudness = false }
+
+    private func updateLoudnessProgress(_ store: LibraryStore) async {
+        let p = await Task.detached { store.loudnessProgress() }.value
+        loudnessDone = p.done; loudnessTotal = p.total
+    }
 
     private func scan(_ paths: [String]) {
         guard let store, !importing else { return }

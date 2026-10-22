@@ -149,7 +149,7 @@ extension RemixTests {
             let n = r.feedbackCount
             r.rate(liked: false)
             expect(r.feedbackCount == n + 1 && !r.canRate)
-            // while Auto DJ is mixing the remixer keeps its hands off
+            // (the remixer always works on the deck that is playing)
             expect(m.a.low == -3 && m.a.fxKind == .reverb)
         }
     }

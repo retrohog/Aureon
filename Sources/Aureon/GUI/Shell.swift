@@ -63,7 +63,7 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.16), value: m.tab)
         .animation(.smooth(duration: 0.22), value: dropping.v)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
-        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel)
+        .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.cast)
         .preferredColorScheme(m.theme.isLight ? .light : .dark)
         .foregroundStyle(Brand.ink)
         .background(Brand.canvas)
@@ -119,6 +119,9 @@ struct ContentView: View {
         case .playlists: PlaylistsPage()
         case .albums, .artists, .songs, .composers, .works, .conductors, .ensembles: LibraryPage(lib: m.library, tab: m.tab)
         case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
+        case .rip: RipPage()
+        case .convert: ConvertPage()
+        case .cloud: CloudPage()
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
         case .settings: SettingsPage()

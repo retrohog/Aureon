@@ -66,6 +66,9 @@ struct NowPlayingView: View {
                     HStack(spacing: 8) {
                         HWBadge(text: "PEAK", detail: String(format: "%.1f dBFS", a.peakDB), tone: a.peakDB > -0.1 ? .orange : .neutral, lit: a.peakDB > -0.1)
                         HWBadge(text: "DR", detail: String(format: "%.0f", a.dynamicRange), tone: .neutral, lit: false)
+                        if let l = a.lufs { HWBadge(text: "LUFS", detail: String(format: "%.1f", l), tone: .neutral, lit: false) }
+                        if let tp = a.truePeakDB { HWBadge(text: "TP", detail: String(format: "%.1f dBTP", tp), tone: tp > -0.1 ? .orange : .neutral, lit: tp > -0.1) }
+                        if let lra = a.loudnessRange, lra > 0 { HWBadge(text: "LRA", detail: String(format: "%.1f LU", lra), tone: .neutral, lit: false) }
                         if let g = m.status.replayGainDB { HWBadge(text: "RG", detail: String(format: "%+.1f dB", g), tone: .amber) }
                     }.padding(.top, 8)
                 }
@@ -109,7 +112,7 @@ struct NowPlayingView: View {
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
             RepeatButton(size: 14, tint: .white)
             Divider().frame(height: 18).overlay(.white.opacity(0.2))
-            HeartButton(path: m.current.flatMap { $0.isStream ? nil : $0.url.path }, size: 15)
+            HeartButton(path: m.current.flatMap { $0.isStream ? nil : $0.path }, size: 15)
             QueueButton()
         }
         .buttonStyle(TransportButtonStyle(size: 15))

@@ -29,7 +29,20 @@ struct TrackTags: Equatable {
 /// pictures hidden behind a leading ID3 tag), then AVFoundation for whatever is still missing. TagLib is deliberately not used:
 /// a C++ dependency would complicate the build for no gain over parsers that are tested against real files.
 enum MetadataEngine {
+    /// A small local file holding the tags of a cloud track (its first bytes, or the MP4 tag boxes), for the parsers that read paths.
+    static func tagStub(for path: String) -> URL? {
+        guard CloudPath.isCloud(path), let r = try? CloudRegistry.shared.reader(for: path, config: stubConfig) else { return nil }
+        return try? RemoteTags.materialize(r, fileExtension: (path as NSString).pathExtension, into: FileManager.default.temporaryDirectory.appendingPathComponent("aureon-cloud-tags", isDirectory: true))
+    }
+    private static var stubConfig: ChunkedReader.Config { var c = ChunkedReader.Config(); c.chunkSize = 256 << 10; c.defaultAhead = 1; c.minAhead = 1; return c }
+
     static func load(path: String) async -> TrackTags {
+        if SubsonicPath.isSubsonic(path) { return TrackTags() }                 // a server's tags come with its listing
+        if CloudPath.isCloud(path) {
+            guard let stub = await Task.detached(operation: { tagStub(for: path) }).value else { return TrackTags() }
+            defer { try? FileManager.default.removeItem(at: stub) }
+            return native(path: stub.path)
+        }
         var t = native(path: path)
         let ext = (path as NSString).pathExtension.lowercased()
         guard !["dsf", "dff"].contains(ext) else { return t }
@@ -85,6 +98,12 @@ enum MetadataEngine {
 
     /// Just the picture bytes (native first, AVFoundation second).
     static func artwork(path: String) async -> Data? {
+        if SubsonicPath.isSubsonic(path) { return await Task.detached { SubsonicRegistry.shared.coverArt(for: path) }.value }
+        if CloudPath.isCloud(path) {
+            guard let stub = await Task.detached(operation: { tagStub(for: path) }).value else { return nil }
+            defer { try? FileManager.default.removeItem(at: stub) }
+            return TagReader.readAll(path: stub.path).bestPicture?.data
+        }
         if let p = TagReader.readAll(path: path).bestPicture { return p.data }
         var t = TrackTags()
         await fillFromAVFoundation(&t, path: path)

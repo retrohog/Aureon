@@ -5,7 +5,7 @@ struct Sidebar: View {
     @EnvironmentObject var m: PlayerModel
     @FocusState private var searchFocused: Bool
 
-    private let sections: [Tab.Section] = [.listen, .library, .classical, .discover, .sound]
+    private let sections: [Tab.Section] = [.listen, .library, .classical, .discover, .sound, .tools]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

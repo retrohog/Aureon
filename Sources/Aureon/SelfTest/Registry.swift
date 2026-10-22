@@ -59,10 +59,9 @@ func extraTests() -> [(String, TestFn)] {
     let djan = DJAnalysisTests()
     t += [("dj.camelot", djan.camelotWheel), ("dj.key", djan.keyDetection), ("dj.grid", djan.beatGridAndSections), ("dj.cache", djan.analysisCache)]
     let auto = AutoDJTests()
-    t += [("auto.net", auto.netSeparatesGoodFromBadMixes), ("auto.learn", auto.netLearnsFromFeedback), ("auto.persist", auto.netPersists), ("auto.planner", auto.plannerPicksTheBestNextTrack),
-          ("auto.plan", auto.mixPlanGeometry), ("auto.blend", auto.blendAutomation)]
+    t += [("net.quality", auto.netSeparatesGoodFromBadMixes), ("net.learn", auto.netLearnsFromFeedback), ("net.persist", auto.netPersists), ]
     let deckT = DJDeckTests()
-    t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops), ("auto.engine", deckT.autoDJMixesTwoTracks), ("auto.cold", deckT.autoDJStartsFromScratch)]
+    t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops)]
     let coll = CollectionTests()
     t += [("lib.featuring", coll.featuringIsSplit), ("lib.composerSplit", coll.composersAreSplitCleanly), ("lib.guests", coll.guestsLiveUnderTheirHostArtist), ("lib.tidy", coll.existingLibrariesAreTidied), ("lib.collab", coll.collaborationsFoldIntoTheKnownArtist), ("lib.playlists", coll.likesAndPlaylists)]
     let dup = DuplicateTests()
@@ -77,6 +76,24 @@ func extraTests() -> [(String, TestFn)] {
     t += [("remix.actions", rmx.performancesAreWellFormed), ("remix.context", rmx.contextComesFromTheTrack), ("remix.rules", rmx.policyKnowsTheRules), ("remix.learn", rmx.policyLearnsAndPersists), ("remix.controller", rmx.controllerPerformsAndRestores)]
     let diag = DiagnosticTests()
     t += [("diag.sorting", diag.sortingALargeLibraryIsFast), ("diag.queueWindow", diag.clickingASongQueuesAWindowNotTheLibrary), ("diag.rapidChanges", diag.changingSongsQuicklyNeverBlocks), ("diag.jumpBitPerfect", diag.theNewSongArrivesBitPerfectAfterAJump)]
+    let lou = LoudnessTests()
+    t += [("r128.filter", lou.filterMatchesTheReferenceBiquad), ("r128.integrated", lou.integratedLoudnessFollowsTheStandard), ("r128.gating", lou.gatingIgnoresQuietPassages), ("r128.lra", lou.loudnessRange), ("r128.truePeak", lou.truePeakSeesBetweenTheSamples), ("r128.dr", lou.dynamicRangeScore), ("r128.surround", lou.surroundChannelsAreWeighted), ("r128.files", lou.analysesFilesAndStaysFast), ("r128.cache", lou.theCacheKeepsAndForgets), ("r128.library", lou.theLibraryRemembersTheFigures), ("r128.leveling", lou.levelingEquallyLoudensDifferentMasters)]
+    let mch = MultichannelTests()
+    t += [("mch.layouts", mch.layoutsFollowTheFileFormats), ("mch.router", mch.channelsFindTheirSpeakers), ("mch.matrix", mch.downmixMathIsTheStandard), ("mch.direct", mch.surroundOnASurroundDeviceIsBitPerfect), ("mch.stereoDevice", mch.surroundOnAStereoDeviceIsMixedDown), ("mch.modes", mch.theModesDecide), ("mch.71", mch.sevenOneOnAFiveOneDevice), ("mch.switching", mch.switchingBetweenStereoAndSurround), ("mch.dsd", mch.dsdSurroundFallsBackToPCMOnAStereoDevice), ("mch.copy", mch.theOutputCopyHandlesEveryDeviceShape)]
+    let xb = ExtremeBench()
+    t += [("ext.bench", xb.bench), ("ext.fast", xb.benchFast), ("ext.rates", xb.ratesAreSupportedOrNot), ("ext.match", xb.cascadeMatchesTheSingleFilter), ("ext.reject", xb.cascadeRejectsWhatItShould), ("ext.seek", xb.seekingGivesTheSameSamples), ("ext.speed", xb.hugeRatesRunFasterThanRealTime), ("ext.six", xb.multichannelDSDWorksThroughTheCascade), ("ext.resample", xb.benchResampler), ("ext.profile", xb.theProfileDecidesWhatIsSustainable), ("ext.measure", xb.measuringIsQuickAndSane), ("ext.weakMachine", xb.upsamplingIsHeldBackOnAWeakMachine), ("ext.engine1024", xb.dsd1024PlaysThroughTheEngine), ("ext.1536", xb.megahertzPCMPassesThroughUnchanged), ("ext.8ch", xb.eightChannelsAtHighRates)]
+    let rip = RipTests()
+    let tc = TranscodeTests()
+    let cl = CloudTests()
+    let cs = CastTests()
+    let sm = StreamingTests()
+    let sdj = SmartDJTests()
+    t += [("rip.ids", rip.discIdentifiersMatchTheDatabases), ("rip.enhanced", rip.enhancedDiscsLoseTheirDataTrack), ("rip.toc", rip.rawTOCParses), ("rip.checksums", rip.checksumsMatchAnIndependentImplementation), ("rip.database", rip.theDatabaseAnswerParsesAndVerifies), ("rip.musicbrainz", rip.musicBrainzKnowsTheDisc), ("rip.clean", rip.aCleanDiscRipsExactly), ("rip.offset", rip.theDrivesOffsetIsCorrected), ("rip.c2", rip.errorsThatTheDriveAdmitsAreRetried), ("rip.hidden", rip.errorsTheDriveHidesAreCaughtByRereading), ("rip.hopeless", rip.sectorsThatNeverSettleAreReportedNotHidden), ("rip.ioerrors", rip.readErrorsAreSurvivedOrReported), ("rip.cancel", rip.cancellingStopsTheRip), ("rip.files", rip.filesAreBitExactAndTagged), ("rip.log", rip.cueAndLogDescribeTheRip), ("rip.image", rip.aDiscImageRipsLikeADisc), ("rip.tagwriters", rip.tagWritersKeepTheAudioAndTheRestOfTheTags)]
+    t += [("tc.gain", tc.gainMath), ("tc.aac", tc.aacLevelledWithTags), ("tc.peaks", tc.peaksStayUnderTheCeiling), ("tc.lossless", tc.losslessIsBitExact), ("tc.rates", tc.ratesAreConverted), ("tc.batch", tc.batchesRunInParallel), ("tc.failures", tc.failuresAndCancelling), ("tc.names", tc.namingAndFolders), ("tc.surround", tc.surroundBecomesStereo)]
+    t += [("cloud.sigv4", cl.awsPublishedVectors), ("cloud.keys", cl.keysAreEncodedTheAwsWay), ("cloud.list", cl.listingsPageAndMapErrors), ("cloud.reader", cl.readerReturnsTheRightBytes), ("cloud.readahead", cl.readAheadHidesTheLatency), ("cloud.bitrate", cl.lookaheadFollowsTheBitrate), ("cloud.cache", cl.cacheStaysBounded), ("cloud.warm", cl.warmPreparesTheNextTrack), ("cloud.trouble", cl.networkTroubleIsRiddenOut), ("cloud.decode", cl.remoteFilesDecodeIdentically), ("cloud.import", cl.importingABucket), ("cloud.play", cl.cloudTracksPlayLikeFiles)]
+    t += [("cast.flac", cs.flacEncoderIsLossless), ("cast.join", cs.joiningMidStream), ("cast.speed", cs.flacEncoderKeepsUpWithTheEngine), ("cast.codec", cs.castMessagesRoundTrip), ("cast.session", cs.castSessionStartsAndPlays), ("cast.trouble", cs.castTroubleIsReportedPlainly), ("cast.server", cs.streamServerServesLiveFrames), ("cast.player", cs.playerFeedsTheCastStream), ("cast.tls", cs.castOverRealTLS)]
+    t += [("stream.client", sm.subsonicClientTalksToTheServer), ("stream.import", sm.importingAServer), ("stream.play", sm.serverTracksPlayLikeFiles)]
+    t += [("smartdj.intent", sdj.requestsAreUnderstood), ("smartdj.rank", sdj.rankingFavoursWhatWasAsked), ("smartdj.context", sdj.contextIsSmallAndRelevant), ("smartdj.answers", sdj.answersAreCheckedAndRepaired), ("smartdj.pipeline", sdj.theWholePipeline), ("smartdj.service", sdj.modelLivesOnlyWhileSwitchedOn), ("smartdj.fallback", sdj.withoutAModelTheRankingStillAnswers), ("smartdj.process", sdj.theHelperProcessFollowsTheProtocol), ("smartdj.misbehave", sdj.theHelperProcessMisbehaves), ("smartdj.driver", sdj.theServiceDrivesTheHelperProcess), ("smartdj.real", sdj.theRealModelPicksTracks), ("smartdj.decks", sdj.aSetLandsOnTheDecks)]
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]

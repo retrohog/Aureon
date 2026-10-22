@@ -39,6 +39,11 @@ struct TrackDTO: Codable, Identifiable, Hashable {
     var liked: Bool? = nil
     var playCount: Int? = nil
     var lastPlayedAt: Double? = nil
+    // EBU R128 figures, filled in by the loudness analysis
+    var lufs: Double? = nil
+    var truePeakDB: Double? = nil
+    var lra: Double? = nil
+    var dr: Double? = nil
 
     func names(_ role: CreditRole) -> [String] { credits.filter { $0.role == role.rawValue }.map(\.name) }
     /// "Artist" or "Artist feat. Guest".

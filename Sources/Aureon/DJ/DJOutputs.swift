@@ -8,6 +8,7 @@ final class DeckSink: AudioSink {
     let rate: Double
     var deviceName: String { "DJ mixer" }
     var supportedRates: [Double] { [rate] }
+    var outputChannels: Int { 2 }                    // the mixer works in stereo: multichannel files are mixed down before they reach it
     init(deck: DJMixerCore.Deck, rate: Double) { self.deck = deck; self.rate = rate }
     func configure(for info: StreamInfo, options: PlayerOptions) -> SinkReport { SinkReport(lines: ["Deck stream → mixer at \(Int(info.sampleRate)) Hz"], bitPerfect: false) }
     func start(renderer: Renderer) throws { deck.renderer.publish(renderer) }

@@ -214,7 +214,7 @@ extension DemoData {
     if env["AUREON_DEMO"] != nil { DemoData.populate(model) }
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
     if env["AUREON_QUEUE"] != nil { model.showQueue = true }
-    if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; model.dj.auto.enabled = env["AUREON_AUTO"] != nil } } }
+    if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; if env["AUREON_AUTO"] != nil { model.dj.smart.enable() } } } }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
     if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
     // a local fake radio station, so the live Now Playing display can be shown without a network

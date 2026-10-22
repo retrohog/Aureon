@@ -118,7 +118,7 @@ final class DJDeck: ObservableObject, Identifiable {
         clearLoop()
         track = t; analysis = nil; error = nil; position = 0; cue = 0; playing = false; pitch = 0; bend(0); lastTick = nil
         hotCues = HotCueStore.load(path: t.path)
-        guard let f = try? LosslessFile(path: t.path) else { error = "Could not open this file"; track = nil; return }
+        guard let f = try? openLossless(path: t.path) else { error = "Could not open this file"; track = nil; return }
         if f.info.sourceBits == 1 { error = "DSD files cannot be loaded on a deck"; track = nil; return }
         duration = f.info.duration
         player.settings = settings()
@@ -285,10 +285,9 @@ final class DJModel: ObservableObject {
     private var rate = 48_000.0
     /// Tests and snapshots replace the real device output.
     var outputFactory: ((DJMixerCore) -> DJOutput?)?
-    lazy var auto = AutoDJController(model: self)
     lazy var remix = RemixController(model: self)
-    /// Set by Auto DJ while it is blending: the crossfader is bypassed and these gains are used instead.
-    var autoBlend: (outgoing: DJDeck, frame: AutoMixer.Frame)? { didSet { applyMix() } }
+    /// The language model that picks songs from a spoken request. Only in memory while it is switched on.
+    let smart = SmartDJService()
 
     init() {
         a.onMix = { [weak self] in self?.applyMix() }
@@ -298,13 +297,9 @@ final class DJModel: ObservableObject {
 
     var decks: [DJDeck] { [a, b] }
 
-    /// Mixes the two decks' output levels: channel fader × crossfader (or Auto DJ's blend).
+    /// Mixes the two decks' output levels: channel fader × crossfader.
     func applyMix() {
-        var ga: Double, gb: Double
-        if let ab = autoBlend {
-            let out = ab.outgoing === a
-            ga = out ? ab.frame.gainA : ab.frame.gainB; gb = out ? ab.frame.gainB : ab.frame.gainA
-        } else { let g = curve.gains(crossfader); ga = g.a; gb = g.b }
+        let g = curve.gains(crossfader), ga = g.a, gb = g.b
         a.mix.gain.value = Float(DJMath.channelGain(a.channel) * ga)
         b.mix.gain.value = Float(DJMath.channelGain(b.channel) * gb)
     }
@@ -354,7 +349,7 @@ final class DJModel: ObservableObject {
     func exit() {
         guard active else { return }
         active = false
-        auto.enabled = false
+        smart.disable()
         remix.enabled = false
         stopRecording()
         timer?.invalidate(); timer = nil
@@ -362,12 +357,12 @@ final class DJModel: ObservableObject {
         stopOutputs()
     }
 
-    /// Ten times a second: the decks, the meters, the recording clock, Auto DJ.
+    /// Ten times a second: the decks, the meters, the recording clock.
     func tick() {
         decks.forEach { $0.refresh() }
+        advanceSet()
         meterL = core.meterL.value; meterR = core.meterR.value; limiterReduction = core.limiterReduction.value
         if recording, let t = tap { recordedSeconds = Double(t.frames) / rate }
-        auto.tick()
     }
 
     // MARK: recording
@@ -444,7 +439,6 @@ final class DJModel: ObservableObject {
                 self.analysisProgress = (done, todo.count)
             }
             self?.libraryTask = nil; self?.analysisProgress = nil
-            self?.auto.refreshPool()
         }
     }
 
@@ -475,4 +469,29 @@ final class DJModel: ObservableObject {
         return a
     }
     func load(_ t: DJTrack, into d: DJDeck) { d.load(t) }
+
+    // MARK: set list (Smart DJ)
+
+    /// The songs Smart DJ chose, in order. The first two sit on the decks; the next one is loaded on whichever deck frees up.
+    @Published private(set) var setList: [DJTrack] = []
+    @Published private(set) var setNext = 0
+
+    /// Puts a set on the table: track 1 on deck A, track 2 on deck B, crossfader on A. Nothing plays until the DJ presses play.
+    func loadSet(_ tracks: [DJTrack]) {
+        setList = tracks; setNext = 0
+        a.unload(); b.unload()
+        crossfader = -1
+        if tracks.indices.contains(0) { a.load(tracks[0]); setNext = 1 }
+        if tracks.indices.contains(1) { b.load(tracks[1]); setNext = 2 }
+    }
+
+    func startSet() { if a.isLoaded { crossfader = -1; a.play() } else if b.isLoaded { crossfader = 1; b.play() } }
+
+    private func advanceSet() {
+        guard setNext < setList.count else { return }
+        for d in [a, b] where d.isLoaded && !d.playing && d.duration > 0 && d.position >= d.duration - 0.6 {
+            d.load(setList[setNext]); setNext += 1
+            return
+        }
+    }
 }

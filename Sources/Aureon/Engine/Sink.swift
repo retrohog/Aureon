@@ -36,6 +36,7 @@ struct PlaybackSettings: Equatable, Codable {
     var dsd = DSDSettings()
     var ram = RamSettings()
     var polarityInverted = false
+    var multichannel = MultichannelSettings()
     var dsp = DSPSettings()
     var rt = RTSettings()
 
@@ -51,6 +52,7 @@ struct PlaybackSettings: Equatable, Codable {
         dsd = try c.decodeIfPresent(DSDSettings.self, forKey: .dsd) ?? dsd
         ram = try c.decodeIfPresent(RamSettings.self, forKey: .ram) ?? ram
         polarityInverted = try c.decodeIfPresent(Bool.self, forKey: .polarityInverted) ?? false
+        multichannel = try c.decodeIfPresent(MultichannelSettings.self, forKey: .multichannel) ?? multichannel
         dsp = try c.decodeIfPresent(DSPSettings.self, forKey: .dsp) ?? dsp
         rt = try c.decodeIfPresent(RTSettings.self, forKey: .rt) ?? rt
     }
@@ -146,11 +148,22 @@ protocol AudioSink: AnyObject {
     var deviceName: String { get }
     /// Rates the output can run at; empty means unconstrained.
     var supportedRates: [Double] { get }
+    /// How many channels the output can play (0 = unconstrained) and where its speakers are (nil = unknown).
+    var outputChannels: Int { get }
+    var speakers: [Speaker?]? { get }
+    /// Set when the output can only take one sample rate (a network stream): every track is resampled to it.
+    var fixedRate: Double? { get }
     func configure(for info: StreamInfo, options: PlayerOptions) -> SinkReport
     func start(renderer: Renderer) throws
     func stop()
     /// Restores anything configure() changed (device clock, exclusive access).
     func shutdown()
+}
+
+extension AudioSink {
+    var outputChannels: Int { 0 }
+    var speakers: [Speaker?]? { nil }
+    var fixedRate: Double? { nil }
 }
 
 // MARK: - CoreAudio sink
@@ -159,8 +172,11 @@ final class CoreAudioSink: AudioSink {
     let device: OutputDevice
     private var proc: AudioDeviceIOProcID?
     private var scratch: UnsafeMutablePointer<Int32>?
+    private var mapStorage: UnsafeMutablePointer<Int>?
     var deviceName: String { device.name }
     var supportedRates: [Double] { device.supportedRates }
+    var outputChannels: Int { device.outputChannelCount }
+    var speakers: [Speaker?]? { device.outputSpeakers }
 
     init?(deviceID: AudioDeviceID?) {
         guard let d = OutputDevice(id: deviceID) else { return nil }
@@ -176,6 +192,10 @@ final class CoreAudioSink: AudioSink {
             } else {
                 lines.append("Device cannot run \(Int(f.sampleRate)) Hz; the system will resample")
             }
+        }
+        if f.sampleRate > 192_000 {
+            let frames = max(512, Int(f.sampleRate / 250))                                    // about 4 ms per callback
+            if device.setIOBufferFrames(frames) { lines.append("IO buffer → \(device.ioBufferFrames) frames (\(String(format: "%.1f", Double(device.ioBufferFrames) / f.sampleRate * 1000)) ms)") }
         }
         if let phys = device.negotiateIntegerFormat(rate: f.sampleRate, bits: max(f.sourceBits, f.isDoP ? 24 : 0), channels: f.channels) {
             lines.append("Physical format: \(phys)")
@@ -194,27 +214,24 @@ final class CoreAudioSink: AudioSink {
         let maxFrames = 65_536
         let buf = UnsafeMutablePointer<Int32>.allocate(capacity: maxFrames * fileChannels)   // freed in stop()
         scratch = buf
+        // which source channel feeds each output: by speaker position when the device says where its speakers are, else straight through
+        let devCount = max(device.outputChannelCount, fileChannels)
+        var plan = ChannelRouter.identity(source: fileChannels, device: devCount)
+        if fileChannels > 2, let sp = device.outputSpeakers, sp.count == devCount, let routed = ChannelRouter.map(source: ChannelLayouts.standard(fileChannels), device: sp) { plan = routed }
+        let chanMap = UnsafeMutablePointer<Int>.allocate(capacity: plan.count)
+        chanMap.initialize(from: plan, count: plan.count)
+        mapStorage = chanMap
+        let mapCount = plan.count
 
         var procID: AudioDeviceIOProcID?
         try check(AudioDeviceCreateIOProcIDWithBlock(&procID, device.id, nil) { _, _, _, outData, _ in
             let abl = UnsafeMutableAudioBufferListPointer(outData)
-            guard let b = abl.first, let out = b.mData else { return }
+            guard let b = abl.first else { return }
             let devCh = max(Int(b.mNumberChannels), 1)
             let frames = min(Int(b.mDataByteSize) / (devCh * 4), maxFrames)
             let got = renderer.render(into: buf, frames: frames)
-
-            if isFloat {
-                // Int32 → Float32 is exact for up to 24-bit sources (float has a 24-bit mantissa).
-                let o = out.assumingMemoryBound(to: Float.self)
-                for f in 0..<frames { for c in 0..<devCh {
-                    o[f * devCh + c] = (f < got && c < fileChannels) ? Float(buf[f * fileChannels + c]) / 2_147_483_648.0 : 0
-                } }
-            } else {
-                let o = out.assumingMemoryBound(to: Int32.self)
-                for f in 0..<frames { for c in 0..<devCh {
-                    o[f * devCh + c] = (f < got && c < fileChannels) ? buf[f * fileChannels + c] : 0
-                } }
-            }
+            // Int32 → Float32 is exact for up to 24-bit sources (float has a 24-bit mantissa).
+            ChannelCopy.fill(source: buf, sourceChannels: fileChannels, validFrames: got, frames: frames, buffers: abl, map: chanMap, mapCount: mapCount, float: isFloat)
         }, "AudioDeviceCreateIOProcID")
         guard let procID else { throw AureonError.message("could not create IOProc") }
         proc = procID
@@ -224,6 +241,7 @@ final class CoreAudioSink: AudioSink {
     func stop() {
         if let p = proc { AudioDeviceStop(device.id, p); AudioDeviceDestroyIOProcID(device.id, p); proc = nil }
         scratch?.deallocate(); scratch = nil
+        mapStorage?.deallocate(); mapStorage = nil
     }
 
     func shutdown() { stop(); device.restore() }
@@ -235,6 +253,9 @@ final class CoreAudioSink: AudioSink {
 final class RecordingSink: AudioSink, @unchecked Sendable {
     let deviceName = "Recording sink"
     let supportedRates: [Double]
+    /// Simulated output: how many channels the "device" has and where they are (tests).
+    var outputChannels: Int
+    var speakers: [Speaker?]?
     private let lock = NSLock()
     private var _samples: [Int32] = []
     private var _configured: [StreamInfo] = []
@@ -244,7 +265,7 @@ final class RecordingSink: AudioSink, @unchecked Sendable {
     /// 0 = consume as fast as the producer delivers; otherwise real-time × speed (lets tests edit the queue mid-playback).
     let speed: Double
 
-    init(rates: [Double] = [], speed: Double = 0) { supportedRates = rates; self.speed = speed }
+    init(rates: [Double] = [], speed: Double = 0, outputChannels: Int = 0, speakers: [Speaker?]? = nil) { supportedRates = rates; self.speed = speed; self.outputChannels = outputChannels; self.speakers = speakers }
 
     var samples: [Int32] { lock.lock(); defer { lock.unlock() }; return _samples }
     var configured: [StreamInfo] { lock.lock(); defer { lock.unlock() }; return _configured }

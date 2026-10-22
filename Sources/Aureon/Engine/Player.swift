@@ -82,6 +82,8 @@ final class Player: @unchecked Sendable {
     var varispeed: VarispeedControl?
     var deckGain: DeckGain?
     private var heardIndexHint = 0           // engine thread only
+    private var sinkFixedRate: Double?       // engine thread only: the one rate the current sink accepts, if it has just one
+    private var sinkChannels = 0             // engine thread only: output channels of the current sink (0 = unconstrained)
     private var _repeat = RepeatMode.off
 
     let dsp = DSPChain()
@@ -219,6 +221,8 @@ final class Player: @unchecked Sendable {
             return
         }
         update { $0.deviceName = sink.deviceName }
+        sinkChannels = sink.outputChannels
+        sinkFixedRate = sink.fixedRate
         if options.promoteEngineThread { let ok = RealtimeThread.promoteCurrentThread(); update { $0.engineThreadPromoted = ok } }
         if let u = options.ioCycleUsage, let cs = sink as? CoreAudioSink { cs.device.setIOCycleUsage(u) }
         options.tuning?.playbackWillStart()
@@ -247,7 +251,17 @@ final class Player: @unchecked Sendable {
 
     private struct DecodePlan { var base: FrameSource; var raw: StreamInfo; var key: String; var isDoP: Bool; var stages: [String]; var live: LiveMetadata? = nil }
 
+    static func layoutName(_ n: Int) -> String {
+        switch n { case 1: "mono"; case 2: "stereo"; case 3: "3.0"; case 4: "quad"; case 5: "5.0"; case 6: "5.1"; case 7: "6.1"; case 8: "7.1"; default: "\(n) ch" }
+    }
+
     static func isStreamURL(_ path: String) -> Bool { path.hasPrefix("http://") || path.hasPrefix("https://") }
+
+    /// Starts loading the start of the next queued cloud track while this one plays, so the switch needs no network round trip.
+    private func warmNeighbour(of path: String) {
+        let q = snapshot().entries
+        if let i = q.firstIndex(where: { $0.path == path }), q.indices.contains(i + 1), RemoteMedia.isRemote(q[i + 1].path) { RemoteMedia.warm(q[i + 1].path) }
+    }
 
     private func nearest(_ rate: Double, in rates: [Double]) -> Bool { rates.contains { abs($0 - rate) < 0.5 } }
 
@@ -260,8 +274,12 @@ final class Player: @unchecked Sendable {
         }
         let ext = (path as NSString).pathExtension.lowercased()
         guard ext == "dsf" || ext == "dff" else {
-            let f = try LosslessFile(path: path)
+            let f = try openLossless(path: path)
             var stages: [String] = []
+            if RemoteMedia.isRemote(path) {
+                stages.append("Streamed from \(SubsonicPath.isSubsonic(path) ? "your music server" : "cloud storage"), in \(CloudRegistry.shared.playbackConfig.chunkSize >> 20) MB pieces, read ahead of the playhead")
+                warmNeighbour(of: path)
+            }
             if !f.info.transparent { stages.append("Lossy source: not bit-perfect by definition") }
             return DecodePlan(base: f, raw: f.info, key: path + "|pcm", isDoP: false, stages: stages)
         }
@@ -271,6 +289,9 @@ final class Player: @unchecked Sendable {
         var stages: [String] = []
         var mode = s.dsd.mode
         let dopRate = file.dsdRate / 16
+        if mode == .dop && sinkChannels > 0 && file.channels > sinkChannels {
+            mode = .pcm; stages.append("Device has \(sinkChannels) outputs for \(file.channels) DSD channels: converting to PCM so it can be mixed down")
+        }
         if mode == .dop && !rates.isEmpty && !nearest(dopRate, in: rates) {
             mode = .pcm; stages.append("Device cannot run DoP at \(Int(dopRate)) Hz: converting to PCM instead")
         }
@@ -281,11 +302,20 @@ final class Player: @unchecked Sendable {
         let candidates = [s.dsd.pcmRate, 176_400, 88_200, 352_800, 44_100].filter { r in
             let k = file.dsdRate / r; return k >= 8 && abs(k - k.rounded()) < 1e-9 && Int(k) % 8 == 0
         }
-        guard let target = (rates.isEmpty ? candidates.first : candidates.first { nearest($0, in: rates) }) ?? candidates.first,
-              let src = DsdToPcmSource(file, codec: codec, pcmRate: target, gainDB: s.dsd.gainDB) else {
+        let prof = PerformanceProfile.ready
+        let playable = candidates.filter { r in rates.isEmpty || nearest(r, in: rates) }
+        var pick = playable.first ?? candidates.first
+        if let p = pick, !prof.canDecodeDSD(rate: file.dsdRate, channels: file.channels) || !prof.canResample(to: p, channels: file.channels) {
+            // too heavy for this Mac at that rate: take the lowest sustainable one, never below the smallest available
+            let lighter = playable.filter { prof.canResample(to: $0, channels: file.channels) }.sorted()
+            if let l = lighter.last, l < p, prof.canDecodeDSD(rate: file.dsdRate, channels: file.channels) { pick = l; stages.append("\(codec) → PCM limited to \(formatRate(l)): this Mac cannot sustain \(formatRate(p)) in real time") }
+            else if !prof.canDecodeDSD(rate: file.dsdRate, channels: file.channels) { stages.append("\(codec) is heavy for this Mac (\(String(format: "%.1f", prof.dsdFactor(dsdRate: file.dsdRate, channels: file.channels)))× real time): expect dropouts; a larger buffer is used") }
+        }
+        guard let target = pick,
+              let src = DsdToPcm.make(file, codec: codec, pcmRate: target, gainDB: s.dsd.gainDB) else {
             throw AureonError.message("cannot convert \(codec) to PCM")
         }
-        stages.append("\(codec) → PCM \(Int(target)) Hz (FIR decimation)")
+        stages.append("\(codec) → PCM \(Int(target)) Hz (" + (src is FastDsdToPcmSource ? "multi-stage FIR decimation" : "FIR decimation") + ")")
         return DecodePlan(base: src, raw: raw, key: path + "|pcm|\(Int(target))|\(s.dsd.gainDB)", isDoP: false, stages: stages)
     }
 
@@ -310,6 +340,14 @@ final class Player: @unchecked Sendable {
 
         var chain: FrameSource = base
         var gainDB: Double?
+        // multichannel: play every channel the device has an output for; mix down only when it has not (or when the user asks for stereo)
+        if !plan.isDoP, chain.info.channels > 2 || s.multichannel.mode == .stereo, let target = Downmix.target(sourceChannels: chain.info.channels, deviceChannels: sinkChannels, mode: s.multichannel.mode) {
+            let from = chain.info.channels
+            chain = DownmixSource(chain, target: target, includeLFE: s.multichannel.includeLFE)
+            stages.append("Downmix \(Self.layoutName(from)) → \(target.count == 1 ? "mono" : target.count == 2 ? "stereo" : Self.layoutName(target.count)) (ITU-R BS.775\(s.multichannel.includeLFE ? ", LFE included" : ", LFE left out"))")
+        } else if chain.info.channels > 2 {
+            stages.append("\(Self.layoutName(chain.info.channels)) (\(chain.info.channels) channels) played directly, no processing")
+        }
         if plan.isDoP {
             if s.upsampling.mode != .off || s.replayGain.mode != .off || s.polarityInverted {
                 stages.append("Upsampling, ReplayGain and polarity are bypassed for DoP")
@@ -325,7 +363,22 @@ final class Player: @unchecked Sendable {
                 if target == nil, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             }
             if target == nil, s.upsampling.downsampleToFit, !rates.isEmpty, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
-            if s.upsampling.mode != .off && target == nil {
+            // keep the request inside what this Mac can resample in real time, with headroom
+            if let t = target, t > rate {
+                let prof = PerformanceProfile.ready, ch = chain.info.channels
+                if !prof.canResample(to: t, channels: ch) {
+                    var c = prof.capped(t, channels: ch, floor: rate)
+                    // the cap must still be a rate the device offers
+                    if !rates.isEmpty { c = rates.filter { $0 <= c + 0.5 && $0 > rate + 0.5 }.max() ?? rate }
+                    stages.append("Upsampling to \(formatRate(t)) is too heavy for this Mac in real time (\(String(format: "%.1f", prof.resampleFactor(rate: t, channels: ch)))×): using \(c > rate ? formatRate(c) : "the native rate") instead")
+                    target = c > rate ? c : nil
+                }
+            }
+            if let fr = sinkFixedRate, s.deckRate == nil {
+                target = abs(rate - fr) < 0.5 ? nil : fr
+                if target != nil { stages.append("This output takes only \(formatRate(fr)): resampling") }
+            }
+            if s.upsampling.mode != .off && target == nil && sinkFixedRate == nil {
                 stages.append("Upsampling: no suitable device rate above \(Int(rate)) Hz, keeping native rate")
             }
             if let t = target, let r = ResamplingSource(chain, outRate: t, config: s.upsampling.filter) {
@@ -437,7 +490,11 @@ final class Player: @unchecked Sendable {
         let report = sink.configure(for: fmt, options: options)
         update { $0.pathLines = report.lines }
 
-        let ring = RingBuffer(frames: max(8192, Int(fmt.sampleRate * options.bufferSeconds)), channels: fmt.channels)
+        let perf = PerformanceProfile.ready
+        let ringSeconds = perf.bufferSeconds(base: options.bufferSeconds, rate: fmt.sampleRate, channels: fmt.channels)
+        let ring = RingBuffer(frames: perf.ringFrames(rate: fmt.sampleRate, channels: fmt.channels, seconds: ringSeconds), channels: fmt.channels)
+        let prefillFrames = max(4096, Int(fmt.sampleRate * perf.prefillSeconds(rate: fmt.sampleRate)))
+        if fmt.sampleRate > 192_000 { update { $0.errors.removeAll { $0.hasPrefix("Heavy stream") } } }
         ring.paused.store(true, ordering: .relaxed)                       // held until prefilled: no false underruns
         let renderer = Renderer(ring: ring, channels: fmt.channels, dsp: dsp, underruns: underruns, tap: analysisTap)
         renderer.deckGain = deckGain
@@ -631,7 +688,7 @@ final class Player: @unchecked Sendable {
                 if n == 0 { usleep(4_000) }
             }
 
-            if !prefilled && (ring.availableToRead >= min(ring.capacity / 2, 4096) || endOfGroup) {
+            if !prefilled && (ring.availableToRead >= min(ring.capacity / 2, prefillFrames) || endOfGroup) {
                 prefilled = true; ring.paused.store(userPaused, ordering: .relaxed)
             }
 

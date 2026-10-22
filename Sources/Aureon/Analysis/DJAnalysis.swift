@@ -36,7 +36,7 @@ struct DJTrackAnalysis: Equatable, Codable {
 enum DJAnalysis {
     /// Decodes the file once and returns its waveform overview and estimated tempo. Runs off the main thread.
     static func analyze(path: String, buckets: Int = 1200, cancelled: () -> Bool = { false }) -> DJTrackAnalysis? {
-        guard let f = try? LosslessFile(path: path), f.info.totalFrames > 0 else { return nil }
+        guard let f = try? openLossless(path: path), f.info.totalFrames > 0 else { return nil }
         let info = f.info, ch = info.channels, total = Int(info.totalFrames), hop = 256
         let per = max(1, total / buckets)
         var peaks = [Float](repeating: 0, count: buckets)

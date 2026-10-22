@@ -12,9 +12,13 @@ struct QueueItem: Identifiable {
     enum ArtSource: Equatable { case unknown, embedded, fetched, none, remote(String) }
     let id: UUID
     let url: URL
+    /// The path the engine and the library know this item by.
+    var path: String { remotePath ?? url.path }
     var title: String
     var artist = ""
     var album = ""
+    /// The library path of a track that is not a local file (`cloud://…`, `subsonic://…`), which cannot be written as a file URL.
+    var remotePath: String? = nil
     var albumArtist = ""
     var composer = ""
     var genre = ""
@@ -42,6 +46,7 @@ enum Tab: String, CaseIterable, Identifiable {
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
     case deepDive = "Deep Dive"
     case audio = "Audio", dsp = "DSP"
+    case rip = "Rip CD", convert = "Convert", cloud = "Cloud"
     case settings = "Settings"
     var id: String { rawValue }
 
@@ -51,11 +56,11 @@ enum Tab: String, CaseIterable, Identifiable {
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .liked: "heart"; case .playlists: "music.note.list"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
-        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .settings: "gearshape"
+        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .settings: "gearshape"
         }
     }
 
-    enum Section: String { case listen = "", library = "Library", classical = "Classical", discover = "Discover", sound = "Sound", footer = "Settings" }
+    enum Section: String { case listen = "", library = "Library", classical = "Classical", discover = "Discover", sound = "Sound", tools = "Tools", footer = "Settings" }
     var section: Section {
         switch self {
         case .home, .player, .search, .radio, .podcasts: .listen
@@ -63,6 +68,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .composers, .works, .conductors, .ensembles: .classical
         case .deepDive: .discover
         case .audio, .dsp: .sound
+        case .rip, .convert, .cloud: .tools
         case .settings: .footer
         }
     }
@@ -155,6 +161,10 @@ final class PlayerModel: ObservableObject {
     let artistArt = ArtistArt()
     let dj = DJModel()
     let collections = CollectionsModel()
+    let rip = RipModel()
+    let convert = ConvertModel()
+    let cloud = CloudModel()
+    let cast = CastModel()
     let dspModel = DSPModel()
     @Published var showDSPPrompt = false
     private var pendingTab: Tab?
@@ -252,6 +262,9 @@ final class PlayerModel: ObservableObject {
         dspModel.captureHosted = { [unowned self] in self.capturePlugins() }
         dspModel.restoreHosted = { [unowned self] saved in await self.restorePlugins(saved); self.dspModel.markPluginsClean() }
         dspModel.pluginCount = { [unowned self] in self.hosted.count }
+        cloud.library = library
+        cast.onRouteChange = { [unowned self] in self.restartInPlace() }
+        rip.onFinished = { [unowned self] folder in self.library.importOnce(folder) }
         exclusive = defaults.bool(forKey: "aureon.exclusive")
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
         // property observers do not run inside init, so the theme is resolved explicitly
@@ -277,6 +290,7 @@ final class PlayerModel: ObservableObject {
             player.stop()      // restores the device clock and releases exclusive access
         }
         visualizerEnabled = defaults.object(forKey: "aureon.visualizer") as? Bool ?? true
+        PerformanceProfile.warmUp()
         library.onAdd = { [weak self] t, p in self?.addTracks(t, play: p) }
         library.onReplace = { [weak self] t in self?.replaceQueue(with: t) }
         albumArt.store = library.store; albumArt.fetcher = artFetcher
@@ -449,8 +463,7 @@ final class PlayerModel: ObservableObject {
     /// Reads tags and the embedded cover with Aureon's own parsers (AVFoundation fills gaps), then looks for a cover online when the file has none.
     private func loadMetadata(_ id: UUID) async {
         guard let item = items.first(where: { $0.id == id }), !item.locked, !item.isStream else { return }
-        let url = item.url
-        let tags = await MetadataEngine.load(path: url.path)
+        let tags = await MetadataEngine.load(path: item.path)
         let thumb = await Task.detached(priority: .utility) { tags.picture.flatMap { ImageTools.nsImage($0.data, maxPixel: 128) } }.value
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         if let t = tags.title, !t.isEmpty { items[i].title = t }
@@ -489,7 +502,7 @@ final class PlayerModel: ObservableObject {
         let token = "\(item.id.uuidString)|\(item.artSource)"
         guard token != hero.token, token != heroLoading else { return }
         heroLoading = token
-        let path = item.url.path, source = item.artSource
+        let path = item.path, source = item.artSource
         let artist = item.albumArtist.isEmpty ? item.artist : item.albumArtist, album = item.album
         let seed = album.isEmpty ? item.title : album
         let fetcher = artFetcher
@@ -512,7 +525,7 @@ final class PlayerModel: ObservableObject {
     private func analyzeIfNeeded(_ id: UUID?) {
         guard let id, let i = items.firstIndex(where: { $0.id == id }), items[i].analysis == nil, !items[i].analyzing, !items[i].isDSD, !items[i].isStream else { return }
         items[i].analyzing = true
-        let path = items[i].url.path
+        let path = items[i].path
         Task.detached(priority: .utility) {
             let a = analyzeTrack(path: path)
             await MainActor.run { [weak self] in
@@ -527,6 +540,7 @@ final class PlayerModel: ObservableObject {
     var options: PlayerOptions {
         var o = PlayerOptions(); o.hog = exclusive; o.rateSwitch = followRate; o.deviceID = deviceID == 0 ? nil : deviceID
         o.tuning = system.quietMode ? system.quiet : nil
+        if let f = cast.sinkFactory { o.sinkFactory = f }
         o.promoteEngineThread = system.promoteEngine
         o.ioCycleUsage = system.useCycleUsage ? Float(system.cycleUsage) : nil
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }      // snapshots make no sound
@@ -548,7 +562,7 @@ final class PlayerModel: ObservableObject {
     }
 
     /// Device / exclusive / rate-follow changes need the device re-negotiated: resume at the same spot.
-    private func restartInPlace() {
+    func restartInPlace() {
         guard isActive, let id = status.trackID, status.state != .idle else { return }
         let pos = status.position, wasPaused = status.state == .paused
         play(id, at: max(pos, 0.0001))
@@ -591,8 +605,9 @@ final class PlayerModel: ObservableObject {
             if let i = byID[e.id] { return i }
             fresh.append(e.id)
             let url = URL(fileURLWithPath: e.path)
-            if let t = known[e.path] { return QueueItem(id: e.id, url: url, title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "") }
-            return QueueItem(id: e.id, url: url, title: url.deletingPathExtension().lastPathComponent)
+            let remote = RemoteMedia.isRemote(e.path) ? e.path : nil
+            if let t = known[e.path] { return QueueItem(id: e.id, url: url, title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: remote) }
+            return QueueItem(id: e.id, url: url, title: url.deletingPathExtension().lastPathComponent, remotePath: remote)
         }
         _ = fresh                                   // covers load as their rows appear (see requestMetadata)
     }
@@ -601,7 +616,7 @@ final class PlayerModel: ObservableObject {
     func addTracks(_ tracks: [TrackDTO], play start: Bool) {
         guard !tracks.isEmpty else { return }
         let entries = player.append(tracks.map(\.path))
-        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
+        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
         items += new; lastQueueRev = player.queueRevision
         for n in new.prefix(3) { requestMetadata(n.id) }
         originalOrder += new.map(\.id)
@@ -621,7 +636,7 @@ final class PlayerModel: ObservableObject {
         guard tracks.indices.contains(index) else { return }
         let range = Self.queueRange(count: tracks.count, index: index)
         let slice = Array(tracks[range]), start = index - range.lowerBound
-        func item(_ e: QueueEntry, _ t: TrackDTO) -> QueueItem { QueueItem(id: e.id, url: URL(fileURLWithPath: t.path), title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "") }
+        func item(_ e: QueueEntry, _ t: TrackDTO) -> QueueItem { QueueItem(id: e.id, url: URL(fileURLWithPath: t.path), title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: RemoteMedia.isRemote(t.path) ? t.path : nil) }
         if isActive {
             let entries = player.replace(with: slice.map(\.path), startAt: start)
             items = zip(entries, slice).map(item)
@@ -670,7 +685,7 @@ final class PlayerModel: ObservableObject {
         guard !tracks.isEmpty else { return }
         let at = (items.firstIndex { $0.id == status.trackID } ?? -1) + 1
         let entries = player.insert(tracks.map(\.path), at: at)
-        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
+        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
         items.insert(contentsOf: new, at: min(at, items.count)); lastQueueRev = player.queueRevision
         originalOrder += new.map(\.id)
         for n in new.prefix(3) { requestMetadata(n.id) }
@@ -705,7 +720,7 @@ final class PlayerModel: ObservableObject {
             var rng = SystemRandomNumberGenerator()
             player.setOrder(head + (cur.map { [$0] } ?? []) + Shuffler.normal(rest, using: &rng))
         case .smart:
-            let paths = Dictionary(items.map { ($0.id, $0.url.path) }, uniquingKeysWith: { a, _ in a })
+            let paths = Dictionary(items.map { ($0.id, $0.path) }, uniquingKeysWith: { a, _ in a })
             let store = library.store, net = shuffleNet ?? TransitionNet.loadOrCreate()
             shuffleNet = net
             let wanted = Set(ids)
@@ -732,14 +747,14 @@ final class PlayerModel: ObservableObject {
     private func countPlay() {
         guard started, status.state == .playing, status.position > 10, let id = status.trackID, countedPlay != id, let item = items.first(where: { $0.id == id }), !item.isStream else { return }
         countedPlay = id
-        library.store?.recordPlay(path: item.url.path)
+        library.store?.recordPlay(path: item.path)
     }
 
     func nowPlayingInfo() -> NowPlayingInfo? {
         guard started, status.state == .playing || status.state == .paused, let item = items.first(where: { $0.id == status.trackID }), let raw = status.sourceInfo else { return nil }
         var lib = trackCache[item.id]
         if lib == nil && !notInLibrary.contains(item.id) {
-            lib = library.store?.track(path: item.url.path)
+            lib = library.store?.track(path: item.path)
             if let l = lib { trackCache[item.id] = l } else { notInLibrary.insert(item.id) }
         }
         var n = NowPlayingInfo(id: item.id.uuidString, title: lib?.title ?? item.title, artist: lib?.artistLine ?? item.artist, album: lib?.releaseTitle ?? item.album)
@@ -753,9 +768,9 @@ final class PlayerModel: ObservableObject {
         if ProcessInfo.processInfo.environment["AUREON_DEMO"] != nil { return }          // demo mode keeps its sample data
         guard let item = current else { deepDive.reset(); lastDeepDiveID = nil; return }
         lastDeepDiveID = item.id
-        var mbid = library.store?.track(path: item.url.path)?.mbRecordingID
-        if mbid == nil { mbid = TagReader.read(path: item.url.path).first("MUSICBRAINZ_TRACKID") }
-        deepDive.load(path: item.url.path, recordingID: mbid, key: item.id.uuidString, acoustID: social.settings.acoustIDKey, fpcalc: social.settings.fpcalcPath, force: force)
+        var mbid = library.store?.track(path: item.path)?.mbRecordingID
+        if mbid == nil { mbid = TagReader.read(path: item.path).first("MUSICBRAINZ_TRACKID") }
+        deepDive.load(path: item.path, recordingID: mbid, key: item.id.uuidString, acoustID: social.settings.acoustIDKey, fpcalc: social.settings.fpcalcPath, force: force)
     }
 
     private func updateAnalysisActivity() { player.analysis.setActive(tab == .player && visualizerEnabled) }
