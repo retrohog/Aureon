@@ -15,6 +15,25 @@ enum ScrollStep {
     }
 }
 
+/// Decides, event by event, whether scrolling belongs to a slider or to the page. A trackpad gesture adjusts a slider only if it *began* over one,
+/// and then stays with it until its momentum ends or it has been quiet for a moment, so it can never be left holding the scrolling.
+/// A mouse wheel adjusts a slider only with ⌥ held.
+struct ScrollGate {
+    enum Action: Equatable { case adjust, page }
+    private(set) var capturing = false
+    private var lastAt = 0.0
+
+    mutating func decide(now: Double, phased: Bool, begins: Bool, momentumEnded: Bool, option: Bool, overControl: Bool) -> Action {
+        guard phased else { return option && overControl ? .adjust : .page }
+        if begins { capturing = overControl }
+        else if capturing && now - lastAt > 0.3 { capturing = false }          // a gesture is never silent for this long: it is over, or was never ours
+        lastAt = now
+        let action: Action = capturing ? .adjust : .page
+        if momentumEnded { capturing = false }
+        return action
+    }
+}
+
 /// Sends scroll-wheel movement to the slider under the pointer, so every slider in the app can be adjusted by scrolling over it:
 /// controls drawn by Aureon register themselves while hovered; any system slider (NSSlider) is found by hit-testing.
 @MainActor
@@ -41,23 +60,23 @@ final class ScrollRouter {
         return v.bounds.contains(v.convert(e.locationInWindow, from: nil)) ? c.handler : { _ in false }
     }
 
-    /// True while a trackpad gesture that began over a slider is still going: the page must not start scrolling halfway through it.
-    private var capturing = false
+    private var gate = ScrollGate()
 
-    /// Scrolling must never get stuck on a slider. A trackpad gesture adjusts a slider only if it *began* over it; a mouse wheel (no gesture
-    /// phases) adjusts it only with ⌥ held. Everything else scrolls the page as usual.
+    /// Scrolling must never get stuck on a slider (see `ScrollGate`). Everything that is not meant for a slider scrolls the page.
     private func handle(_ e: NSEvent) -> NSEvent? {
         let notches = ScrollStep.notches(deltaY: Double(e.scrollingDeltaY), precise: e.hasPreciseScrollingDeltas)
         let phased = !e.phase.isEmpty || !e.momentumPhase.isEmpty
-        if phased {
-            if e.phase.contains(.began) || e.phase.contains(.mayBegin) { capturing = sliderUnderPointer(e) != nil || currentUnderPointer(e)(0) }
-            defer { if e.phase.contains(.ended) || e.phase.contains(.cancelled) || e.momentumPhase.contains(.ended) { capturing = false } }
-            if capturing, notches != 0, adjustUnderPointer(e, notches) { return nil }
-            if capturing { return nil }
+        let begins = e.phase.contains(.began) || e.phase.contains(.mayBegin)
+        let over = begins || !phased ? (sliderUnderPointer(e) != nil || currentUnderPointer(e)(0)) : false
+        let action = gate.decide(now: e.timestamp, phased: phased, begins: begins, momentumEnded: e.momentumPhase.contains(.ended) || e.phase.contains(.cancelled),
+                                 option: e.modifierFlags.contains(.option), overControl: over)
+        switch action {
+        case .adjust:
+            if notches != 0, adjustUnderPointer(e, notches) { return nil }
+            return phased ? nil : e
+        case .page:
             return scrollUnderPointer(e) ? nil : e
         }
-        if notches != 0, e.modifierFlags.contains(.option), adjustUnderPointer(e, notches) { return nil }
-        return scrollUnderPointer(e) ? nil : e
     }
 
     /// Hands the movement to the scroll view that is under the pointer *now*. AppKit remembers the view the pointer was last over, so after a

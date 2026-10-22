@@ -6,6 +6,13 @@ import AppKit
 struct ContentView: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var dropping = Box(false)
+    @StateObject private var stage: StageModel
+    @Namespace private var stageSpace
+
+    @MainActor init(stage: StageModel? = nil) { _stage = StateObject(wrappedValue: stage ?? StageModel()) }
+
+    /// Now Playing has taken the whole window: the sidebar is tucked away.
+    private var immersive: Bool { stage.immersive && m.tab == .player }
 
     var body: some View {
         ZStack {
@@ -14,11 +21,19 @@ struct ContentView: View {
                 DJView().transition(.opacity)
             } else {
                 HStack(spacing: 0) {
+                    // always mounted: inserting and removing it with a transition could leave it drawn but not clickable after Now Playing closed
                     Sidebar()
+                        .frame(width: 204, alignment: .leading)
+                        .frame(width: immersive ? 0 : 204, alignment: .leading)
+                        .clipped()
+                        .opacity(immersive ? 0 : 1)
+                        .allowsHitTesting(!immersive)
+                        .accessibilityHidden(immersive)
                     ZStack(alignment: .bottom) {
-                        backdrop
-                        page.id(m.tab).transition(.opacity).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.trailing, m.showQueue ? 362 : 0)
-                        if m.tab != .player { PlayerBar().transition(.move(edge: .bottom).combined(with: .opacity)) }
+                        StageBackdrop(palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: m.tab == .player, light: m.theme.isLight)
+                        page.id(m.tab).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.trailing, m.showQueue ? 362 : 0)
+                        // opacity only: the cover and waveform fly between the bar and Now Playing, and a sliding bar would drag them along
+                        if m.tab != .player { PlayerBar().transition(.opacity) }
                     }
                 }
                 .transition(.opacity)
@@ -40,7 +55,7 @@ struct ContentView: View {
                     Spacer(minLength: 0)
                     QueuePanel()
                 }
-                .padding(.top, WindowChrome.band - 8).padding(.trailing, 12).padding(.bottom, m.tab == .player ? 14 : 92)
+                .padding(.top, WindowChrome.band - 8).padding(.trailing, 12).padding(.bottom, m.tab == .player ? 14 : PlayerBar.reserved + 12)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
             if dropping.v {
@@ -52,20 +67,28 @@ struct ContentView: View {
         }
         .ignoresSafeArea(.container, edges: .top)           // the sidebar and pages run under the (transparent) title bar, so the window buttons sit inside the app
         .background(WindowChrome().frame(width: 0, height: 0))
-        .alert("Save your DSP settings?", isPresented: Binding(get: { m.showDSPPrompt }, set: { if !$0 && m.showDSPPrompt { m.cancelDSPPrompt() } })) {
+        .alert("Save your DSP settings?", isPresented: Binding(get: { m.showDSPPrompt }, set: { _ in })) {
             Button("Save") { m.resolveDSPPrompt(save: true) }
             Button("Don't Save") { m.resolveDSPPrompt(save: false) }
             Button("Stay Here", role: .cancel) { m.cancelDSPPrompt() }
         } message: { Text("You changed the equalizer or plug-ins. Saved settings come back next time; if you don't save them they stay for this session only and are gone when Aureon quits.") }
-        .alert("These settings clash", isPresented: Binding(get: { m.conflict != nil }, set: { if !$0 && m.conflict != nil { m.resolveConflict(accept: false) } })) {
+        .alert("These settings clash", isPresented: Binding(get: { m.conflict != nil }, set: { _ in })) {
             Button(m.conflict?.fixLabel ?? "OK") { m.resolveConflict(accept: true) }
             Button("Cancel", role: .cancel) { m.resolveConflict(accept: false) }
         } message: { Text(m.conflict?.message ?? "") }
         .background(DuplicateSheetHost(lib: m.library))
         .animation(.easeOut(duration: 0.2), value: m.djMode)
         .animation(.smooth(duration: 0.28), value: m.showQueue)
-        .animation(.easeOut(duration: 0.16), value: m.tab)
+        // page changes fade quickly, unless the change comes with its own animation (opening Now Playing from the bar springs)
+        .transaction(value: m.tab) { t in if t.animation == nil { t.animation = .easeOut(duration: 0.16) } }
+        // leaving Now Playing any other way (sidebar shortcut, Back, DJ mode) brings the sidebar back
+        .onChange(of: m.tab) { old, tab in
+            if tab == .player, old != .player { stage.returnTab = old }
+            if tab != .player, stage.immersive { withAnimation(.easeOut(duration: 0.2)) { stage.immersive = false } }
+        }
+        .onChange(of: m.djMode) { _, dj in if dj, stage.immersive { stage.immersive = false } }
         .animation(.smooth(duration: 0.22), value: dropping.v)
+        .environmentObject(stage).environment(\.stageNamespace, stageSpace)
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
         .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.lms).environmentObject(m.cast).environmentObject(m.zone).environmentObject(m.speakers).environmentObject(m.bridge)
         .preferredColorScheme(m.theme.isLight ? .light : .dark)
@@ -87,36 +110,11 @@ struct ContentView: View {
         }
     }
 
-    /// Flat surface; Now Playing lets the cover's colours fill it, other pages get only a faint wash from the top.
-    @ViewBuilder private var backdrop: some View {
-        if m.tab == .player {
-            AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil, intensity: 1)
-        } else if m.theme.family == "album" {
-            // the cover's colours spread over every page
-            if m.theme.isLight {
-                Brand.canvas
-                RadialGradient(colors: [m.hero.palette.grid[1].color.opacity(0.35), .clear], center: .topTrailing, startRadius: 0, endRadius: 640).allowsHitTesting(false)
-                RadialGradient(colors: [m.hero.palette.grid[7].color.opacity(0.30), .clear], center: .bottomLeading, startRadius: 0, endRadius: 640).allowsHitTesting(false)
-            } else {
-                AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: false, intensity: 0.6)
-            }
-        } else {
-            Brand.canvas
-            if m.theme.family == "aureon" {
-                LinearGradient(colors: [m.hero.palette.grid[1].color.opacity(0.28), .clear], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45)).allowsHitTesting(false)
-            } else {
-                // themed glow: the two accents bleeding in from opposite corners
-                RadialGradient(colors: [Brand.accent.opacity(m.theme.isLight ? 0.10 : 0.16), .clear], center: .topTrailing, startRadius: 0, endRadius: 520).allowsHitTesting(false)
-                RadialGradient(colors: [Brand.accent2.opacity(m.theme.isLight ? 0.08 : 0.12), .clear], center: .bottomLeading, startRadius: 0, endRadius: 520).allowsHitTesting(false)
-            }
-        }
-    }
-
     @ViewBuilder private var page: some View {
         switch m.tab {
         case .home: HomePage()
         case .player: NowPlayingView()
-        case .search: SearchPage()
+        case .search: SmartSearchPage()
         case .radio: RadioPage()
         case .podcasts: PodcastsPage()
         case .liked: LikedPage()
@@ -126,6 +124,9 @@ struct ContentView: View {
         case .rip: RipPage()
         case .convert: ConvertPage()
         case .cloud: CloudPage()
+        case .folders: FolderBrowserPage()
+        case .abx: ABXPage()
+        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "AI features, models and providers") { IntelligenceTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
         case .settings: SettingsPage()
@@ -273,7 +274,8 @@ struct QueueView: View {
         let p = NSOpenPanel()
         p.allowsMultipleSelection = true; p.canChooseDirectories = true; p.canChooseFiles = true
         p.allowedContentTypes = [.audio, .folder]
-        if p.runModal() == .OK { m.add(urls: p.urls) }
+        // after the button's action has returned: a modal loop run inside a SwiftUI action can leave the window unresponsive
+        DispatchQueue.main.async { if p.runModal() == .OK { m.add(urls: p.urls) } }
     }
 }
 

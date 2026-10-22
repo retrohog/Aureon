@@ -26,8 +26,10 @@ struct AudioTab: View {
             RoomCard()
             upsampling
             dsd
+            dsdOutput
             memory
             replayGain
+            TransitionsCard()
             multichannel
             extreme
         }
@@ -67,8 +69,10 @@ struct AudioTab: View {
         let st = m.settings
         var out: [(String, Color)] = [("Decode", .blue)]
         if st.ram.enabled { out.append(("RAM", .blue)) }
-        if st.upsampling.mode != .off { out.append(("Resample", .orange)) }
+        if st.upsampling.mode != .off || st.dsdOutput.enabled { out.append(("Resample", .orange)) }
+        if st.dsdOutput.enabled { out.append(("DSD", .orange)) }
         if st.replayGain.mode != .off { out.append(("Gain", .orange)) }
+        if st.transition.mode != .off { out.append((st.transition.mode == .smart ? "Smart fade" : "Crossfade", .orange)) }
         out.append(("Ring", .blue))
         if st.rt.convolution.enabled { out.append(("Room", .orange)) }
         if st.rt.crossfeed.enabled { out.append(("Crossfeed", .orange)) }
@@ -82,14 +86,7 @@ struct AudioTab: View {
         Card(title: "Upsampling", subtitle: "Native polyphase sinc resampler, any rational ratio. Changes the samples, so it is off by default") {
             Picker("Target", selection: $m.settings.upsampling.mode) { ForEach(UpsamplingMode.allCases) { Text($0.title).tag($0) } }
             if m.settings.upsampling.mode != .off {
-                SegmentedChoice(selection: $m.settings.upsampling.filter.phase, items: Array(ResamplerConfig.Phase.allCases)) { $0.title }
-                Note(text: m.settings.upsampling.filter.phase == .linear ? "Constant delay, symmetric ringing before and after transients." : "No pre-ringing; slight frequency-dependent delay.")
-                HStack {
-                    Text("Pass-band")
-                    Slider(value: $m.settings.upsampling.filter.passband, in: 0.90...0.99, step: 0.005)
-                    Text(String(format: "%.1f%%", m.settings.upsampling.filter.passband * 100)).monospacedDigit().frame(width: 52, alignment: .trailing)
-                }
-                HStack { Text("Stop-band"); SegmentedChoice(selection: $m.settings.upsampling.filter.stopbandDB, items: [96.0, 120, 144]) { "\(Int($0)) dB" } }
+                filterControls
                 Picker("Highest rate", selection: $m.settings.upsampling.maxRate) {
                     Text("Device maximum").tag(0.0)
                     ForEach([96_000.0, 192_000, 384_000, 768_000, 1_536_000], id: \.self) { Text(formatRate($0)).tag($0) }
@@ -97,6 +94,34 @@ struct AudioTab: View {
                 Note(text: "Steeper filters use more CPU. Changes apply within a moment, at the current position.")
             }
             Toggle("Resample material the device cannot play natively", isOn: $m.settings.upsampling.downsampleToFit)
+        }
+    }
+
+    /// The oversampling filter, shared by upsampling and PCM-to-DSD.
+    @ViewBuilder private var filterControls: some View {
+        SegmentedChoice(selection: $m.settings.upsampling.chosenFilter, items: OversamplingFilter.allCases) { $0.title }
+        Note(text: m.settings.upsampling.chosenFilter.summary)
+        if m.settings.upsampling.chosenFilter.adjustable {
+            HStack {
+                Text("Pass-band")
+                ValueSlider(value: $m.settings.upsampling.filter.passband, in: 0.90...0.99, step: 0.005)
+                Text(String(format: "%.1f%%", m.settings.upsampling.filter.passband * 100)).monospacedDigit().frame(width: 52, alignment: .trailing)
+            }
+            HStack { Text("Stop-band"); SegmentedChoice(selection: $m.settings.upsampling.filter.stopbandDB, items: [96.0, 120, 144]) { "\(Int($0)) dB" } }
+        }
+    }
+
+    private var dsdOutput: some View {
+        Card(title: "PCM to DSD", subtitle: "Plays any music as DSD on a DAC that takes DoP: an oversampling filter, then a one-bit noise-shaping modulator. Changes the samples, so it is off by default") {
+            Toggle("Convert music to DSD", isOn: $m.settings.dsdOutput.enabled)
+            if m.settings.dsdOutput.enabled {
+                Picker("Highest DSD rate", selection: $m.settings.dsdOutput.maxRate) { ForEach(DSDOutputRate.allCases) { Text($0.name).tag($0) } }
+                SegmentedChoice(selection: $m.settings.dsdOutput.modulator, items: DSDModulatorOrder.allCases) { $0.title }
+                Note(text: m.settings.dsdOutput.modulator.summary)
+                filterControls
+                if let line = m.status.pipeline.first(where: { $0.hasPrefix("PCM → D") }) { Note(text: "Now: " + line) }
+                Note(text: "The DSD rate used is the highest, up to the one above, that the DAC accepts as DoP (DSD512 needs a 1,411.2 kHz DoP rate) and this Mac can make in real time. Full scale is set at half the one-bit range, the level DSD itself uses for 0 dB. Room correction, crossfeed, headphone correction, the equalizer and dither come before the DAC and cannot be applied to a DoP stream.", color: .orange)
+            }
         }
     }
 
@@ -109,7 +134,7 @@ struct AudioTab: View {
                 SegmentedChoice(selection: $m.settings.dsd.pcmRate, items: [88_200.0, 176_400, 352_800, 705_600, 1_411_200]) { formatRate($0) }
                 HStack {
                     Text("Level")
-                    Slider(value: $m.settings.dsd.gainDB, in: -12...12, step: 0.5)
+                    ValueSlider(value: $m.settings.dsd.gainDB, in: -12...12, step: 0.5)
                     Text(String(format: "%+.1f dB", m.settings.dsd.gainDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
                 Note(text: "DSD's nominal 0 dB sits 6 dB below PCM full scale; add gain here if it sounds low.")
@@ -154,7 +179,7 @@ struct AudioTab: View {
             if m.settings.replayGain.mode != .off {
                 HStack {
                     Text("Pre-amp")
-                    Slider(value: $m.settings.replayGain.preampDB, in: -12...12, step: 0.5)
+                    ValueSlider(value: $m.settings.replayGain.preampDB, in: -12...12, step: 0.5)
                     Text(String(format: "%+.1f dB", m.settings.replayGain.preampDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
                 Toggle("Prevent clipping using the track's peak", isOn: $m.settings.replayGain.preventClipping)

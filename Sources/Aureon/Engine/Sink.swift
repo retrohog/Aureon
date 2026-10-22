@@ -44,11 +44,15 @@ struct PlaybackSettings: Equatable, Codable {
     var replayGain = ReplayGainSettings()
     var upsampling = UpsamplingSettings()
     var dsd = DSDSettings()
+    /// Convert PCM music to DSD for a DoP DAC.
+    var dsdOutput = DSDOutputSettings()
     var ram = RamSettings()
     var polarityInverted = false
     var multichannel = MultichannelSettings()
     var dsp = DSPSettings()
     var rt = RTSettings()
+    /// Gapless, crossfade or smart transitions between tracks. Applied at the next track boundary; never rebuilds the stream.
+    var transition = TransitionSettings()
 
     init() {}
 
@@ -60,14 +64,18 @@ struct PlaybackSettings: Equatable, Codable {
         replayGain = try c.decodeIfPresent(ReplayGainSettings.self, forKey: .replayGain) ?? replayGain
         upsampling = try c.decodeIfPresent(UpsamplingSettings.self, forKey: .upsampling) ?? upsampling
         dsd = try c.decodeIfPresent(DSDSettings.self, forKey: .dsd) ?? dsd
+        dsdOutput = try c.decodeIfPresent(DSDOutputSettings.self, forKey: .dsdOutput) ?? dsdOutput
         ram = try c.decodeIfPresent(RamSettings.self, forKey: .ram) ?? ram
         polarityInverted = try c.decodeIfPresent(Bool.self, forKey: .polarityInverted) ?? false
         multichannel = try c.decodeIfPresent(MultichannelSettings.self, forKey: .multichannel) ?? multichannel
         dsp = try c.decodeIfPresent(DSPSettings.self, forKey: .dsp) ?? dsp
         rt = try c.decodeIfPresent(RTSettings.self, forKey: .rt) ?? rt
+        transition = try c.decodeIfPresent(TransitionSettings.self, forKey: .transition) ?? transition
     }
 
-    var streamKey: PlaybackSettings { var s = self; s.dsp = DSPSettings(); s.rt = RTSettings(); return s }
+    /// What decides whether the open stream must be rebuilt. The oversampling filter is left out: a running resampler swaps it in itself
+    /// (see `FilterSwitch`), and the DSP, real-time and transition settings are applied without touching the stream.
+    var streamKey: PlaybackSettings { var s = self; s.dsp = DSPSettings(); s.rt = RTSettings(); s.transition = TransitionSettings(); s.upsampling.filter = .standard; return s }
 }
 
 struct PlayerOptions {

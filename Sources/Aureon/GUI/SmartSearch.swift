@@ -1,0 +1,276 @@
+import SwiftUI
+import AppKit
+
+/// Runs library queries (see `LibraryQuery`) in the background and keeps the genre tree.
+@MainActor
+final class SmartQueryModel: ObservableObject {
+    static let shared = SmartQueryModel()
+
+    @Published private(set) var results: [TrackDTO] = []
+    @Published private(set) var total = 0
+    @Published private(set) var error: QueryError?
+    @Published private(set) var parsed: LibraryQuery?
+    @Published private(set) var running = false
+    @Published private(set) var tree: [TagTreeNode] = []
+    @Published private(set) var treeLoading = false
+    static let limit = 5000
+
+    private var generation = 0
+    private var pending: DispatchWorkItem?
+    private var treeRevision: Int64 = -1
+
+    func run(_ text: String, store: LibraryStore?) {
+        pending?.cancel()
+        let t = text.trimmingCharacters(in: .whitespaces)
+        guard LibraryQuery.looksAdvanced(t) else { error = nil; parsed = nil; results = []; total = 0; running = false; return }
+        let w = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.execute(t, store: store) } }
+        pending = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: w)          // typing does not start a query per key
+    }
+
+    private func execute(_ text: String, store: LibraryStore?) {
+        generation += 1
+        let gen = generation
+        do {
+            let q = try LibraryQuery(parsing: text)
+            error = nil; parsed = q
+            guard let store else { return }
+            running = true
+            Task.detached(priority: .userInitiated) {
+                let rows = store.tracks(matching: q, limit: SmartQueryModel.limit)
+                let n = rows.count < SmartQueryModel.limit ? rows.count : store.count(matching: q)
+                await MainActor.run {
+                    guard gen == self.generation else { return }
+                    self.results = rows; self.total = n; self.running = false
+                }
+            }
+        } catch let e as QueryError {
+            error = e; running = false
+        } catch {
+            self.error = QueryError(message: "\(error)", position: 0); running = false
+        }
+    }
+
+    func loadTree(store: LibraryStore?, force: Bool = false) {
+        guard let store, !treeLoading else { return }
+        let rev = store.revision
+        guard force || rev != treeRevision else { return }
+        treeLoading = true
+        Task.detached(priority: .utility) {
+            let t = TagTreeNode.build(store.genreCounts())
+            await MainActor.run { self.tree = t; self.treeLoading = false; self.treeRevision = rev }
+        }
+    }
+}
+
+// MARK: - Search page with the query language and the tag tree
+
+/// The search page: plain words use the quick search, anything with fields or operators runs the query language. The genre tree on
+/// the left turns a click into a `tag:` query.
+struct SmartSearchPage: View {
+    @EnvironmentObject var m: PlayerModel
+    @ObservedObject private var q = SmartQueryModel.shared
+    @StateObject private var showTree = Box(UserDefaults.standard.object(forKey: "aureon.search.tree") as? Bool ?? true)
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if showTree.v {
+                TagTreePanel(tree: q.tree, loading: q.treeLoading, current: m.searchText) { node in m.searchText = node.query }
+                    .frame(width: 236)
+                    .padding(.leading, 16).padding(.top, WindowChrome.band - 6).padding(.bottom, 96)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            ZStack(alignment: .topLeading) {
+                if LibraryQuery.looksAdvanced(m.searchText) { QueryResultsPage() } else { SearchPage() }
+                Button { withAnimation(.smooth(duration: 0.22)) { showTree.v.toggle() }; UserDefaults.standard.set(showTree.v, forKey: "aureon.search.tree") } label: {
+                    Image(systemName: "sidebar.left")
+                }
+                .buttonStyle(IconButtonStyle()).help(showTree.v ? "Hide the genre tree" : "Show the genre tree")
+                .padding(.leading, 18).padding(.top, 14)
+            }
+        }
+        .onAppear { q.loadTree(store: m.library.store); q.run(m.searchText, store: m.library.store) }
+        .onChange(of: m.searchText) { _, t in q.run(t, store: m.library.store) }
+    }
+}
+
+struct QueryResultsPage: View {
+    @EnvironmentObject var m: PlayerModel
+    @ObservedObject private var q = SmartQueryModel.shared
+
+    var body: some View {
+        PageScaffold(title: "Search", subtitle: subtitle, trailing: {
+            if !q.results.isEmpty {
+                PillButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(q.results) }
+                PillButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(q.results, false) }
+                PillButton(title: "Edit Tags", symbol: "tag") { TagEditorWindow.open(paths: q.results.map(\.path).filter { !RemoteMedia.isRemote($0) }, model: m) }
+            }
+        }) {
+            VStack(alignment: .leading, spacing: 14) {
+                if let e = q.error {
+                    QueryErrorView(text: m.searchText, error: e)
+                } else if let p = q.parsed {
+                    QueryChips(node: p.root).padding(.bottom, 2)
+                }
+                if q.running && q.results.isEmpty { ProgressView().padding(.top, 20) }
+                else if q.error == nil && q.results.isEmpty && q.parsed != nil && !q.running { Text("No songs match").foregroundStyle(.secondary).padding(.top, 12) }
+                if !q.results.isEmpty {
+                    if q.total > q.results.count { Note(text: "Showing the first \(q.results.count) of \(q.total) songs. Narrow the query to see the rest.") }
+                    SongList(tracks: q.results, showArtist: true, sortHeader: false)
+                }
+                QueryHelp(insert: { m.searchText = $0 }).padding(.top, 18)
+            }
+        }
+    }
+
+    private var subtitle: String? {
+        if q.error != nil { return "query error" }
+        if q.running { return "searching…" }
+        return q.parsed == nil ? nil : "\(q.total) song\(q.total == 1 ? "" : "s")"
+    }
+}
+
+/// Shows where a query went wrong, with a caret under the spot.
+struct QueryErrorView: View {
+    let text: String
+    let error: QueryError
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(error.message, systemImage: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(text).font(.system(size: 12.5, design: .monospaced))
+                Text(String(repeating: " ", count: max(0, min(error.position, text.count))) + "^").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(.orange)
+            }
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(0.06)))
+        }
+    }
+}
+
+/// The parsed query drawn as chips, so it is clear how it was understood ("NOT" binds to the next term; AND binds tighter than OR).
+struct QueryChips: View {
+    let node: QueryNode
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 5) { chips(node, top: true) } }
+    }
+
+    private func label(_ t: QueryTerm) -> String {
+        let field = t.field == .any ? "Anywhere" : t.field.rawValue.prefix(1).uppercased() + t.field.rawValue.dropFirst()
+        switch t.value {
+        case .text(let v, let exact, let pattern): return "\(field) \(pattern ? "matches" : (exact ? "is" : "contains")) “\(v)”"
+        case .flag(let b): return "\(field): \(b ? "yes" : "no")"
+        case .range(let lo, let hi):
+            func f(_ x: Double) -> String { x == x.rounded() ? String(Int(x)) : String(format: "%.1f", x) }
+            switch (lo, hi) {
+            case let (a?, b?) where a == b: return "\(field) = \(f(a))"
+            case let (a?, b?): return "\(field) \(f(a))–\(f(b))"
+            case let (a?, nil): return "\(field) ≥ \(f(a))"
+            case let (nil, b?): return "\(field) ≤ \(f(b))"
+            default: return field
+            }
+        }
+    }
+
+    private func chip(_ s: String, negative: Bool = false) -> some View {
+        Text(s).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(Capsule().fill((negative ? Color.orange : Brand.accent).opacity(0.16)))
+            .overlay(Capsule().strokeBorder((negative ? Color.orange : Brand.accent).opacity(0.35), lineWidth: 0.7))
+    }
+
+    private func op(_ s: String) -> some View { Text(s).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(.secondary) }
+
+    private func chips(_ n: QueryNode, top: Bool = false) -> AnyView {
+        switch n {
+        case .term(let t): return AnyView(chip(label(t)))
+        case .not(.term(let t)): return AnyView(chip("not " + label(t), negative: true))
+        case .not(let x): return AnyView(HStack(spacing: 5) { op("NOT ("); chips(x); op(")") })
+        case .and(let parts):
+            return AnyView(HStack(spacing: 5) { ForEach(Array(parts.enumerated()), id: \.offset) { i, p in if i > 0 { op("AND") }; chips(p) } })
+        case .or(let parts):
+            return AnyView(HStack(spacing: 5) {
+                if !top { op("(") }
+                ForEach(Array(parts.enumerated()), id: \.offset) { i, p in if i > 0 { op("OR") }; chips(p) }
+                if !top { op(")") }
+            })
+        }
+    }
+}
+
+/// A short reference of the query language with examples that can be clicked.
+struct QueryHelp: View {
+    let insert: (String) -> Void
+    private let examples = [
+        "Genre: Jazz AND Year: 1955..1965 NOT Artist: \"Miles Davis\"",
+        "composer:beethoven tag:Classical/Symphonies",
+        "(artist:coltrane OR artist:dolphy) year:<1965",
+        "rate:>=96k bits:24 -live",
+        "liked:yes plays:0",
+        "lufs:-20..-12 dr:>=12",
+    ]
+    var body: some View {
+        Card(title: "Query language", subtitle: "Fields with a colon, AND / OR / NOT in capitals, brackets, \"exact text\", ranges with .. and comparisons") {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(examples, id: \.self) { e in
+                    Button { insert(e) } label: { Text(e).font(.system(size: 12, design: .monospaced)).foregroundStyle(Brand.accent).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain)
+                }
+            }
+            Note(text: "Fields: title, artist, albumartist, album, composer, conductor, ensemble, performer, person, genre, tag (hierarchical: Classical/Beethoven covers everything under it), year, work, catalog, format, rate, bits, channels, liked, hires, plays, lufs, dr, duration, path. Text matches ignore case and accents; * and ? are wildcards; a word with a minus in front is left out.")
+        }
+    }
+}
+
+// MARK: - Genre tree
+
+struct TagTreePanel: View {
+    let tree: [TagTreeNode]
+    let loading: Bool
+    let current: String
+    let open: (TagTreeNode) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Genres & tags").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if loading { ProgressView().controlSize(.mini) }
+                else { Button { SmartQueryModel.shared.loadTree(store: LibraryModelBridge.shared.model?.store, force: true) } label: { Image(systemName: "arrow.clockwise").font(.system(size: 10.5)) }.buttonStyle(.plain).foregroundStyle(.secondary).help("Read the genres again") }
+            }
+            .padding(.horizontal, 12).padding(.top, 12)
+            if tree.isEmpty && !loading {
+                Text("No genres in the library yet. Tags written as Classical/Beethoven/Symphonies appear here as a tree.")
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.horizontal, 12)
+                Spacer()
+            } else {
+                List {
+                    OutlineGroup(tree, children: \.childrenOrNil) { node in
+                        TagTreeRow(node: node, selected: current == node.query) { open(node) }
+                    }
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .glassPanel(radius: 14)
+    }
+}
+
+private struct TagTreeRow: View {
+    let node: TagTreeNode
+    let selected: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: node.children.isEmpty ? "tag" : "tag.fill").font(.system(size: 10.5)).foregroundStyle(Brand.accent)
+                Text(node.name).font(.system(size: 12.5, weight: selected ? .semibold : .regular)).lineLimit(1)
+                Spacer(minLength: 4)
+                Text("\(node.count)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+            .foregroundStyle(selected ? Brand.accent : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .help(node.query)
+    }
+}

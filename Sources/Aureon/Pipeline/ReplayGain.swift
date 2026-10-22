@@ -238,7 +238,8 @@ final class ReplayGainStore: @unchecked Sendable {
             gain = s.referenceLUFS - m.lufs; peak = m.peak; origin = "measured"
         }
         guard let g = gain else { return ReplayGainResult(linear: 1, appliedDB: 0, origin: "none", limitedByPeak: false) }
-        var lin = pow(10, (g + s.preampDB) / 20), limited = false
+        let totalDB = (g + s.preampDB).isFinite ? max(-80, min(60, g + s.preampDB)) : 0       // a corrupt tag must not make the gain infinite
+        var lin = pow(10, totalDB / 20), limited = false
         if s.preventClipping, let p = peak, p > 0, lin * p > 1 { lin = 1 / p; limited = true }
         return ReplayGainResult(linear: lin, appliedDB: 20 * log10(lin), origin: origin, limitedByPeak: limited)
     }

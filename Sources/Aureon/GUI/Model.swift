@@ -46,7 +46,8 @@ enum Tab: String, CaseIterable, Identifiable {
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
     case deepDive = "Deep Dive"
     case audio = "Audio", dsp = "DSP"
-    case rip = "Rip CD", convert = "Convert", cloud = "Cloud"
+    case rip = "Rip CD", convert = "Convert", cloud = "Cloud", intelligence = "Intelligence"
+    case folders = "Folders", abx = "ABX Test"
     case settings = "Settings"
     var id: String { rawValue }
 
@@ -56,7 +57,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .liked: "heart"; case .playlists: "music.note.list"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
-        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .settings: "gearshape"
+        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .intelligence: "brain"; case .folders: "folder"; case .abx: "ear"; case .settings: "gearshape"
         }
     }
 
@@ -64,11 +65,11 @@ enum Tab: String, CaseIterable, Identifiable {
     var section: Section {
         switch self {
         case .home, .player, .search, .radio, .podcasts: .listen
-        case .albums, .artists, .songs, .liked, .playlists: .library
+        case .albums, .artists, .songs, .liked, .playlists, .folders: .library
         case .composers, .works, .conductors, .ensembles: .classical
         case .deepDive: .discover
         case .audio, .dsp: .sound
-        case .rip, .convert, .cloud: .tools
+        case .rip, .convert, .cloud, .intelligence, .abx: .tools
         case .settings: .footer
         }
     }
@@ -83,9 +84,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", sidebar = "Sidebar", connect = "Connect", system = "System"
+    case general = "General", sidebar = "Sidebar", connect = "Connect", midi = "MIDI", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .sidebar: "sidebar.left"; case .connect: "network"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -111,6 +112,8 @@ final class PlayerModel: ObservableObject {
                 return
             }
             updateAnalysisActivity()
+            // the page's filter belongs to that page: it does not follow you to the next one
+            if tab != oldValue, !library.search.isEmpty { library.search = "" }
             if tab == .deepDive { loadDeepDiveForCurrent() }
             if let c = tab.libraryCategory, library.category != c { library.category = c }
             navigator.visit(place)
@@ -158,7 +161,7 @@ final class PlayerModel: ObservableObject {
         Theme.current = theme
         if persist, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(themeFamily, forKey: "aureon.themeFamily"); defaults.set(appearance.rawValue, forKey: "aureon.appearance") }
     }
-    let navigator = Navigator()
+    let navigator = Navigator(start: Place(tab: .home))
     let radio = RadioModel()
     let podcasts = PodcastModel()
     let artistArt = ArtistArt()
@@ -173,6 +176,8 @@ final class PlayerModel: ObservableObject {
     let speakers = SpeakerModel()
     let bridge = BridgeModel()
     let dspModel = DSPModel()
+    /// MIDI controllers: mappings, learn and the connection to the DJ, EQ and transport controls.
+    let midi = MIDIController()
     @Published var showDSPPrompt = false
     private var pendingTab: Tab?
     private var parameterTokens: [UUID: AUParameterObserverToken] = [:]
@@ -246,7 +251,7 @@ final class PlayerModel: ObservableObject {
     func setVolume(_ v: Float) {
         guard hasVolume, let dev = volumeDevice else { return }
         let c = max(0, min(volumeLimit, v.isFinite ? v : 0))
-        if dev.writeVolume(c) { volume = dev.readVolume() ?? c } else { volume = dev.readVolume() ?? volume }
+        if dev.writeVolume(c) { volume = dev.readVolume() ?? c; speakers.matchVolume(volume) } else { volume = dev.readVolume() ?? volume }
     }
 
     // plugins
@@ -319,6 +324,7 @@ final class PlayerModel: ObservableObject {
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
         volumeLimit = defaults.object(forKey: "aureon.volumeLimit") as? Float ?? 1
         LibraryModelBridge.shared.model = library
+        IntelligenceCenter.shared.attach(self)
         if let d = defaults.data(forKey: "aureon.viewOptions"), let v = try? JSONDecoder().decode([String: ViewOptions].self, from: d) { viewOptions = v }
         refreshDevices()
         availableEffects = DSPChain.availableEffects()
@@ -355,6 +361,8 @@ final class PlayerModel: ObservableObject {
             .sink { [weak self] enabled, port, name in self?.applyRemote(enabled, port, name) }.store(in: &cancellables)
         system.objectWillChange.sink { [weak self] in DispatchQueue.main.async { self?.syncRemoteOptions() } }.store(in: &cancellables)
         updateAnalysisActivity()
+        midi.resolver = MIDIBinder(dj: dj, dsp: dspModel, transport: self)
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil && ProcessInfo.processInfo.environment["AUREON_TESTING"] == nil { midi.start() }
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { dspModel.startUp() }
     }
 
@@ -504,7 +512,13 @@ final class PlayerModel: ObservableObject {
     private func loadMetadata(_ id: UUID) async {
         guard let item = items.first(where: { $0.id == id }), !item.locked, !item.isStream else { return }
         let tags = await MetadataEngine.load(path: item.path)
-        let thumb = await Task.detached(priority: .utility) { tags.picture.flatMap { ImageTools.nsImage($0.data, maxPixel: 128) } }.value
+        let path = item.path
+        let thumb = await Task.detached(priority: .utility) { () -> NSImage? in
+            guard let pic = tags.picture else { return nil }
+            // the cover is in hand now: keep it, so Now Playing and its colours never need to read this file's tags again
+            if let s = ArtCache.Source.localFile(path), case .miss = ArtCache.shared.lookup(s) { ArtCache.shared.store(s, data: pic.data) }
+            return ImageTools.nsImage(pic.data, maxPixel: 128)
+        }.value
         guard let i = items.firstIndex(where: { $0.id == id }) else { return }
         if let t = tags.title, !t.isEmpty { items[i].title = t }
         items[i].artist = tags.displayArtist ?? ""; items[i].albumArtist = tags.albumArtist ?? ""
@@ -546,18 +560,36 @@ final class PlayerModel: ObservableObject {
         let artist = item.albumArtist.isEmpty ? item.artist : item.albumArtist, album = item.album
         let seed = album.isEmpty ? item.title : album
         let fetcher = artFetcher
+        let cacheSource: ArtCache.Source? = switch source {
+        case .embedded: ArtCache.Source.localFile(path)
+        case .fetched: ArtCache.Source.fetched(artist: artist, album: album)
+        case .remote(let u): ArtCache.Source.url(u)
+        default: nil
+        }
+        let image: @Sendable (CGImage) -> NSImage = { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
         Task {
-            let data: Data? = switch source {
-            case .embedded: await MetadataEngine.artwork(path: path)
-            case .fetched: await fetcher.cached(artist: artist, album: album)
-            case .remote(let u): await RemoteImageStore.shared.data(u)
-            default: nil
-            }
-            let result = await Task.detached(priority: .userInitiated) { () -> (NSImage?, ArtPalette) in
-                guard let data, let cg = ImageTools.cgImage(data, maxPixel: 1600) else { return (nil, ArtPalette.fallback(seed: seed)) }
-                return (NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)), ArtPalette.extract(from: cg))
+            // From the cache this is one small JPEG and the stored palette (no tag parsing, no colour maths). Otherwise the cover is read, stored for
+            // next time and its colours worked out, all off the main thread. Either way the interface keeps showing the previous look until the result
+            // is there and then fades the new colours in, so changing track never waits for them.
+            var result: (NSImage?, ArtPalette)? = await Task.detached(priority: .userInitiated) { () -> (NSImage?, ArtPalette)? in
+                guard let s = cacheSource, let l = ArtCache.shared.loaded(s) else { return nil }
+                return (image(l.picture), l.palette)
             }.value
-            guard heroLoading == token else { return }
+            if result == nil {
+                let data: Data? = switch source {
+                case .embedded: await MetadataEngine.artwork(path: path)
+                case .fetched: await fetcher.cached(artist: artist, album: album)
+                case .remote(let u): await RemoteImageStore.shared.data(u)
+                default: nil
+                }
+                result = await Task.detached(priority: .userInitiated) { () -> (NSImage?, ArtPalette) in
+                    guard let data else { return (nil, ArtPalette.fallback(seed: seed)) }
+                    if let s = cacheSource, let l = ArtCache.shared.ingest(s, data: data) { return (image(l.picture), l.palette) }
+                    guard let cg = ImageTools.cgImage(data, maxPixel: ArtCache.largePixels) else { return (nil, ArtPalette.fallback(seed: seed)) }
+                    return (image(cg), ArtPalette.extract(from: cg))
+                }.value
+            }
+            guard heroLoading == token, let result else { return }
             withAnimation(.smooth(duration: 0.9)) { hero = HeroArt(token: token, image: result.0, palette: result.1) }
         }
     }
@@ -582,6 +614,7 @@ final class PlayerModel: ObservableObject {
         o.tuning = system.quietMode ? system.quiet : nil
         if let f = zone.sinkFactory ?? cast.sinkFactory ?? speakers.sinkFactory(primary: deviceID) { o.sinkFactory = f }
         o.promoteEngineThread = system.promoteEngine
+        if ProcessInfo.processInfo.environment["AUREON_NULLSINK"] != nil { o.sinkFactory = { _ in NullSink() } }
         o.ioCycleUsage = system.useCycleUsage ? Float(system.cycleUsage) : nil
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil { dj.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p } }      // snapshots make no sound
         return o
@@ -644,7 +677,7 @@ final class PlayerModel: ObservableObject {
         items = q.map { e in
             if let i = byID[e.id] { return i }
             fresh.append(e.id)
-            let url = URL(fileURLWithPath: e.path)
+            let url = URL(fileURLWithPath: e.path, isDirectory: false)
             let remote = RemoteMedia.isRemote(e.path) ? e.path : nil
             if let t = known[e.path] { return QueueItem(id: e.id, url: url, title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: remote) }
             return QueueItem(id: e.id, url: url, title: url.deletingPathExtension().lastPathComponent, remotePath: remote)
@@ -656,7 +689,7 @@ final class PlayerModel: ObservableObject {
     func addTracks(_ tracks: [TrackDTO], play start: Bool) {
         guard !tracks.isEmpty else { return }
         let entries = player.append(tracks.map(\.path))
-        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
+        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path, isDirectory: false), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
         items += new; lastQueueRev = player.queueRevision
         for n in new.prefix(3) { requestMetadata(n.id) }
         originalOrder += new.map(\.id)
@@ -676,7 +709,7 @@ final class PlayerModel: ObservableObject {
         guard tracks.indices.contains(index) else { return }
         let range = Self.queueRange(count: tracks.count, index: index)
         let slice = Array(tracks[range]), start = index - range.lowerBound
-        func item(_ e: QueueEntry, _ t: TrackDTO) -> QueueItem { QueueItem(id: e.id, url: URL(fileURLWithPath: t.path), title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: RemoteMedia.isRemote(t.path) ? t.path : nil) }
+        func item(_ e: QueueEntry, _ t: TrackDTO) -> QueueItem { QueueItem(id: e.id, url: URL(fileURLWithPath: t.path, isDirectory: false), title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: RemoteMedia.isRemote(t.path) ? t.path : nil) }
         if isActive {
             let entries = player.replace(with: slice.map(\.path), startAt: start)
             items = zip(entries, slice).map(item)
@@ -725,7 +758,7 @@ final class PlayerModel: ObservableObject {
         guard !tracks.isEmpty else { return }
         let at = (items.firstIndex { $0.id == status.trackID } ?? -1) + 1
         let entries = player.insert(tracks.map(\.path), at: at)
-        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
+        let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path, isDirectory: false), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "", remotePath: RemoteMedia.isRemote($1.path) ? $1.path : nil) }
         items.insert(contentsOf: new, at: min(at, items.count)); lastQueueRev = player.queueRevision
         originalOrder += new.map(\.id)
         for n in new.prefix(3) { requestMetadata(n.id) }
@@ -761,7 +794,9 @@ final class PlayerModel: ObservableObject {
             player.setOrder(head + (cur.map { [$0] } ?? []) + Shuffler.normal(rest, using: &rng))
         case .smart:
             let paths = Dictionary(items.map { ($0.id, $0.path) }, uniquingKeysWith: { a, _ in a })
-            let store = library.store, net = shuffleNet ?? TransitionNet.loadOrCreate()
+            // the transition network is an AI feature: with Intelligence (or Smart Shuffle's network) off, the shuffle uses plain rules
+            let useNet = IntelligenceGate.shared.isEnabled(.smartShuffle)
+            let store = library.store, net: TransitionNet? = useNet ? (shuffleNet ?? TransitionNet.loadOrCreate()) : nil
             shuffleNet = net
             let wanted = Set(ids)
             Task {
@@ -809,7 +844,7 @@ final class PlayerModel: ObservableObject {
         guard let item = current else { deepDive.reset(); lastDeepDiveID = nil; return }
         lastDeepDiveID = item.id
         var mbid = library.store?.track(path: item.path)?.mbRecordingID
-        if mbid == nil { mbid = TagReader.read(path: item.path).first("MUSICBRAINZ_TRACKID") }
+        if mbid == nil { mbid = TagReader.read(path: item.path).first("MUSICBRAINZ_TRACKID").flatMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespaces))?.uuidString.lowercased() } }
         deepDive.load(path: item.path, recordingID: mbid, key: item.id.uuidString, acoustID: social.settings.acoustIDKey, fpcalc: social.settings.fpcalcPath, force: force)
     }
 

@@ -61,8 +61,9 @@ enum CastCodec {
             switch wire {
             case 0: guard let v = readVarint() else { return nil }; if field == 5 { payloadType = v }
             case 2:
-                guard let len = readVarint(), i + Int(len) <= b.count else { return nil }
-                let bytes = Array(b[i..<(i + Int(len))]); i += Int(len)
+                guard let len64 = readVarint(), len64 <= UInt64(max(b.count - i, 0)) else { return nil }
+                let len = Int(len64)
+                let bytes = Array(b[i..<(i + len)]); i += len
                 let s = String(decoding: bytes, as: UTF8.self)
                 switch field { case 2: m.source = s; case 3: m.destination = s; case 4: m.namespace = s; case 6: m.payload = s; default: break }
             case 1: i += 8

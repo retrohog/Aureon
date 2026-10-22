@@ -330,9 +330,10 @@ final class MemorySecretStore: SecretStore, @unchecked Sendable {
     func set(_ value: String?, for account: String) { l.lock(); d[account] = value; l.unlock() }
 }
 
-/// The macOS Keychain (generic passwords under the service "org.aureon.player").
+/// The macOS Keychain (generic passwords under the service "org.aureon.player", or another service when given).
 final class KeychainSecretStore: SecretStore, @unchecked Sendable {
-    private let service = "org.aureon.player"
+    private let service: String
+    init(service: String = "org.aureon.player") { self.service = service }
     func get(_ account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
                                 kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]

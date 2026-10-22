@@ -113,7 +113,8 @@ struct LibraryPage: View {
     private func update(_ f: (inout ViewOptions) -> Void) { var o = opts; f(&o); m.setOptions(o, for: tab) }
 
     var body: some View {
-        if lib.stats.tracks == 0 && !lib.importing { empty }
+        if let focus = lib.focus { PersonFocusPage(graph: focus, lib: lib).id(focus.person.id) }
+        else if lib.stats.tracks == 0 && !lib.importing { empty }
         else if lib.selectedID != nil, tab != .songs { detailPage }
         else { listPage }
     }
@@ -141,7 +142,7 @@ struct LibraryPage: View {
                     Button { update { $0.list = true } } label: { Image(systemName: "list.bullet") }.foregroundStyle(opts.list ? Brand.cyan : Color.secondary)
                 }.buttonStyle(IconButtonStyle()).padding(2).background(Capsule().fill(Brand.ink.opacity(0.08)))
                 if !opts.list {
-                    Slider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
+                    ValueSlider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
                 }
             }
             Button { lib.scanDuplicates(prompt: false) } label: { Image(systemName: "square.on.square.dashed") }.buttonStyle(IconButtonStyle()).disabled(lib.scanningDuplicates).help("Find duplicate songs and albums")
@@ -154,7 +155,7 @@ struct LibraryPage: View {
     private var subtitle: String {
         if lib.importing { return lib.importProgress }
         switch tab {
-        case .albums: return "\(lib.albums.count) albums"
+        case .albums: return "\(lib.pager.total) albums"
         case .songs: return "\(lib.songs.count) songs"
         default: return "\(lib.rows.count)"
         }
@@ -180,9 +181,7 @@ struct LibraryPage: View {
             DuplicateBanner(lib: lib)
             switch tab {
             case .albums:
-                let albums = lib.orderedAlbums(opts)
-                if opts.list { AlbumList(albums: albums, open: { lib.selectedID = $0.id }) }
-                else { AlbumGrid(albums: albums, open: { lib.selectedID = $0.id }, minimum: 100 + CGFloat(opts.size) * 100) }
+                PagedAlbums(pager: lib.pager, query: AlbumQuery(opts, search: lib.search), list: opts.list, minimum: 100 + CGFloat(opts.size) * 100, open: { lib.selectedID = $0.id })
             case .songs: SongList(tracks: lib.orderedSongs(opts), numbered: false, letters: opts.letters && opts.sort == .title, sortHeader: true)
             case .artists: ArtistsView(rows: LibraryOrdering.rows(lib.rows, opts), opts: opts, open: { lib.selectedID = $0 })
             default: rowList
@@ -231,7 +230,7 @@ struct LibraryPage: View {
         let back: () -> Void = { if lib.canGoBack { lib.goBack() } else { lib.selectedID = nil } }
         switch lib.detail {
         case .tracks(_, let tracks) where tab == .albums:
-            if let album = lib.albums.first(where: { $0.id == lib.selectedID }) {
+            if let album = lib.selectedAlbum, album.id == lib.selectedID {
                 AlbumDetail(album: album, tracks: tracks, back: back)
             } else { PageScaffold(title: tab.rawValue, back: back, backTitle: tab.rawValue) { SongList(tracks: tracks) } }
         case .tracks(_, let tracks) where tab == .artists:
@@ -330,7 +329,7 @@ struct LibraryPage: View {
     private func chooseFolder() {
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.allowsMultipleSelection = true
         p.message = "Choose the folder(s) that contain your music"
-        if p.runModal() == .OK { p.urls.forEach { lib.addFolder($0) } }
+        DispatchQueue.main.async { if p.runModal() == .OK { p.urls.forEach { lib.addFolder($0) } } }
     }
 }
 
@@ -489,6 +488,7 @@ struct ArtistDetail: View {
                             PillButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
                             PillButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
                             PillButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
+                            PillButton(title: "Credits", symbol: "person.text.rectangle") { m.library.openPerson(id) }
                         }.padding(.top, 8)
                     }
                     Spacer(minLength: 0)
@@ -635,6 +635,7 @@ struct AlbumDetail: View {
                     Spacer(minLength: 0)
                 }
                 SongList(tracks: tracks, showArtist: Set(tracks.map(\.artistLine)).count > 1, numbered: true)
+                AlbumPersonnel(tracks: tracks)
             }
         }
     }
@@ -793,13 +794,15 @@ struct SearchPage: View {
                 Text("Search your library for songs, albums, artists, composers and works.").foregroundStyle(.secondary).padding(.top, 20)
             } else if let r, r.tracks.isEmpty && r.releases.isEmpty && r.works.isEmpty && r.parties.isEmpty {
                 Text("No results").foregroundStyle(.secondary).padding(.top, 20)
+                SemanticMatchesSection().padding(.top, 12)
             } else if let r {
                 VStack(alignment: .leading, spacing: 24) {
                     if !r.releases.isEmpty { section("Albums") { AlbumGrid(albums: r.releases, open: { a in m.tab = .albums; m.library.selectedID = a.id }, minimum: 130) } }
                     if !r.tracks.isEmpty { section("Songs") { SongList(tracks: r.tracks) } }
+                    SemanticMatchesSection(exclude: Set(r.tracks.map(\.path)))
                     if !r.parties.isEmpty {
                         section("Artists & composers") {
-                            LazyVStack(spacing: 1) { ForEach(r.parties) { p in RowButton(title: p.name, subtitle: p.kind == "group" ? "Ensemble" : "", count: p.count, symbol: "person") { m.searchText = ""; m.tab = .artists; m.library.selectedID = p.id } } }
+                            LazyVStack(spacing: 1) { ForEach(r.parties) { p in RowButton(title: p.name, subtitle: p.kind == "group" ? "Ensemble" : "", count: p.count, symbol: "person") { m.searchText = ""; m.tab = .artists; m.library.selectedID = p.id } .contextMenu { Button("Show Credits") { m.searchText = ""; m.tab = .artists; m.library.openPerson(p.id) } } } }
                         }
                     }
                     if !r.works.isEmpty {

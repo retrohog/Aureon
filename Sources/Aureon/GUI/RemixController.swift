@@ -7,7 +7,12 @@ final class RemixController: ObservableObject {
     unowned let model: DJModel
     let policy: RemixPolicy
 
-    @Published var enabled = false { didSet { if enabled != oldValue { enabled ? begin() : end() } } }
+    @Published var enabled = false {
+        didSet {
+            if enabled && !IntelligenceGate.shared.isEnabled(.remixer) { enabled = false; if oldValue { end() }; return }   // switched off on the Intelligence page
+            if enabled != oldValue { enabled ? begin() : end() }
+        }
+    }
     /// 0 = let it breathe, 1 = busy.
     @Published var intensity = 0.3
     @Published private(set) var status = "Off"

@@ -37,7 +37,13 @@ final class SmartDJService: ObservableObject {
     @Published private(set) var modelProblem: String?
     @Published private(set) var modelActive = false
 
-    var makeBackend: () -> SmartDJBackend? = { SmartDJHelperLocator.find().map { HelperProcessBackend(executable: $0) } }
+    /// Makes the model for this session. The Intelligence settings replace it (on-device helper, a loaded local model, or an API);
+    /// a thrown error is shown as the reason the model is not used.
+    var makeBackend: () throws -> SmartDJBackend? = { SmartDJHelperLocator.find().map { HelperProcessBackend(executable: $0) } }
+    /// Whether the Intelligence settings allow Smart DJ (master switch, Intel acceptance and its own switch).
+    var isAllowed: () -> Bool = { IntelligenceGate.shared.isEnabled(.smartDJ) }
+    /// Where the model runs, for the panel ("on-device model", "OpenAI · gpt-4.1-mini").
+    @Published var engineDescription = "on-device model"
     var library: () -> [SmartDJTrack] = { [] }
     var model = SmartDJService.modelID
     var candidateLimit = 60
@@ -61,12 +67,18 @@ final class SmartDJService: ObservableObject {
 
     func enable() {
         guard !wanted else { return }
+        guard isAllowed() else { modelProblem = "Smart DJ is switched off on the Intelligence page."; return }
         wanted = true; epoch += 1
         let my = epoch
         state = .loading(0, "Starting"); modelProblem = nil; modelActive = false
         enqueue { [self] in
             guard wanted, epoch == my else { return }
-            guard let b = makeBackend() else {
+            let made: SmartDJBackend?
+            do { made = try makeBackend() } catch {
+                modelProblem = error.localizedDescription + " Requests are answered by matching tempo, genre, year and artist."
+                state = .ready; return
+            }
+            guard let b = made else {
                 modelProblem = SmartDJError.helperMissing.localizedDescription + " Requests are answered by matching tempo, genre, year and artist."
                 state = .ready; return
             }

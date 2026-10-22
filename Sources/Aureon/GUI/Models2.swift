@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreAudio
+import Combine
 
 // MARK: - Library browsing
 
@@ -16,10 +17,10 @@ final class LibraryModel: ObservableObject {
 
     let store: LibraryStore?
     @Published var stats = LibraryStats()
-    @Published var category: Category = .composers { didSet { selectedID = nil; detail = .none; back = []; reload() } }
+    @Published var category: Category = .composers { didSet { selectedID = nil; detail = .none; back = []; clearFocus(); reload() } }
     @Published var search = "" { didSet { reload() } }
     @Published var rows: [Row] = []
-    @Published var selectedID: String? { didSet { if selectedID != oldValue { select() } } }
+    @Published var selectedID: String? { didSet { if selectedID != oldValue { if selectedID != nil { clearFocus() }; select() } } }
     @Published var detail: Detail = .none
     @Published var importing = false
     @Published var importProgress = ""
@@ -30,23 +31,24 @@ final class LibraryModel: ObservableObject {
     var onLibraryChanged: (() -> Void)?
     var onAdd: (([TrackDTO], Bool) -> Void)?
     var onReplace: (([TrackDTO]) -> Void)?
-    @Published var albums: [ReleaseDTO] = [] { didSet { albumsVersion &+= 1 } }
+    /// The albums page, a page at a time (see AlbumPager). `albums` is what it holds at the moment, not the whole library.
+    let pager = AlbumPager()
+    var albums: [ReleaseDTO] { pager.resident }
+    /// The album whose detail page is open.
+    @Published var selectedAlbum: ReleaseDTO?
+    var watcher: LibraryWatcher?
+    private var pagerTotal: AnyCancellable?
     @Published var artistAlbums: [ReleaseDTO] = []
     @Published var recentAlbums: [ReleaseDTO] = []
     @Published var hiResAlbums: [ReleaseDTO] = []
     @Published var songs: [TrackDTO] = [] { didSet { songsVersion &+= 1 } }
-    private var songsVersion = 0, albumsVersion = 0
+    private var songsVersion = 0
     private var songMemo: (version: Int, options: ViewOptions, result: [TrackDTO])?
-    private var albumMemo: (version: Int, options: ViewOptions, result: [ReleaseDTO])?
 
     /// Sorted and filtered once per change of the list or of the options (sorting thousands of songs on every redraw made the page crawl).
     func orderedSongs(_ o: ViewOptions) -> [TrackDTO] {
         if let m = songMemo, m.version == songsVersion, m.options == o { return m.result }
         let r = LibraryOrdering.songs(songs, o); songMemo = (songsVersion, o, r); return r
-    }
-    func orderedAlbums(_ o: ViewOptions) -> [ReleaseDTO] {
-        if let m = albumMemo, m.version == albumsVersion, m.options == o { return m.result }
-        let r = LibraryOrdering.albums(albums, o); albumMemo = (albumsVersion, o, r); return r
     }
     // loudness analysis
     @Published private(set) var loudnessDone = 0
@@ -64,7 +66,11 @@ final class LibraryModel: ObservableObject {
         let snapshot = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil
         store = try? LibraryStore(url: snapshot ? nil : LibraryStore.defaultURL)       // snapshots use a throw-away in-memory library
         folders = UserDefaults.standard.stringArray(forKey: "aureon.musicFolders") ?? []
+        pager.store = store
+        pagerTotal = pager.$total.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }      // the page's "N albums" subtitle
         refresh()
+        // bring the library up to date from what the file system reports (nothing is scanned when nothing changed)
+        if Self.watchingAllowed { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in MainActor.assumeIsolated { self?.startWatching() } } }
         // libraries imported by older versions may hold "A feat. B" as artists of their own: fold them into A once at start-up
         if !snapshot, let store { Task.detached(priority: .utility) { if store.normalizeArtists() > 0 { await MainActor.run { self.refresh() } } } }
     }
@@ -73,11 +79,12 @@ final class LibraryModel: ObservableObject {
         guard let store else { return }
         Task.detached {
             let s = store.stats()
-            let all = store.releases(limit: 2000)
-            let recent = Array(all.sorted { ($0.addedAt ?? 0) > ($1.addedAt ?? 0) }.prefix(16))
-            let hires = Array(all.filter { $0.isHiRes && !$0.isDSD }.sorted { ($0.addedAt ?? 0) > ($1.addedAt ?? 0) }.prefix(16))
+            if store.releasesWithoutFigures() > 0 { store.backfillReleaseFigures() }
+            let recent = store.releasePage(AlbumQuery(sort: .added, ascending: false), offset: 0, limit: 16)
+            let hires = store.releasePage(AlbumQuery(sort: .added, ascending: false, tier: .hiRes), offset: 0, limit: 16)
             await MainActor.run { self.stats = s; self.recentAlbums = recent; self.hiResAlbums = hires }
         }
+        pager.reload()
         reload()
     }
 
@@ -92,16 +99,15 @@ final class LibraryModel: ObservableObject {
             case .conductors: out = store.parties(role: .conductor, search: q).map { Row(id: $0.id, title: $0.name, subtitle: "", count: $0.count) }
             case .ensembles: out = store.parties(role: .ensemble, search: q).map { Row(id: $0.id, title: $0.name, subtitle: "", count: $0.count) }
             case .works: out = store.works(search: q).map { Row(id: $0.id, title: $0.title, subtitle: [$0.composerName, $0.catalog].compactMap { $0 }.joined(separator: " · "), count: $0.trackCount) }
-            case .albums: out = store.releases(search: q).map { Row(id: $0.id, title: $0.title, subtitle: ($0.artistNames.prefix(2) + [$0.year.map(String.init)].compactMap { $0 }).joined(separator: " · "), count: $0.trackCount) }
+            case .albums: break                                    // the Albums page is paged (AlbumPager), not a list of rows
             case .songs: break
             }
             let result = out
-            let albums = cat == .albums ? store.releases(search: q.isEmpty ? nil : q) : []
             var songs: [TrackDTO] = []
             if cat == .songs { var off = 0; while true { let page = store.allTracks(offset: off, limit: 2000); songs += page; if page.count < 2000 || songs.count >= 60_000 { break }; off += 2000 } }
             if cat == .songs, !q.isEmpty { songs = songs.filter { ($0.title + " " + $0.artistLine + " " + ($0.releaseTitle ?? "")).localizedCaseInsensitiveContains(q) } }
             let finalSongs = songs
-            await MainActor.run { self.rows = result; self.albums = albums; self.songs = finalSongs; self.stats = store.stats() }
+            await MainActor.run { self.rows = result; self.songs = finalSongs; self.stats = store.stats() }
         }
     }
 
@@ -110,6 +116,7 @@ final class LibraryModel: ObservableObject {
         let cat = category
         Task.detached {
             let d: Detail
+            var album: ReleaseDTO?
             switch cat {
             case .composers: d = .composer(store.works(composerID: id), store.tracks(partyID: id, role: .composer))
             case .works:
@@ -121,10 +128,10 @@ final class LibraryModel: ObservableObject {
                 await MainActor.run { self.artistAlbums = alb }
             case .conductors: d = .tracks("Conducted", store.tracks(partyID: id, role: .conductor))
             case .ensembles: d = .tracks("Performed", store.tracks(partyID: id, role: .ensemble))
-            case .albums: d = .tracks("Tracks", store.tracks(releaseID: id))
+            case .albums: d = .tracks("Tracks", store.tracks(releaseID: id)); album = store.release(id: id)
             case .songs: d = .none
             }
-            await MainActor.run { self.back = []; self.detail = d }
+            await MainActor.run { self.back = []; self.selectedAlbum = album; self.detail = d }
         }
     }
 
@@ -134,6 +141,48 @@ final class LibraryModel: ObservableObject {
     }
 
     func goBack() { if let d = back.popLast() { detail = d } }
+
+    // MARK: credit focus (the relational graph)
+
+    /// The person whose credits are on show, or nil. Opening someone from the page replaces them and remembers the one before.
+    @Published private(set) var focus: CreditGraphDTO?
+    @Published private(set) var focusLoading = false
+    private var focusBack: [CreditGraphDTO] = []
+    private var focusToken = 0
+    var canGoBackFocus: Bool { !focusBack.isEmpty }
+
+    /// Loads everything the library credits `partyID` with, on a background queue, and shows it.
+    func openPerson(_ partyID: String) {
+        guard let store else { return }
+        focusToken += 1
+        let token = focusToken
+        focusLoading = true
+        Task.detached {
+            let g = store.creditGraph(partyID: partyID)
+            await MainActor.run {
+                guard token == self.focusToken else { return }
+                self.focusLoading = false
+                guard let g else { return }
+                if let cur = self.focus, cur.person.id != g.person.id { self.focusBack.append(cur) }
+                self.focus = g
+            }
+        }
+    }
+
+    func closeFocus() { focusToken += 1; focusLoading = false; if let p = focusBack.popLast() { focus = p } else { focus = nil } }
+    func clearFocus() { focusToken += 1; focusLoading = false; focus = nil; focusBack = [] }
+
+    /// Plays, shuffles or queues the tracks with these ids (read off the main thread).
+    func playCredited(trackIDs: [String], shuffle: Bool = false, add: Bool = false) {
+        guard let store else { return }
+        Task.detached {
+            var tracks = trackIDs.compactMap { store.track(id: $0) }
+            if shuffle { tracks.shuffle() }
+            let t = tracks
+            await MainActor.run { if add { self.onAdd?(t, false) } else { self.onReplace?(t) } }
+        }
+    }
+
 
     func runSearch(_ q: String) {
         guard let store, !q.isEmpty else { searchResults = nil; return }
@@ -199,6 +248,9 @@ final class LibraryModel: ObservableObject {
     private func scan(_ paths: [String]) {
         guard let store, !importing else { return }
         importing = true; importProgress = "Scanning…"
+        // watching starts before the scan, so a change made while it runs is reported afterwards instead of being missed
+        let watching = Self.watchingAllowed ? ensureWatcher() : nil
+        let starts: [(String, UInt64)] = paths.compactMap { p in folders.contains(p) ? watching.map { (p, $0.beginReconcile(root: p)) } : nil }
         Task.detached {
             var total = ImportReport()
             for p in paths {
@@ -208,6 +260,7 @@ final class LibraryModel: ObservableObject {
                 total.added += r.added; total.updated += r.updated; total.removed += r.removed; total.skipped += r.skipped; total.failed += r.failed
             }
             _ = store.normalizeArtists()
+            for (p, id) in starts { watching?.markReconciled(root: p, eventID: id) }
             let summary = "\(total.added) added, \(total.updated) updated, \(total.removed) removed" + (total.failed > 0 ? ", \(total.failed) unreadable" : "")
             await MainActor.run {
                 self.importing = false; self.importProgress = summary; self.refresh()

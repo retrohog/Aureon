@@ -43,9 +43,34 @@ enum SettingRules {
     /// The clash a change from `old` to `new` would create, if any. Only clashes the change itself introduces count, so a combination that was
     /// already there (saved by an older version) is never re-announced.
     static func check(old: PlaybackSettings, new: PlaybackSettings) -> SettingConflict? {
+        // PCM → DSD sends the music as DoP, which nothing may process after the modulator
+        func dsdOutputBlockers(_ s: PlaybackSettings) -> [String] {
+            var out: [String] = []
+            if s.rt.dither.enabled { out.append("Dither") }
+            if s.rt.convolution.enabled { out.append("Room correction") }
+            if s.rt.crossfeed.enabled { out.append("Crossfeed") }
+            if s.rt.headphoneEQ.enabled { out.append("Headphone correction") }
+            if s.dsp.enabled { out.append("The equalizer and plug-ins") }
+            return out
+        }
+        func clearDSDBlockers(_ s: inout PlaybackSettings) {
+            s.rt.dither.mode = .off; s.rt.convolution.enabled = false; s.rt.crossfeed.enabled = false; s.rt.headphoneEQ.enabled = false; s.dsp.enabled = false
+        }
+        if new.dsdOutput.enabled {
+            let blockers = dsdOutputBlockers(new)
+            let added = old.dsdOutput.enabled ? blockers.filter { !dsdOutputBlockers(old).contains($0) } : blockers
+            if !added.isEmpty {
+                return SettingConflict(message: "Converting music to DSD sends it to the DAC as DoP, after all processing, so \(list(added)) cannot apply to it. Turn \(added.count == 1 ? "it" : "them") off and convert to DSD?",
+                                       fixLabel: "Turn off and convert", fix: { clearDSDBlockers(&$0) })
+            }
+            if !old.dsdOutput.enabled, new.dsd.mode != .dop {
+                return SettingConflict(message: "Converting music to DSD needs DoP, which sends data inside a PCM stream: a DAC that does not understand DoP plays it as loud noise. Enable DoP as well?",
+                                       fixLabel: "Enable DoP", fix: { $0.dsd.mode = .dop; clearDSDBlockers(&$0) })
+            }
+        }
         // DoP vs everything that processes PCM
         let before = Set(pcmOnly(old)), now = pcmOnly(new)
-        if new.dsd.mode == .dop {
+        if new.dsd.mode == .dop, !new.dsdOutput.enabled {
             if old.dsd.mode != .dop, !now.isEmpty {
                 return SettingConflict(message: "DoP sends DSD music as untouched bits inside a PCM stream, so any processing would turn it into noise, and these are on: \(list(now)). Turn them off and enable DoP?",
                                        fixLabel: "Turn off and enable DoP", fix: { turnOffPCMOnly(&$0) })

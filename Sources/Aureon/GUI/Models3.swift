@@ -39,7 +39,8 @@ final class Navigator: ObservableObject {
     @Published private(set) var canGoBack = false
     @Published private(set) var canGoForward = false
     private var back: [Place] = [], forward: [Place] = []
-    private(set) var current = Place(tab: .player)
+    private(set) var current: Place
+    init(start: Place = Place(tab: .player)) { current = start }
     private(set) var restoring = false
     var restore: ((Place) -> Void)?
 

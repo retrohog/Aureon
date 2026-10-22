@@ -22,8 +22,12 @@ enum Brand {
 struct VisualEffect: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .sidebar
     var blending: NSVisualEffectView.BlendingMode = .behindWindow
-    func makeNSView(context: Context) -> NSVisualEffectView { let v = NSVisualEffectView(); v.material = material; v.blendingMode = blending; v.state = .active; return v }
-    func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material; v.blendingMode = blending }
+    /// For `.selection`: false gives the quiet vibrant highlight of an unfocused source list, true the accent-coloured one.
+    var emphasized = false
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView(); v.material = material; v.blendingMode = blending; v.state = .active; v.isEmphasized = emphasized; return v
+    }
+    func updateNSView(_ v: NSVisualEffectView, context: Context) { v.material = material; v.blendingMode = blending; v.isEmphasized = emphasized }
 }
 
 extension View {
@@ -64,14 +68,17 @@ extension View {
 
 /// A recessed indicator plate with an LED, like the format lights on a DAC's front panel.
 struct HWBadge: View {
-    enum Tone {
+    enum Tone: CaseIterable {
         case neutral, blue, green, amber, purple, orange
-        var color: Color {
+        var rgb: RGB {
             switch self {
-            case .neutral: Color(white: 0.82); case .blue: Color(red: 0.45, green: 0.72, blue: 1); case .green: Color(red: 0.36, green: 0.9, blue: 0.55)
-            case .amber: Color(red: 1, green: 0.78, blue: 0.3); case .purple: Color(red: 0.75, green: 0.6, blue: 1); case .orange: Color(red: 1, green: 0.58, blue: 0.28)
+            case .neutral: RGB(0.82, 0.82, 0.82); case .blue: RGB(0.45, 0.72, 1); case .green: RGB(0.36, 0.9, 0.55)
+            case .amber: RGB(1, 0.78, 0.3); case .purple: RGB(0.75, 0.6, 1); case .orange: RGB(1, 0.58, 0.28)
             }
         }
+        var color: Color { rgb.color }
+        /// Opacity of the plate's black at its lightest (bottom) edge. With it, every legend keeps 4.5:1 even on a white page (see the self-test).
+        static let plateAlpha = 0.78
     }
     let text: String
     var detail: String? = nil
@@ -81,9 +88,13 @@ struct HWBadge: View {
 
     var body: some View {
         HStack(spacing: compact ? 5 : 7) {
-            Circle().fill(lit ? tone.color : Color.white.opacity(0.15)).frame(width: compact ? 4 : 5, height: compact ? 4 : 5)
-                .shadow(color: lit ? tone.color.opacity(0.9) : .clear, radius: 3)
+            ZStack {
+                Circle().fill(lit ? tone.color : Color.white.opacity(0.15)).frame(width: compact ? 4 : 5, height: compact ? 4 : 5)
+                    .shadow(color: lit ? tone.color.opacity(0.95) : .clear, radius: 3)
+                if lit { Circle().fill(.white.opacity(0.75)).frame(width: 1.6, height: 1.6).offset(x: -0.6, y: -0.6) }     // a domed LED's specular point
+            }
             Text(text).font(.system(size: compact ? 9.5 : 11, weight: .bold, design: .monospaced)).tracking(compact ? 0.8 : 1.1).foregroundStyle(tone.color)
+                .shadow(color: lit ? tone.color.opacity(0.5) : .clear, radius: 3.5)
             if let detail {
                 Rectangle().fill(Brand.ink.opacity(0.18)).frame(width: 1, height: compact ? 9 : 11)
                 Text(detail).font(.system(size: compact ? 9.5 : 11, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(.white.opacity(0.88))
@@ -92,7 +103,7 @@ struct HWBadge: View {
         .padding(.horizontal, compact ? 6 : 9).padding(.vertical, compact ? 3 : 5)
         .background(
             RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(LinearGradient(colors: [.black.opacity(0.42), .black.opacity(0.22)], startPoint: .top, endPoint: .bottom))
+                .fill(LinearGradient(colors: [.black.opacity(0.85), .black.opacity(Tone.plateAlpha)], startPoint: .top, endPoint: .bottom))
                 .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(LinearGradient(colors: [.black.opacity(0.5), .white.opacity(0.22)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
         )
         .accessibilityElement(children: .ignore)
@@ -127,7 +138,7 @@ struct FormatBadges: View {
     var body: some View {
         let q = qualityTier(source)
         let upscaled = output.map { $0.sampleRate != source.sampleRate && !$0.isDoP } ?? false
-        HStack(spacing: compact ? 5 : 8) {
+        WrapLayout(spacing: compact ? 5 : 8, lineSpacing: compact ? 5 : 8) {
             if source.isLive { HWBadge(text: "LIVE", tone: .orange, compact: compact) }
             if q.hiRes && !source.isLive { HiResMark(compact: compact) }
             HWBadge(text: source.codec.replacingOccurrences(of: " (lossy)", with: "").uppercased(), detail: source.isLive ? bitrate.map { "\($0) kbps" } : nil,
@@ -139,7 +150,34 @@ struct FormatBadges: View {
             if upscaled, let o = output { HWBadge(text: "UPSCALED", detail: formatRate(o.sampleRate), tone: .green, compact: compact) }
             HWBadge(text: source.channels == 2 ? "STEREO" : source.channels == 1 ? "MONO" : "\(source.channels) CH", tone: .neutral, compact: compact)
         }
-        .fixedSize()
+    }
+}
+
+/// Lays its children out left to right and starts a new line when the next one would not fit, so a row of badges wraps instead of clipping.
+struct WrapLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 8
+
+    private func arrange(width: CGFloat, _ subviews: Subviews) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, widest: CGFloat = 0
+        for sv in subviews {
+            let s = sv.sizeThatFits(.unspecified)
+            if x > 0, x + s.width > width { y += rowHeight + lineSpacing; x = 0; rowHeight = 0 }
+            origins.append(CGPoint(x: x, y: y))
+            x += s.width; widest = max(widest, x); x += spacing
+            rowHeight = max(rowHeight, s.height)
+        }
+        return (origins, CGSize(width: widest, height: origins.isEmpty ? 0 : y + rowHeight))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(width: proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let r = arrange(width: bounds.width, subviews)
+        for (sv, o) in zip(subviews, r.origins) { sv.place(at: CGPoint(x: bounds.minX + o.x, y: bounds.minY + o.y), proposal: .unspecified) }
     }
 }
 
@@ -338,5 +376,27 @@ struct VerticalFader: View {
         .simultaneousGesture(TapGesture(count: 2).onEnded { value = 0 })
         .accessibilityElement().accessibilityValue(Text(String(format: "%+.1f decibels", value)))
         .accessibilityAdjustableAction { dir in value = min(range.upperBound, max(range.lowerBound, value + (dir == .increment ? step : -step))) }
+    }
+}
+
+
+/// The slider used for settings: made of Aureon's own control (the system slider did not reliably react inside this window), with optional steps.
+struct ValueSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double? = nil
+    @Environment(\.isEnabled) private var isEnabled
+
+    init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double? = nil) { _value = value; self.range = range; self.step = step }
+
+    private func snapped(_ v: Double) -> Double {
+        let c = min(range.upperBound, max(range.lowerBound, v))
+        guard let step, step > 0 else { return c }
+        return min(range.upperBound, max(range.lowerBound, range.lowerBound + ((c - range.lowerBound) / step).rounded() * step))
+    }
+
+    var body: some View {
+        FluidSlider(value: Binding(get: { min(range.upperBound, max(range.lowerBound, value)) }, set: { value = snapped($0) }), range: range, tint: Brand.accent, restingHeight: 4, enabled: isEnabled,
+                    scrollStep: step ?? (range.upperBound - range.lowerBound) * 0.02)
     }
 }

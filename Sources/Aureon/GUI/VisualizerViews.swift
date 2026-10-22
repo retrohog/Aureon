@@ -3,6 +3,15 @@ import AppKit
 
 // 60 fps visualisers. Nothing here touches the audio thread: it reads snapshots that the analysis thread publishes.
 
+/// How often live data is redrawn. The audio engine never drives the interface (no view update per audio buffer or frame): the analysis thread
+/// publishes about this many frames a second into an `AnalysisFrame` and views read the newest one on a display-linked `TimelineView`, which
+/// never ticks faster than the display either. Drawing more often than the data changes would only repeat frames, so this is capped at 60 even on
+/// 120 Hz screens; scrolling, transitions and the playhead are not governed by it and run at the display rate.
+enum UIRate {
+    static let analyser: Double = 60
+    static var analyserInterval: TimeInterval { 1 / analyser }
+}
+
 enum Heat {
     /// Black → indigo → magenta → orange → yellow → white.
     static let lut: [UInt32] = {
@@ -15,6 +24,38 @@ enum Heat {
             return 0xFF00_0000 | (c(a.2, b.2) << 16) | (c(a.1, b.1) << 8) | c(a.0, b.0)      // little-endian RGBA: R in the low byte
         }
     }()
+
+    private static var memo: (id: Int, image: CGImage?)?
+
+    /// The spectrogram of an analysis engine as an image (oldest column on the left, high frequencies on top), built in one pass straight from the
+    /// engine's ring through the colour table, and only when a new frame has been published: views asking twice in a frame share one image.
+    @MainActor
+    static func spectrogram(of analysis: AnalysisEngine) -> CGImage? {
+        let r = analysis.spectrogramRing()
+        if let m = memo, m.id == r.id { return m.image }
+        let img = image(ring: r.ring, head: r.head, columns: AnalysisEngine.columns, bands: AnalysisEngine.bands)
+        memo = (r.id, img)
+        return img
+    }
+
+    static func image(ring: [UInt8], head: Int, columns W: Int, bands H: Int) -> CGImage? {
+        guard ring.count >= W * H else { return nil }
+        var rgba = [UInt32](repeating: 0, count: W * H)
+        ring.withUnsafeBufferPointer { r in
+            lut.withUnsafeBufferPointer { l in
+                rgba.withUnsafeMutableBufferPointer { o in
+                    for x in 0..<W {
+                        let src = ((head + x) % W) * H
+                        for y in 0..<H { o[(H - 1 - y) * W + x] = l[Int(r[src + y])] }
+                    }
+                }
+            }
+        }
+        let data = rgba.withUnsafeBufferPointer { Data(buffer: $0) }
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        return CGImage(width: W, height: H, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: W * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
 
     static func image(pixels: [UInt8], width: Int, height: Int) -> CGImage? {
         var rgba = [UInt32](repeating: 0, count: width * height)
@@ -60,8 +101,7 @@ struct SpectrogramCanvas: View {
     let analysis: AnalysisEngine
     var body: some View {
         Canvas { ctx, size in
-            let sg = analysis.spectrogram()
-            if let img = Heat.image(pixels: sg.pixels, width: sg.width, height: sg.height) {
+            if let img = MainActor.assumeIsolated({ Heat.spectrogram(of: analysis) }) {
                 ctx.draw(Image(decorative: img, scale: 1), in: CGRect(origin: .zero, size: size))
             }
             for (hz, label) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] {
@@ -150,7 +190,7 @@ struct VisualizerCard: View {
         Card(title: "Spectrum & meters", subtitle: "Computed on a separate thread from a copy of the audio: it cannot disturb playback") {
             Toggle("Show visualiser", isOn: $m.visualizerEnabled)
             if m.visualizerEnabled {
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { _ in
+                TimelineView(.animation(minimumInterval: UIRate.analyserInterval)) { _ in
                     VStack(spacing: 12) {
                         SpectrumCanvas(analysis: m.player.analysis).frame(height: 130)
                         SpectrogramCanvas(analysis: m.player.analysis).frame(height: 150)

@@ -157,6 +157,9 @@ enum Downmix {
                 case (.ls, .bc), (.rs, .bc): g = k
                 case (.fc, .mono): g = 1
                 case (.fc, .fl), (.fc, .fr): g = target.contains(.fl) ? 0 : k
+                case (.mono, .fl), (.mono, .fr): g = 0.5
+                case (.mono, .fc): g = k
+                case (.mono, .ls), (.mono, .rs), (.mono, .lb), (.mono, .rb), (.mono, .bc): g = 0.35
                 default: g = 0
                 }
                 m[o][i] = g

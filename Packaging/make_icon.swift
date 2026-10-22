@@ -1,5 +1,6 @@
 import AppKit
 // Draws the app icon: the artwork in Packaging/AppIcon-source.png on a rounded tile with the standard margin. Usage: make_icon.swift <out.png> <AppIcon-source.png>
+// AppIcon-source.png is a 1024x1024 render of the vector source Packaging/AppIcon.svg (Packaging/LogoMark.svg is the same mark on a transparent background).
 let size = 1024
 let src = URL(fileURLWithPath: CommandLine.arguments[2])
 guard let art = NSImage(contentsOf: src) else { fatalError("missing \(src.path)") }

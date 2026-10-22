@@ -99,17 +99,17 @@ struct DSPTab: View {
                 }
                 HStack {
                     Text("Frequency").frame(width: 80, alignment: .leading)
-                    Slider(value: Binding(get: { log10(b.wrappedValue.frequency) }, set: { b.wrappedValue.frequency = (pow(10, $0) * 10).rounded() / 10 }), in: log10(20)...log10(20_000))
+                    ValueSlider(value: Binding(get: { log10(b.wrappedValue.frequency) }, set: { b.wrappedValue.frequency = (pow(10, $0) * 10).rounded() / 10 }), in: log10(20)...log10(20_000))
                     Text(b.wrappedValue.frequency >= 1000 ? String(format: "%g kHz", b.wrappedValue.frequency / 1000) : String(format: "%g Hz", b.wrappedValue.frequency)).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }
                 HStack {
                     Text("Gain").frame(width: 80, alignment: .leading)
-                    Slider(value: b.gainDB, in: -12...12, step: 0.5)
+                    ValueSlider(value: b.gainDB, in: -12...12, step: 0.5)
                     Text(String(format: "%+.1f dB", b.wrappedValue.gainDB)).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }.disabled(kind == .lowCut || kind == .highCut).opacity(kind == .lowCut || kind == .highCut ? 0.4 : 1)
                 HStack {
                     Text("Q").frame(width: 80, alignment: .leading)
-                    Slider(value: b.q, in: 0.2...10)
+                    ValueSlider(value: b.q, in: 0.2...10)
                     Text(String(format: "%.2f", b.wrappedValue.q)).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }.disabled(kind != .peak).opacity(kind != .peak ? 0.4 : 1)
                 if kind != .peak { Note(text: kind == .lowCut || kind == .highCut ? "A cut filter only needs a frequency." : "A shelf only needs a frequency and a gain; Q applies to peak bands.") }
@@ -117,7 +117,7 @@ struct DSPTab: View {
             Divider()
             HStack {
                 Text("Pre-amp").frame(width: 80, alignment: .leading)
-                Slider(value: $dsp.draft.eq.preampDB, in: -24...12, step: 0.5).disabled(dsp.draft.eq.autoPreamp)
+                ValueSlider(value: $dsp.draft.eq.preampDB, in: -24...12, step: 0.5).disabled(dsp.draft.eq.autoPreamp)
                 Text(String(format: "%+.1f dB", dsp.draft.eq.effectivePreampDB)).monospacedDigit().frame(width: 80, alignment: .trailing)
             }
             Toggle("Automatic headroom: lower the pre-amp by the largest boost", isOn: $dsp.draft.eq.autoPreamp)

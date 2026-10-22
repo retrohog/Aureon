@@ -4,3 +4,9 @@
 xcuserdata/
 .DS_Store
 *.dSYM
+*.dmg
+*.pkg
+.review-src.tar
+.aureon-perf
+.aureon-power-patches/
+.aureon-4-features.patch

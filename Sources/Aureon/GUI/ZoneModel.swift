@@ -135,7 +135,7 @@ struct ZoneCard: View {
                     if zone.isActive, zone.selected.contains(r.id) {
                         HStack {
                             Text("Delay").font(.caption).foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
-                            Slider(value: Binding(get: { zone.delays[r.id] ?? 0 }, set: { zone.setDelay(r.id, ms: $0) }), in: 0...2000, step: 1)
+                            ValueSlider(value: Binding(get: { zone.delays[r.id] ?? 0 }, set: { zone.setDelay(r.id, ms: $0) }), in: 0...2000, step: 1)
                             Text("\(Int(zone.delays[r.id] ?? 0)) ms").monospacedDigit().font(.caption).frame(width: 64, alignment: .trailing)
                         }
                     }

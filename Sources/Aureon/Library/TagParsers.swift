@@ -136,7 +136,7 @@ enum MP4Tags {
             for b in boxes(d, in: r) {
                 switch b.type {
                 case "moov", "udta": descend(b.body, path: path + [b.type])
-                case "meta": descend((b.body.lowerBound + 4)..<b.body.upperBound, path: path + ["meta"])      // full box: skip version/flags
+                case "meta": if b.body.count >= 4 { descend((b.body.lowerBound + 4)..<b.body.upperBound, path: path + ["meta"]) }      // full box: skip version/flags
                 case "ilst": readItems(b.body)
                 default: break
                 }
@@ -146,8 +146,10 @@ enum MP4Tags {
             for item in boxes(d, in: r) {
                 let children = boxes(d, in: item.body)
                 if item.type == "----" {
-                    let mean = children.first { $0.type == "mean" }.flatMap { String(data: d.subdata(in: ($0.body.lowerBound + 4)..<$0.body.upperBound), encoding: .utf8) } ?? ""
-                    guard let name = children.first(where: { $0.type == "name" }).flatMap({ String(data: d.subdata(in: ($0.body.lowerBound + 4)..<$0.body.upperBound), encoding: .utf8) }) else { continue }
+                    // `mean` and `name` are full boxes (4 bytes of version/flags first); a truncated file can leave them empty
+                    func fullText(_ b: Box) -> String? { b.body.count >= 4 ? String(data: d.subdata(in: (b.body.lowerBound + 4)..<b.body.upperBound), encoding: .utf8) : nil }
+                    let mean = children.first { $0.type == "mean" }.flatMap(fullText) ?? ""
+                    guard let name = children.first(where: { $0.type == "name" }).flatMap(fullText) else { continue }
                     _ = mean
                     for c in children where c.type == "data" { if let (_, bytes) = dataAtom(d, c), let s = String(data: bytes, encoding: .utf8) { t.add(name, s) } }
                     continue

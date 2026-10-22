@@ -58,6 +58,8 @@ struct PlayerStatus {
     var rtStages: [String] = []      // real-time processors in use (convolution, crossfeed, headphone EQ)
     var live: LiveMetadata.Snapshot? // station, bit rate and current title while a radio stream plays
     var rtLatencyFrames = 0
+    var mixProgress: Double?         // 0…1 while two tracks overlap in a transition, else nil
+    var mixingInto: UUID?            // the track being faded in during that overlap
     var deviceName = ""
     var finished = false
     var errors: [String] = []
@@ -85,20 +87,26 @@ final class Player: @unchecked Sendable {
     private var sinkFixedRate: Double?       // engine thread only: the one rate the current sink accepts, if it has just one
     private var sinkChannels = 0             // engine thread only: output channels of the current sink (0 = unconstrained)
     private var _repeat = RepeatMode.off
+    /// The oversampling filter wanted by the resamplers in the open chains; changed while playing without rebuilding them.
+    private let filterSwitch = FilterSwitch(.standard)
 
     let dsp = DSPChain()
     let replayGain = ReplayGainStore()
     let cache = TrackCache(budgetBytes: 1 << 30)
     let analysisTap = AnalysisTap()
-    private let rtQueue = DispatchQueue(label: "aureon.rtbuild", qos: .userInitiated)
-    private let rtGeneration = Atomic<Int>(0)
     /// The AI enhancer for lossy streams (switched in the Intelligence settings). Tests substitute their own before `start`.
     lazy var upscaler: NeuralUpscaler = { NeuralUpscaler.shared.observeSettings(); return .shared }()
     /// How much audio is queued for the device: tells the enhancer how long it may wait for a block.
     let playoutGauge = PlayoutGauge()
+    private let rtQueue = DispatchQueue(label: "aureon.rtbuild", qos: .userInitiated)
+    private let rtGeneration = Atomic<Int>(0)
     private var irCache: [String: PreparedIR] = [:]
     private let irLock = NSLock()
     private(set) lazy var analysis = AnalysisEngine(tap: analysisTap)
+    /// How tracks start and end (silence, edge loudness, fade-outs), for transitions.
+    var edges = EdgeCache.shared
+    /// Which album a file belongs to, for "keep albums gapless". Default: its folder.
+    var albumKey: (String) -> String? = AlbumKey.folder
 
     // MARK: public state
 
@@ -251,7 +259,16 @@ final class Player: @unchecked Sendable {
 
     // MARK: opening a track (builds the whole ingestion chain)
 
-    private struct Opened { var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double?; var live: LiveMetadata? = nil; var neural = false }
+    private struct Opened {
+        var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double?; var live: LiveMetadata? = nil; var neural = false
+        /// Index in `stages` of the resampler's line, and the rates it converts between, so the line can be rewritten when the filter is changed.
+        var filterLine: Int? = nil; var filterRates: (from: Double, to: Double) = (0, 0)
+    }
+
+    private static func resampleLine(from: Double, to: Double, _ c: ResamplerConfig) -> String {
+        let f = OversamplingFilter(c)
+        return "Resample \(Int(from)) → \(Int(to)) Hz, \(f.title.lowercased()) filter" + (f.adjustable ? ", \(Int(c.effectiveStopbandDB)) dB stop-band" : ", \(Int(c.effectiveStopbandDB)) dB")
+    }
 
     private struct DecodePlan { var base: FrameSource; var raw: StreamInfo; var key: String; var isDoP: Bool; var stages: [String]; var live: LiveMetadata? = nil }
 
@@ -352,34 +369,46 @@ final class Player: @unchecked Sendable {
         } else if chain.info.channels > 2 {
             stages.append("\(Self.layoutName(chain.info.channels)) (\(chain.info.channels) channels) played directly, no processing")
         }
+        var neural = false
+        var filterLine: Int?, filterRates = (from: 0.0, to: 0.0)
         if plan.isDoP {
             if s.upsampling.mode != .off || s.replayGain.mode != .off || s.polarityInverted {
                 stages.append("Upsampling, ReplayGain and polarity are bypassed for DoP")
             }
             chain = DoPStampSource(chain, clock: clock)
         } else {
-        var neural = false
+            // AI enhancer (lossy sources only): sinc to the model's rate, the model, then on to the device rate below
+            if let n = upscaler.makeNode(upstream: chain, raw: plan.raw, deckRate: s.deckRate, gauge: playoutGauge) {
+                chain = n.source; stages += n.stages; neural = true
+            }
+            filterSwitch.request(s.upsampling.filter)
+            let filterCost = s.upsampling.filter.costFactor
+            // PCM → DSD for a DAC that takes DoP: the music goes to 16 × the base rate (32 × for DSD512) with the chosen filter, and is then
+            // interpolated and modulated to DSD below. Radio, DJ decks and fixed-rate outputs are left alone.
+            var dsdPlan: DSDOutputPlan?
+            if s.dsdOutput.enabled, s.dsd.mode == .dop, !isLive, s.deckRate == nil, sinkFixedRate == nil {
+                let r = DSDOutputPlanner.plan(settings: s.dsdOutput, sourceRate: chain.info.sampleRate, channels: chain.info.channels, deviceRates: rates,
+                                              profile: PerformanceProfile.ready, filterCost: filterCost)
+                dsdPlan = r.plan
+                if let n = r.note { stages.append(n) }
+            }
             // sample rate
             let rate = chain.info.sampleRate
             var target = upsamplingTarget(source: rate, mode: s.upsampling.mode, deviceRates: rates, maxRate: s.upsampling.maxRate)
             if let dr = s.deckRate { target = abs(rate - dr) < 0.5 ? nil : dr }
             if isLive, s.radio.upscale, !rates.isEmpty, s.deckRate == nil {
                 target = upsamplingTarget(source: rate, mode: .deviceMax, deviceRates: rates, maxRate: s.radio.maxRate)
-            // AI enhancer (lossy sources only): sinc to the model's rate, the model, then on to the device rate below
-            if let n = upscaler.makeNode(upstream: chain, raw: plan.raw, deckRate: s.deckRate, gauge: playoutGauge) {
-                chain = n.source; stages += n.stages; neural = true
-            }
                 if target == nil, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             }
             if target == nil, s.upsampling.downsampleToFit, !rates.isEmpty, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             // keep the request inside what this Mac can resample in real time, with headroom
-            if let t = target, t > rate {
+            if let t = target, t > rate, dsdPlan == nil {
                 let prof = PerformanceProfile.ready, ch = chain.info.channels
-                if !prof.canResample(to: t, channels: ch) {
-                    var c = prof.capped(t, channels: ch, floor: rate)
+                if !prof.canResample(to: t, channels: ch, cost: filterCost) {
+                    var c = prof.capped(t, channels: ch, floor: rate, cost: filterCost)
                     // the cap must still be a rate the device offers
                     if !rates.isEmpty { c = rates.filter { $0 <= c + 0.5 && $0 > rate + 0.5 }.max() ?? rate }
-                    stages.append("Upsampling to \(formatRate(t)) is too heavy for this Mac in real time (\(String(format: "%.1f", prof.resampleFactor(rate: t, channels: ch)))×): using \(c > rate ? formatRate(c) : "the native rate") instead")
+                    stages.append("Upsampling to \(formatRate(t)) is too heavy for this Mac in real time (\(String(format: "%.1f", prof.resampleFactor(rate: t, channels: ch, cost: filterCost)))×): using \(c > rate ? formatRate(c) : "the native rate") instead")
                     target = c > rate ? c : nil
                 }
             }
@@ -387,12 +416,19 @@ final class Player: @unchecked Sendable {
                 target = abs(rate - fr) < 0.5 ? nil : fr
                 if target != nil { stages.append("This output takes only \(formatRate(fr)): resampling") }
             }
-            if s.upsampling.mode != .off && target == nil && sinkFixedRate == nil {
+            if s.upsampling.mode != .off && target == nil && sinkFixedRate == nil && dsdPlan == nil {
                 stages.append("Upsampling: no suitable device rate above \(Int(rate)) Hz, keeping native rate")
             }
-            if let t = target, let r = ResamplingSource(chain, outRate: t, config: s.upsampling.filter) {
-                chain = r
-                stages.append("Resample \(Int(rate)) → \(Int(t)) Hz, \(s.upsampling.filter.phase.title.lowercased()), \(Int(s.upsampling.filter.stopbandDB)) dB stop-band")
+            if let p = dsdPlan { target = abs(rate - p.intermediateRate) < 0.5 ? nil : p.intermediateRate }
+            if let t = target {
+                if let r = ResamplingSource(chain, outRate: t, config: s.upsampling.filter, control: filterSwitch) {
+                    chain = r
+                    stages.append(Self.resampleLine(from: rate, to: t, s.upsampling.filter))
+                    filterLine = stages.count - 1; filterRates = (rate, t)
+                } else if dsdPlan != nil {
+                    dsdPlan = nil
+                    stages.append("Conversion to DSD: \(Int(rate)) Hz cannot be brought to \(Int(t)) Hz here, so the music is sent as PCM")
+                }
             }
             // ReplayGain
             if s.replayGain.mode != .off && !isLive {
@@ -404,8 +440,16 @@ final class Player: @unchecked Sendable {
             }
             if s.polarityInverted { chain = InvertSource(chain); stages.append("Polarity inverted") }
             if let v = varispeed { chain = VarispeedSource(chain, control: v); stages.append("Pitch control") }
+            if let p = dsdPlan {
+                if let d = PCMToDSDSource(chain, plan: p) {
+                    chain = DoPStampSource(d, clock: clock)
+                    stages.append("PCM → \(p.rate.name): \(p.order.title) one-bit modulator at \(formatRate(p.dsdRate)), sent as \(formatRate(p.carrier)) DoP")
+                } else {
+                    stages.append("Conversion to DSD: the stream could not be set up, so the music is sent as PCM")
+                }
+            }
         }
-        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live, neural: neural)
+        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live, neural: neural, filterLine: filterLine, filterRates: filterRates)
     }
 
     /// Decodes upcoming tracks into RAM (and warms ReplayGain data) on a background queue.
@@ -414,6 +458,7 @@ final class Player: @unchecked Sendable {
         guard let i = q.firstIndex(where: { $0.id == id }) else { return }
         let upcoming = Array(q[(i + 1)..<min(i + 3, q.count)]).filter { !Self.isStreamURL($0.path) }
         replayGain.prefetch(paths: upcoming.map(\.path), settings: s.replayGain)
+        if s.transition.mode != .off { edges.prefetch(paths: ([q[i]] + upcoming).map(\.path)) }
         guard s.ram.enabled else { cache.clear(); return }
         let keepPaths = Set(([q[i]] + upcoming).map(\.path))
         cache.retain(onlyPaths: keepPaths)
@@ -477,7 +522,21 @@ final class Player: @unchecked Sendable {
 
     // MARK: one format group
 
-    private struct Boundary { var ringFrame: Int; var entryID: UUID; var offset: Int; var opened: Opened; var info: StreamInfo }
+    /// One overlap between two tracks, as written to the ring.
+    private struct MixInfo { var startRing: Int; var frames: Int; var intoID: UUID; var note: String }
+
+    /// Maps ring frames back to (track, position). A transition writes three: the outgoing track's overlap half (`mixOut`, a continuation
+    /// of that track), the incoming track from the overlap's midpoint, and the incoming track from the overlap's end (a continuation).
+    private struct Boundary {
+        var ringFrame: Int; var entryID: UUID; var offset: Int; var opened: Opened; var info: StreamInfo
+        /// Same entry as the boundary before it (not a new queue position).
+        var continuation = false
+        var mix: MixInfo? = nil
+        var mixOut = false
+    }
+
+    /// A transition that has been decided: the incoming chain is open and positioned, waiting for the outgoing one to reach `plan.mixStart`.
+    private struct PendingMix { var plan: TransitionPlan; var entry: QueueEntry; var opened: Opened }
 
     private func playGroup(startID: UUID, startSeconds: Double, sink: AudioSink, options: PlayerOptions) throws -> GroupExit {
         var snap = snapshot()
@@ -487,6 +546,7 @@ final class Player: @unchecked Sendable {
         }
         var cfg = snap.settings
         var seenSettings = snap.settingsVersion, seenQueue = snap.version, seenPlugins = snap.pluginsVersion
+        var seenUpscaler = upscaler.generation
         dsp.setPlugins(snap.plugins)
         let rates = sink.supportedRates
         let clock = DoPClock()
@@ -504,14 +564,15 @@ final class Player: @unchecked Sendable {
         let perf = PerformanceProfile.ready
         let ringSeconds = perf.bufferSeconds(base: options.bufferSeconds, rate: fmt.sampleRate, channels: fmt.channels)
         let ring = RingBuffer(frames: perf.ringFrames(rate: fmt.sampleRate, channels: fmt.channels, seconds: ringSeconds), channels: fmt.channels)
+        playoutGauge.attach(ring, rate: fmt.sampleRate)
         let prefillFrames = max(4096, Int(fmt.sampleRate * perf.prefillSeconds(rate: fmt.sampleRate)))
         if fmt.sampleRate > 192_000 { update { $0.errors.removeAll { $0.hasPrefix("Heavy stream") } } }
         ring.paused.store(true, ordering: .relaxed)                       // held until prefilled: no false underruns
         let renderer = Renderer(ring: ring, channels: fmt.channels, dsp: dsp, underruns: underruns, tap: analysisTap)
-        var seenUpscaler = upscaler.generation
         renderer.deckGain = deckGain
         analysisTap.sampleRate.store(Int(fmt.sampleRate), ordering: .relaxed)
-        func applyDSP(_ d: DSPSettings) {
+        func applyDSP(_ requested: DSPSettings) {
+            let d = fmt.isDoP ? DSPSettings() : requested          // floating-point processing would destroy the bits inside a DoP stream
             dsp.apply(d.eq)
             if d.enabled && !renderer.useDSP.load(ordering: .relaxed) {
                 do { try dsp.prepare(sampleRate: fmt.sampleRate, channels: fmt.channels, ring: ring); renderer.useDSP.store(true, ordering: .relaxed) }
@@ -526,8 +587,8 @@ final class Player: @unchecked Sendable {
         defer { renderer.useDSP.store(false, ordering: .relaxed); sink.stop(); dsp.teardown() }
 
         // producer state
-        playoutGauge.attach(ring, rate: fmt.sampleRate)
         var src: FrameSource? = opened0.source
+        var pendingFilterFlush = false                 // a new oversampling filter is being built; the buffered audio is replaced once it is ready
         var srcID = startID, tailID = startID
         var exhausted = false, endOfGroup = false, groupNext: UUID? = nil, prefilled = false
         let startFrame = max(0, min(Int(startSeconds * fmt.sampleRate), max(0, Int(fmt.totalFrames) - 1)))
@@ -538,6 +599,12 @@ final class Player: @unchecked Sendable {
         defer { scratch.deallocate() }
         var offered = 0, offeredFrames = 0
         var lastUpdate = Date.distantPast, lastHeard: UUID? = nil
+        // transitions
+        var srcPos = startFrame                      // frames of `src` read so far, in its own timeline
+        var decidedFor: UUID? = nil                  // the source a transition was already decided for (or ruled out)
+        var pendingMix: PendingMix? = nil            // decided, waiting for `src` to reach the mix start
+        var mixing: PendingMix? = nil                // `src` is the TransitionMixer
+        func resetTransition() { decidedFor = nil; pendingMix = nil; mixing = nil }
 
         func heard() -> (Boundary, Int) {
             let c = ring.totalConsumed
@@ -551,7 +618,7 @@ final class Player: @unchecked Sendable {
         /// Reposition the audible track: drop buffered audio, seek, refill.
         func seekHeard(to target: Int) throws {
             let (b, _) = heard()
-            if src == nil || srcID != b.entryID {
+            if src == nil || srcID != b.entryID || mixing != nil {        // never seek inside a mixer: rebuild the heard track's chain
                 guard let e = entry(b.entryID) else { return }
                 src = try openTrack(e, settings: cfg, rates: rates, clock: clock, loadRAMNow: false).source
                 srcID = b.entryID
@@ -559,8 +626,11 @@ final class Player: @unchecked Sendable {
             ring.flush()
             let t = max(0, min(target, max(0, Int(b.info.totalFrames) - 1)))
             src?.seek(to: Int64(t))
+            srcPos = t; resetTransition()
+            bounds.removeAll { $0.ringFrame >= ring.totalWritten }       // boundaries of audio that was never written (an unfinished overlap)
             offered = 0; offeredFrames = 0; exhausted = false; endOfGroup = false; groupNext = nil; tailID = b.entryID
             bounds.append(Boundary(ringFrame: ring.totalWritten, entryID: b.entryID, offset: t, opened: b.opened, info: b.info))
+            clock.phase = ring.totalWritten      // DoP markers keep alternating: the dropped, already stamped frames never reached the DAC
         }
 
         func neighbour(of id: UUID, _ delta: Int) -> QueueEntry? {
@@ -589,6 +659,7 @@ final class Player: @unchecked Sendable {
                     let i = o.source.info
                     if i.sampleRate == fmt.sampleRate && i.channels == fmt.channels && i.isDoP == fmt.isDoP {
                         src = o.source; srcID = e.id; tailID = e.id; exhausted = false
+                        srcPos = 0; resetTransition()
                         bounds.append(Boundary(ringFrame: ring.totalWritten, entryID: e.id, offset: 0, opened: o, info: i))
                     } else { endOfGroup = true; groupNext = e.id }
                     return
@@ -598,6 +669,64 @@ final class Player: @unchecked Sendable {
                 }
             }
             endOfGroup = true; groupNext = nil
+        }
+
+        /// The entry a transition from `id` would lead into, or nil (end of the queue, repeat-one).
+        func transitionTarget(after id: UUID) -> QueueEntry? {
+            let q = snapshot().entries
+            let mode = repeatMode
+            guard mode != .one, let i = q.firstIndex(where: { $0.id == id }) else { return nil }
+            if i + 1 < q.count { return q[i + 1] }
+            return mode == .all && q.count > 1 ? q[0] : nil
+        }
+
+        /// Near the end of the current source, decides once whether and how to blend into the next entry. The incoming chain is opened
+        /// here, on the engine thread, and positioned at its first audible frame.
+        func prepareTransition() {
+            let ts = cfg.transition
+            guard ts.mode != .off, mixing == nil, decidedFor != srcID, let s = src, !fmt.isDoP, !s.info.isLive else { return }
+            let total = Int(s.info.totalFrames)
+            guard total > 0 else { decidedFor = srcID; return }
+            let lookahead = Int((ts.seconds + EdgeAnalyzer.windowSeconds) * fmt.sampleRate) + chunk
+            guard total - srcPos <= lookahead else { return }
+            decidedFor = srcID
+            guard let a = entry(srcID), let next = transitionTarget(after: srcID), next.id != srcID, !Self.isStreamURL(next.path) else { return }
+            if ts.skipSameAlbum, let ka = albumKey(a.path), ka == albumKey(next.path) { return }
+            let ea = edges.cached(path: a.path), eb = edges.cached(path: next.path)
+            if ea == nil || eb == nil { edges.prefetch(paths: [a.path, next.path]) }      // ready for the next decision
+            guard let o = try? openTrack(next, settings: cfg, rates: rates, clock: clock, loadRAMNow: false) else { return }
+            let i = o.source.info
+            guard i.sampleRate == fmt.sampleRate, i.channels == fmt.channels, !i.isDoP, !i.isLive, i.totalFrames > 0 else { return }
+            let input = TransitionInput(rate: fmt.sampleRate, outgoingFrames: total, incomingFrames: Int(i.totalFrames), outgoing: ea, incoming: eb,
+                                        outgoingGainDB: bounds.last { $0.entryID == srcID }?.opened.gainDB ?? 0, incomingGainDB: o.gainDB ?? 0)
+            guard var plan = TransitionPlanner.plan(ts, input) else { return }
+            if plan.mixStart < srcPos { plan.overlapFrames = plan.outgoingEnd - srcPos }      // decided late (after a seek near the end)
+            guard plan.overlapFrames >= Int(TransitionPlanner.minimumSeconds * fmt.sampleRate) else { return }
+            if plan.incomingStart > 0 { o.source.seek(to: Int64(plan.incomingStart)) }
+            pendingMix = PendingMix(plan: plan, entry: next, opened: o)
+        }
+
+        /// The outgoing source has reached the mix start: from here the mixer is the source, and the boundaries for the overlap are recorded.
+        func startMix(_ p: PendingMix) {
+            guard let a = src, let outgoing = bounds.last(where: { $0.entryID == srcID }) else { pendingMix = nil; return }
+            let w = ring.totalWritten                       // everything before the overlap has been written (offered == offeredFrames)
+            let n = p.plan.overlapFrames, half = n / 2
+            let mi = MixInfo(startRing: w, frames: n, intoID: p.entry.id, note: p.plan.description)
+            let inInfo = p.opened.source.info
+            bounds.append(Boundary(ringFrame: w, entryID: srcID, offset: srcPos, opened: outgoing.opened, info: outgoing.info, continuation: true, mix: mi, mixOut: true))
+            bounds.append(Boundary(ringFrame: w + half, entryID: p.entry.id, offset: p.plan.incomingStart + half, opened: p.opened, info: inInfo, mix: mi))
+            bounds.append(Boundary(ringFrame: w + n, entryID: p.entry.id, offset: p.plan.incomingStart + n, opened: p.opened, info: inInfo, continuation: true))
+            src = TransitionMixer(outgoing: a, incoming: p.opened.source, plan: p.plan, info: fmt)
+            tailID = p.entry.id
+            mixing = p; pendingMix = nil
+        }
+
+        /// The overlap is written: the incoming chain carries on from where the mixer left it.
+        func finishMix() {
+            guard let m = mixing else { return }
+            src = m.opened.source; srcID = m.entry.id; tailID = m.entry.id
+            srcPos = m.plan.incomingStart + m.plan.overlapFrames
+            resetTransition()
         }
 
         /// Commands, settings and queue edits. Returns an exit when the group must be restarted elsewhere.
@@ -626,6 +755,7 @@ final class Player: @unchecked Sendable {
                 seenSettings = snap.settingsVersion
                 let old = cfg
                 cfg = snap.settings
+                if cfg.upsampling.filter != old.upsampling.filter, filterSwitch.request(cfg.upsampling.filter), heard().0.opened.filterLine != nil { pendingFilterFlush = true }
                 if cfg.streamKey != old.streamKey {
                     let (b, pos) = heard()
                     if let e = entry(b.entryID) {
@@ -637,10 +767,38 @@ final class Player: @unchecked Sendable {
                         src = probe.source; srcID = b.entryID           // reuse the freshly built chain
                         try seekHeard(to: pos)
                         bounds[bounds.count - 1].opened = probe
+                        pendingFilterFlush = false          // the rebuilt chain was made with the new filter
                     }
                 }
+                if cfg.transition != old.transition, mixing == nil { pendingMix = nil; decidedFor = nil }   // decide again with the new settings
                 applyDSP(cfg.dsp)
                 if cfg.rt != old.rt { publishRT(fmt.isDoP ? RTSettings() : cfg.rt, renderer: renderer, rate: fmt.sampleRate, channels: fmt.channels, async: true) }
+            }
+
+            // A new oversampling filter: once the resampler has built it, replace the audio already buffered so the change is heard at once
+            // (the resampler swaps the design in when it is repositioned). A filter this Mac cannot afford is declined with a note.
+            if pendingFilterFlush {
+                if let why = filterSwitch.takeRefusal() { pendingFilterFlush = false; note(why) }
+                else if filterSwitch.isReady, mixing == nil {
+                    pendingFilterFlush = false
+                    let (_, pos) = heard()
+                    try seekHeard(to: pos)
+                    if var o = bounds.last?.opened, let li = o.filterLine, o.stages.indices.contains(li) {
+                        o.stages[li] = Self.resampleLine(from: o.filterRates.from, to: o.filterRates.to, cfg.upsampling.filter)
+                        bounds[bounds.count - 1].opened = o
+                    }
+                }
+            }
+
+            // AI enhancer switched on, or its model finished loading, while a lossy stream plays without it: rebuild that stream.
+            // (Switching it off needs no rebuild: the stage crossfades to its input and passes it through unchanged.)
+            let upGen = upscaler.generation
+            if upGen != seenUpscaler {
+                seenUpscaler = upGen
+                let (b, pos) = heard()
+                if !b.opened.neural, upscaler.wouldInsert(for: b.opened.raw, deckRate: cfg.deckRate) {
+                    return .continueAt(b.entryID, seconds: b.info.isLive ? 0 : Double(pos) / fmt.sampleRate)
+                }
             }
 
             // hosted plugins
@@ -662,17 +820,29 @@ final class Player: @unchecked Sendable {
                     return .continueAt(ids[min(heardIndexHint, ids.count - 1)], seconds: 0)   // the playing track was removed
                 }
                 heardIndexHint = hi
+                if mixing == nil { pendingMix = nil; decidedFor = nil }          // the next entry may have changed: decide again
                 var mismatch: Int? = nil
                 var expect = hi
-                for k in 1..<max(1, bounds.count) {
+                for k in 1..<max(1, bounds.count) where !bounds[k].continuation {
                     expect += 1
                     if expect >= ids.count || ids[expect] != bounds[k].entryID { mismatch = k; break }
                 }
                 if let k = mismatch {
-                    if ring.truncate(to: bounds[k].ringFrame) {                    // audible track untouched
-                        bounds.removeSubrange(k...)
-                        src = nil; srcID = bounds[k - 1].entryID; tailID = srcID
-                        exhausted = true; endOfGroup = false; groupNext = nil; offered = 0; offeredFrames = 0
+                    // A transition into the mismatched entry is undone whole: cut where the outgoing track starts to fade.
+                    let cut = bounds[k].mix != nil && bounds[k - 1].mixOut ? k - 1 : k
+                    if cut > 0, ring.truncate(to: bounds[cut].ringFrame) {         // audible track untouched
+                        let keep = bounds[cut]
+                        bounds.removeSubrange(cut...)
+                        clock.phase = ring.totalWritten
+                        resetTransition()
+                        endOfGroup = false; groupNext = nil; offered = 0; offeredFrames = 0
+                        if cut < k, let e = entry(keep.entryID), let o = try? openTrack(e, settings: cfg, rates: rates, clock: clock, loadRAMNow: false) {
+                            // write the outgoing track's tail again, unmixed, from where the overlap began
+                            o.source.seek(to: Int64(keep.offset))
+                            src = o.source; srcID = keep.entryID; tailID = srcID; srcPos = keep.offset; exhausted = false
+                        } else {
+                            src = nil; srcID = bounds[cut - 1].entryID; tailID = srcID; exhausted = true
+                        }
                     } else { src = nil; try seekHeard(to: pos) }
                 } else if endOfGroup {
                     endOfGroup = false; groupNext = nil; exhausted = true; src = nil
@@ -691,9 +861,19 @@ final class Player: @unchecked Sendable {
                 advance()
             } else {
                 if offered == offeredFrames {
+                    if mixing == nil, src != nil {
+                        prepareTransition()
+                        if let p = pendingMix, srcPos >= p.plan.mixStart { startMix(p) }
+                    }
                     if let s = src {
-                        offeredFrames = s.read(into: scratch, frames: chunk); offered = 0
-                        if offeredFrames == 0 { exhausted = true; src = nil; continue }
+                        var want = chunk
+                        if mixing == nil, let p = pendingMix { want = min(want, max(1, p.plan.mixStart - srcPos)) }   // stop exactly at the mix start
+                        offeredFrames = s.read(into: scratch, frames: want); offered = 0
+                        if mixing == nil { srcPos += offeredFrames }
+                        if offeredFrames == 0 {
+                            if mixing != nil { finishMix(); continue }
+                            exhausted = true; src = nil; continue
+                        }
                     } else { exhausted = true; continue }
                 }
                 let n = ring.write(scratch + offered * fmt.channels, frames: offeredFrames - offered)
@@ -718,11 +898,13 @@ final class Player: @unchecked Sendable {
                     $0.state = userPaused ? .paused : .playing
                     $0.trackID = b.entryID
                     $0.trackIndex = q.firstIndex { $0.id == b.entryID } ?? 0
-                    $0.info = b.info; $0.sourceInfo = b.opened.raw; $0.pipeline = b.opened.stages
+                    $0.info = b.info; $0.sourceInfo = b.opened.raw; $0.pipeline = b.opened.stages + (b.mix.map { [$0.note] } ?? [])
+                    $0.mixingInto = b.mix?.intoID
+                    $0.mixProgress = b.mix.map { max(0, min(1, Double(ring.totalConsumed - $0.startRing) / Double(max(1, $0.frames)))) }
                     $0.position = Double(pos) / b.info.sampleRate; $0.duration = b.info.duration
                     $0.bufferedSeconds = Double(ring.availableToRead) / fmt.sampleRate
                     $0.underruns = underruns.n.load(ordering: .relaxed)
-                    $0.transparentStream = b.info.transparent && !renderer.useDSP.load(ordering: .relaxed) && $0.rtStages.isEmpty
+                    $0.transparentStream = b.info.transparent && b.mix == nil && !renderer.useDSP.load(ordering: .relaxed) && $0.rtStages.isEmpty
                     $0.bitPerfect = report.bitPerfect && $0.transparentStream
                     $0.replayGainDB = b.opened.gainDB
                     $0.live = b.opened.live?.snapshot
@@ -732,17 +914,6 @@ final class Player: @unchecked Sendable {
                 }
             }
         }
-            // AI enhancer switched on, or its model finished loading, while a lossy stream plays without it: rebuild that stream.
-            // (Switching it off needs no rebuild: the stage crossfades to its input and passes it through unchanged.)
-            let upGen = upscaler.generation
-            if upGen != seenUpscaler {
-                seenUpscaler = upGen
-                let (b, pos) = heard()
-                if !b.opened.neural, upscaler.wouldInsert(for: b.opened.raw, deckRate: cfg.deckRate) {
-                    return .continueAt(b.entryID, seconds: b.info.isLive ? 0 : Double(pos) / fmt.sampleRate)
-                }
-            }
-
         return .finished
     }
 }

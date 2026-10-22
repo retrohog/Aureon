@@ -99,6 +99,8 @@ struct ReleaseDTO: Codable, Identifiable, Hashable {
     var maxBitDepth: Int?
     var genre: String?
     var addedAt: Double?
+    /// Newest modification time among the album's files: what a cached cover is checked against (it changes when any file is re-tagged).
+    var artStamp: Double?
 
     var isHiRes: Bool { (maxSampleRate ?? 0) > 48_000 || (maxBitDepth ?? 0) > 16 }
     var isDSD: Bool { maxBitDepth == 1 }

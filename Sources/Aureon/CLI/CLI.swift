@@ -34,6 +34,8 @@ play options:
   --ram [MB]               load whole tracks into RAM before playing (default budget 1024 MB)
   --replaygain track|album [--preamp dB]
   --upsample off|2x|pow2|max [--phase linear|minimum] [--max-rate Hz]
+  --filter linear|minimum|apodizing|brickwall   oversampling filter (also used by --dsd-out)
+  --dsd-out off|64|128|256|512 [--modulator 5|7]   convert PCM to DSD for a DoP DAC (implies --dsd dop); the number is the highest DSD rate
   --dsd pcm|dop            DSD handling (dop needs a DoP-capable DAC)
   --invert                 invert polarity (not bit-transparent)
   --crossfeed [Hz dB]      Bauer BS2B crossfeed (default 700 Hz, 4.5 dB)
@@ -222,6 +224,22 @@ func cmdPlay(_ args: [String]) throws {
             case "max": s.upsampling.mode = .deviceMax; default: s.upsampling.mode = .off }
         case "--phase": s.upsampling.filter.phase = it.next() == "minimum" ? .minimum : .linear
         case "--max-rate": s.upsampling.maxRate = Double(it.next() ?? "") ?? 0
+        case "--filter":
+            switch it.next() {
+            case "minimum": s.upsampling.chosenFilter = .minimumPhase
+            case "apodizing": s.upsampling.chosenFilter = .apodizing
+            case "brickwall": s.upsampling.chosenFilter = .brickwall
+            case "linear": s.upsampling.chosenFilter = .linearPhase
+            default: fail("--filter takes linear, minimum, apodizing or brickwall")
+            }
+        case "--dsd-out":
+            let v = it.next() ?? ""
+            if v == "off" { s.dsdOutput.enabled = false }
+            else if let n = Int(v), let r = DSDOutputRate(rawValue: n) { s.dsdOutput.enabled = true; s.dsdOutput.maxRate = r; s.dsd.mode = .dop }
+            else { fail("--dsd-out takes off, 64, 128, 256 or 512") }
+        case "--modulator":
+            guard let n = Int(it.next() ?? ""), let o = DSDModulatorOrder(rawValue: n) else { fail("--modulator takes 5 or 7") }
+            s.dsdOutput.modulator = o
         case "--dsd": s.dsd.mode = it.next() == "dop" ? .dop : .pcm
         case "--invert": s.polarityInverted = true
         case "--crossfeed":

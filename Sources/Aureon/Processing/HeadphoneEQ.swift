@@ -131,7 +131,7 @@ final class BiquadChainProcessor: RTProcessor {
         self.channels = channels
         let db = profile.effectivePreampDB(sampleRate: sampleRate)
         preamp = pow(10, db / 20)
-        z1 = [Double](repeating: 0, count: max(1, sections.count) * channels); z2 = z1
+        z1 = [Double](repeating: 0, count: max(1, sections.count) * channels); z2 = [Double](repeating: 0, count: max(1, sections.count) * channels)
         name = String(format: "Headphone EQ: %@ (%d filters, %+.1f dB pre-amp)", profile.name, sections.count, db)
     }
 

@@ -9,7 +9,17 @@ struct MeterSnapshot: Equatable {
     var clipped = false                             // a sample reached full scale recently
 }
 
-/// Spectrum analyser, spectrogram and meters. Runs at ~60 Hz on its own thread and reads from the `AnalysisTap`.
+/// Everything the interface draws for one analysis step. Immutable, so every view in a frame reads the same one and the analysis thread never
+/// waits for a view: the interface takes the newest `AnalysisFrame` on its own display-linked tick and the audio engine never talks to it.
+final class AnalysisFrame: @unchecked Sendable {
+    /// Counts up by one per published step: equal ids mean nothing new has been computed.
+    let id: Int
+    let bars: [Float]
+    let meters: MeterSnapshot
+    init(id: Int, bars: [Float], meters: MeterSnapshot) { self.id = id; self.bars = bars; self.meters = meters }
+}
+
+/// Spectrum analyser, spectrogram and meters. Runs at ~60 Hz (`UIRate.analyser`) on its own thread and reads from the `AnalysisTap`.
 final class AnalysisEngine: @unchecked Sendable {
     static let fftSize = 4096
     static let bands = 192
@@ -27,6 +37,7 @@ final class AnalysisEngine: @unchecked Sendable {
     private var pixels = [UInt8](repeating: 0, count: AnalysisEngine.columns * AnalysisEngine.bands)   // column-major ring
     private var head = 0
     private var filled = 0
+    private var latest = AnalysisFrame(id: 0, bars: [Float](repeating: -120, count: AnalysisEngine.bands), meters: MeterSnapshot())
 
     // working state (analysis thread only)
     private let N = AnalysisEngine.fftSize
@@ -67,7 +78,7 @@ final class AnalysisEngine: @unchecked Sendable {
             tap.discard(); tap.enabled.store(true, ordering: .relaxed)
             lastTick = Date()
             let t = DispatchSource.makeTimerSource(queue: queue)
-            t.schedule(deadline: .now(), repeating: .milliseconds(16), leeway: .milliseconds(2))
+            t.schedule(deadline: .now(), repeating: .nanoseconds(Int(1_000_000_000 / UIRate.analyser)), leeway: .milliseconds(2))
             t.setEventHandler { [weak self] in self?.tick() }
             t.resume(); timer = t
         } else {
@@ -79,7 +90,14 @@ final class AnalysisEngine: @unchecked Sendable {
 
     // MARK: results
 
-    func snapshot() -> (bars: [Float], meters: MeterSnapshot) { lock.lock(); defer { lock.unlock() }; return (bars, meters) }
+    func snapshot() -> (bars: [Float], meters: MeterSnapshot) { lock.lock(); defer { lock.unlock() }; return (latest.bars, latest.meters) }
+
+    /// The newest published frame (a reference: no copying, however many views ask).
+    func frame() -> AnalysisFrame { lock.lock(); defer { lock.unlock() }; return latest }
+
+    /// The spectrogram as the engine keeps it, column-major with `head` the oldest column, plus the id of the frame it belongs to. Arrays are
+    /// copy-on-write, so this hands out references; the analysis thread pays for a copy only if it writes while a view still holds one.
+    func spectrogramRing() -> (ring: [UInt8], head: Int, id: Int) { lock.lock(); defer { lock.unlock() }; return (pixels, head, latest.id) }
 
     /// Spectrogram as row-major bytes (0…255 = floorDB…0 dB): oldest column on the left, high frequencies on top.
     func spectrogram() -> (pixels: [UInt8], width: Int, height: Int) {
@@ -178,6 +196,7 @@ final class AnalysisEngine: @unchecked Sendable {
         let H = Self.bands
         for y in 0..<H { pixels[head * H + y] = UInt8(max(0, min(255, (newBars[y] - floorDB) / -floorDB * 255))) }
         head = (head + 1) % Self.columns; filled = min(filled + 1, Self.columns)
+        latest = AnalysisFrame(id: latest.id + 1, bars: bars, meters: meters)
         lock.unlock()
     }
 }

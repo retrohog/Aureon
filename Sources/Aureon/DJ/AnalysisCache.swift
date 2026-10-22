@@ -52,3 +52,25 @@ final class AnalysisCache: @unchecked Sendable {
         return a
     }
 }
+
+/// The few figures of a track analysis that features ranking a whole library need (no waveform).
+struct AnalysisSummary: Equatable, Sendable {
+    var bpm: Double?
+    var energy: Double
+    var key: String?                 // Camelot code
+    var loudness: Double             // mean level in dBFS
+}
+
+extension AnalysisCache {
+    /// Reads one analysis from disk without keeping its waveform in memory: ranking 50 000 songs must not hold 50 000 overviews.
+    /// Nil when the track was never analysed or the file changed since.
+    func summary(path: String) -> AnalysisSummary? {
+        guard let st = stamp(path), let d = try? Data(contentsOf: file(for: path)) else { return nil }
+        struct Slim: Decodable {
+            struct Inner: Decodable { var bpm: Double?; var energy: Double?; var key: MusicalKey?; var loudness: Double? }
+            var path: String; var mtime: Double; var size: Int; var version: Int; var analysis: Inner
+        }
+        guard let e = try? JSONDecoder().decode(Slim.self, from: d), e.path == path, e.mtime == st.mtime, e.size == st.size, e.version == Self.version else { return nil }
+        return AnalysisSummary(bpm: e.analysis.bpm, energy: e.analysis.energy ?? 0, key: e.analysis.key?.camelot, loudness: e.analysis.loudness ?? -30)
+    }
+}

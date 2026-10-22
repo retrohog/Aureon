@@ -29,7 +29,8 @@ enum SignalPath {
             let node: PathNode
             if l.contains("bypassed") || (l.contains("lossy") && !l.contains("internet radio")) { continue }
             if l.contains("internet radio") { continue }           // already shown by the source and decoder stations
-            if l.contains("ram") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "memorychip", title: "RAM", subtitle: l.contains("exceeds") || l.contains("streaming") ? "Streaming" : "Preloaded", detail: line) }
+            if l.hasPrefix("pcm → dsd") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "waveform.path", title: "PCM → DSD", subtitle: dsdRateName(out.sampleRate * 16), detail: line, alters: true) }
+            else if l.contains("ram") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "memorychip", title: "RAM", subtitle: l.contains("exceeds") || l.contains("streaming") ? "Streaming" : "Preloaded", detail: line) }
             else if l.contains("dop") && !l.contains("bypassed") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "dot.radiowaves.left.and.right", title: "DoP", subtitle: "DSD bits intact", detail: line) }
             else if l.contains("fir decimation") || l.contains("converting to pcm") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "waveform.path", title: "DSD → PCM", subtitle: formatRate(out.sampleRate), detail: line, alters: true) }
             else if l.contains("downmix") || l.contains("mixed down") { node = PathNode(id: "p\(i)", kind: .stage, symbol: "arrow.down.right.and.arrow.up.left", title: "Downmix", subtitle: String(line.prefix(26)), detail: line, alters: true) }
@@ -48,7 +49,7 @@ enum SignalPath {
             n.append(PathNode(id: "rt\(i)", kind: .stage, symbol: sym, title: title, subtitle: "Real-time", detail: line, alters: true))
         }
         if let d = s.dspSummary { n.append(PathNode(id: "dsp", kind: .dsp, symbol: "slider.vertical.3", title: "DSP", subtitle: "Float", detail: d + " — processed in floating point.", alters: true)) }
-        let sub = isDSD && out.isDoP ? formatRate(out.sampleRate) + " DoP" : "\(formatRate(out.sampleRate))"
+        let sub = out.isDoP ? formatRate(out.sampleRate) + " DoP" : "\(formatRate(out.sampleRate))"
         n.append(PathNode(id: "output", kind: .output, symbol: "hifispeaker", title: s.deviceName.isEmpty ? "Output" : s.deviceName, subtitle: sub,
                           detail: s.pathLines.isEmpty ? "Output device" : s.pathLines.joined(separator: "\n")))
         return n

@@ -62,7 +62,8 @@ enum ID3v2 {
     }
 
     static let v22to23 = ["TT2": "TIT2", "TP1": "TPE1", "TP2": "TPE2", "TAL": "TALB", "TRK": "TRCK", "TPA": "TPOS", "TYE": "TYER", "TCO": "TCON",
-                          "TCM": "TCOM", "TP3": "TPE3", "PIC": "APIC", "TXX": "TXXX", "TT3": "TIT3", "TDA": "TDAT", "TPB": "TPUB", "TCP": "TCMP"]
+                          "TCM": "TCOM", "TP3": "TPE3", "PIC": "APIC", "TXX": "TXXX", "TT3": "TIT3", "TDA": "TDAT", "TPB": "TPUB", "TCP": "TCMP",
+                          "ULT": "USLT", "SLT": "SYLT"]
 
     static let textFrames: [String: String] = [
         "TIT2": "TITLE", "TPE1": "ARTIST", "TPE2": "ALBUMARTIST", "TALB": "ALBUM", "TCOM": "COMPOSER", "TPE3": "CONDUCTOR", "TPE4": "REMIXER",
@@ -108,10 +109,10 @@ enum ID3v2 {
             var s = g.trimmingCharacters(in: .whitespaces), out: [String] = []
             // "(17)" / "(17)Rock" references to the ID3v1 list
             while s.hasPrefix("("), let close = s.firstIndex(of: ")") {
-                if let n = Int(s[s.index(after: s.startIndex)..<close]), n < genres80.count { out.append(genres80[n]) }
+                if let n = Int(s[s.index(after: s.startIndex)..<close]), n >= 0, n < genres80.count { out.append(genres80[n]) }
                 s = String(s[s.index(after: close)...])
             }
-            if let n = Int(s), out.isEmpty, n < genres80.count { return [genres80[n]] }
+            if let n = Int(s), out.isEmpty, n >= 0, n < genres80.count { return [genres80[n]] }
             if !s.isEmpty { out.append(s) }
             return out
         }
@@ -167,6 +168,10 @@ enum ID3v2 {
                 }
             case "APIC":
                 if let pic = picture(frame, v22: version == 2) { out.pictures.append(pic) }
+            case "USLT":
+                if let text = ID3Lyrics.unsynchronised(frame) { out.tags.add("LYRICS", text) }
+            case "SYLT":
+                if let lrc = ID3Lyrics.synchronised(frame) { out.tags.add("SYNCEDLYRICS", lrc) }
             default:
                 if let name = textFrames[id] { for v in values(frame) { out.tags.add(name, v) } }
             }

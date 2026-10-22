@@ -4,7 +4,7 @@ An open-source, audiophile-grade music player for macOS. Aureon keeps your music
 and lets you opt in to processing — upsampling, ReplayGain, EQ, crossfeed, room correction, plugins — only when you want it. The
 signal-path panel always tells you which it is.
 
-> Status: early (0.2). The engine and every service are covered by 236 automated tests; what could not be verified without special
+> Status: early (0.2). The engine and every service are covered by 570 automated tests; what could not be verified without special
 > hardware, accounts or signing is listed under [Limitations](#limitations) — read it before relying on those parts.
 
 ## Features
@@ -14,9 +14,11 @@ signal-path panel always tells you which it is.
 | **Lossless playback** | FLAC, ALAC, WAV, AIFF decoded at the file's own rate and depth into 32-bit integers. Gapless across same-format tracks; the device clock follows each track. |
 | **Dual-path architecture** | Processing off: ring buffer → DAC callback, nothing in between. DSP on: the callback pulls from an `AVAudioEngine` in manual-rendering mode. |
 | **DSD** | DSF/DFF. **DoP** keeps the DSD bits untouched with a marker that continues across tracks; or convert to PCM. |
-| **Upsampling** | Native polyphase sinc resampler, any rational ratio, linear or minimum phase. No dependencies. |
+| **Upsampling** | Native polyphase sinc resampler, any rational ratio. Four oversampling filters: linear phase, minimum phase, apodizing and brickwall; changing one while playing swaps it in without a rebuild. No dependencies. |
+| **PCM to DSD** | Any music as DSD64 to DSD512 for a DoP DAC: the chosen filter, half-band interpolation, then a 5th or 7th-order one-bit noise-shaping modulator. Off by default. See `Docs/DSD-OUTPUT.md`. |
 | **Memory playback** | Whole tracks decoded into RAM before playing; the next two are prefetched. Zero disk reads during playback is asserted by a test. |
 | **ReplayGain** | Reads tags (Vorbis, ID3, iTunes); measures EBU R128 loudness for untagged files; peak-aware clipping protection. |
+| **Transitions** | Gapless by default. **Crossfade** (1–12 s, equal-power, linear or S-curve) or **Smart**: silence at the ends is skipped, a song that fades out keeps its own fade, and a loudness handover (EBU R128 on each song's first and last seconds) eases the next song in from the level the current one ends at. Mixed on the engine thread before the ring, so the audio callback is untouched; songs from one album stay gapless. |
 | **Live queue** | Remove, reorder, insert and append while playing; the audible track is never disturbed. |
 | **Headphones** | Bauer **BS2B crossfeed**; **AutoEQ** profiles fetched on demand from the open AutoEQ database (any number of filters, safety pre-amp). |
 | **Room correction** | **Partitioned FFT convolution** (Accelerate) of Room EQ Wizard–style impulse responses (WAV int/float, mono/stereo, any rate), resampled to the stream. 8 s of stereo IR runs ~57× faster than real time. |
@@ -56,13 +58,20 @@ signal-path panel always tells you which it is.
 
 ## Install
 
+**Prebuilt (Apple Silicon, macOS 15+):** download `Aureon-0.2.0.dmg` or `Aureon-0.2.0.pkg` from
+[Releases](https://github.com/retrohog/Aureon/releases). The disk image is drag-to-Applications; the package installs into
+`/Applications`. The app is ad-hoc signed and not notarised, so the first launch needs right-click → Open.
+
+**From source:**
+
 ```bash
-git clone <this repo> && cd Aureon
+git clone https://github.com/retrohog/Aureon.git && cd Aureon
 ./Packaging/build_app.sh                 # builds and installs ~/Desktop/Aureon.app
 ./Packaging/build_app.sh --with-helper   # also embeds the quiet-mode helper (needs a signing identity, see Docs/SYSTEM-OPTIMIZATION.md)
 ```
 
-Requirements: macOS 15+, Swift 6 toolchain (the Command Line Tools are enough — no Xcode needed). The app is ad-hoc signed by default;
+Requirements: macOS 15+, Apple Silicon (the 0.2.0 release binaries are arm64 only; Intel builds from source are untested),
+Swift 6 toolchain (the Command Line Tools are enough — no Xcode needed). The app is ad-hoc signed by default;
 on first launch use right-click → Open.
 
 **Smart DJ's language model** is built separately because MLX needs Xcode's Metal compiler: with full Xcode installed
@@ -79,6 +88,7 @@ Aureon play --ram --replaygain track *.flac
 Aureon play --upsample max --phase minimum album/*.flac
 Aureon play --crossfeed --headphone-eq "HD 650 ParametricEQ.txt" --convolve room.wav song.flac
 Aureon play --dsd dop --hog track.dsf                  # only with a DoP-capable DAC!
+Aureon play --dsd-out 512 --modulator 7 --filter apodizing track.flac   # PCM as DSD512; also only with a DoP-capable DAC
 Aureon daemon --music ~/Music --name "Study"           # headless; prints the pairing token
 Aureon hwdebug --all --json report.json                # test your USB DAC
 Aureon radiocheck https://example.com/stream.mp3     # decode a live stream for a few seconds and report (plays nothing)
@@ -93,7 +103,7 @@ Keys: <kbd>Space</kbd> pause · <kbd>←</kbd>/<kbd>→</kbd> ±10 s · <kbd>⌘
 ## Testing
 
 ```bash
-swift build -c release && .build/release/Aureon selftest        # ~380 tests, ~3 min, no audio hardware needed
+swift build -c release && .build/release/Aureon selftest        # 570 tests, ~4 min, no audio hardware needed
 .build/release/Aureon selftest queue                             # a subset, by name
 ```
 
@@ -128,6 +138,7 @@ Honest list of what is **not** verified or **not** built:
 - **Radio is lossy** (except the FLAC stations). Upscaling replaces the system mixer's resampling with one long-filter step; it cannot restore detail the broadcaster removed. HLS (`.m3u8`) and Ogg/Opus stations are not offered. Verified against real MP3, HE-AAC and FLAC stations with `radiocheck`; the directory itself is a community service and some stations are offline.
 - **Podcast playback downloads the whole episode first** (progress is shown); there is no streaming start, queue of episodes or resume position yet.
 - **Artist portraits** come from Deezer's public search by exact name and Wikipedia; a common name can still match the wrong artist, in which case the album mosaic is a safer look.
+- **Transitions** are never applied to DoP, radio, or across a sample-rate change (those stay gapless). There is no beat-matched transition yet; tempo and key from the DJ analysis are not used by it. While two songs overlap the output is not bit-perfect.
 - **DJ mode limits.** No keylock (changing pitch changes key), no scratching / jog wheel, no MIDI controllers. The headphone cue routes to a second device or outputs 3–4; it has been tested with simulated devices only, not with real hardware. Beat sync is only as accurate as the position readout (about a few tens of milliseconds). Tempo and key are estimated and can be wrong on tracks without a clear beat or tonal centre (half/double time is common). Auto DJ needs analysed tracks (use “Analyse all”); its choices are a heuristic plus a tiny network, so expect the occasional poor pick — rate mixes to teach it. The mix runs through a limiter at −0.3 dBFS.
 - **No TagLib:** the parsers are Aureon's own (a C++ dependency adds build complexity for no benefit here); unusual tag layouts may still need AVFoundation's fallback.
 - The interface is dark-only. Hover, drag and animation behaviour was reviewed from rendered snapshots and code, not by clicking through the live app.

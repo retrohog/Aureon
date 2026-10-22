@@ -36,6 +36,8 @@ repeated keys are multiple values.
 | Conductor | `CONDUCTOR` | `©con`, `----:CONDUCTOR` |
 | Ensemble | `ENSEMBLE`, `ORCHESTRA`, `CHOIR` | `----:ENSEMBLE` |
 | Soloists / performers | `PERFORMER=Name (instrument)`, `SOLOIST` | `----:PERFORMER` |
+| Producer | `PRODUCER`, `COPRODUCER`, `EXECUTIVEPRODUCER` | `----:PRODUCER` |
+| Engineer | `ENGINEER`, `MIXER`, `MIXENGINEER`, `RECORDINGENGINEER`, `MASTERINGENGINEER` | `----:ENGINEER` |
 | Work | `WORK`, `WORKNAME`, (`GROUPING` with movement tags) | `©wrk` |
 | Movement | `MOVEMENT` (`2/4` or roman), `MOVEMENTNAME`, `MOVEMENTTOTAL` | `©mvi ©mvn ©mvc` |
 | Catalogue no. | `OPUS`, else parsed from the work title | `----:OPUS` |
@@ -51,3 +53,32 @@ Catalogue numbers recognised: Op., opus, BWV, K./KV, D., Hob., RV, HWV, WoO, TrV
 Composer → Works → Recordings → Movements; a recording is one release's tracks of a work, listed with conductor, ensemble and
 soloists, oldest first. Artists, conductors, ensembles and albums browse straight to tracks. Search is case- and diacritic-insensitive
 (`dvorak` finds Dvořák).
+
+## Credits: the focus page for a person
+
+Track ──< Credit >── Party is a plain many-to-many with a role (and an instrument for performers), so "where else did this person work?"
+is one query. Choosing a person (the **Credits** button on an artist page, **Show Credits** on a search result, or any name in an
+album's **Credits** list or another person's **Worked with** grid) opens their focus page:
+
+| Group | Roles |
+|---|---|
+| Artist | artist, album artist |
+| Session musician | performer, soloist, featured artist |
+| Producer | producer |
+| Engineer | engineer (recording, mixing, mastering) |
+| Writer & arranger | composer, lyricist, arranger |
+| Conductor & ensemble | conductor, ensemble |
+| Remixer | remixer |
+
+Each group lists the records, oldest first, with what the person did there ("drums", "Soloist (violin)", "Producer") and the tracks
+they are credited on; records where they were not the main artist (`otherRecords`) are what a session player's page is for. Beneath
+that, **Worked with** lists the people credited on the same tracks, most shared records first, with the roles they held.
+
+Cost: `LibraryStore.creditGraph(partyID:)` is one Track fetch (`SUBQUERY(credits, $c, $c.party.uid == %@).@count > 0`) with `credits`,
+`credits.party` and `release` prefetched, so a drummer on hundreds of records is one round trip, not one per record. It runs on a
+background task (`LibraryModel.openPerson`); a token discards a result the user has already navigated away from. Back/close steps
+through the people visited. `sharedCredits(a, b)` returns the records two people both worked on, and `people(search:)` lists everyone
+with a credit. All three are remote methods (`library.credits`, `library.sharedCredits`, `library.people`; see REMOTE-PROTOCOL.md).
+
+Credits are only as complete as the tags: the page shows what the files say, and a record missing `PERFORMER`, `PRODUCER` or
+`ENGINEER` tags simply has fewer entries. Tests: `credits.*` in the self-test suite, using a made-up studio scene.

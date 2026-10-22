@@ -53,9 +53,11 @@ struct RepeatButton: View {
 struct QueueButton: View {
     @EnvironmentObject var m: PlayerModel
     var size: CGFloat = 13
+    /// Glyph colour when the queue is closed: the theme's ink by default, white on the always-dark player bar and Now Playing.
+    var ink: Color? = nil
     var body: some View {
         Button { withAnimation(.smooth(duration: 0.28)) { m.showQueue.toggle() } } label: {
-            Image(systemName: "list.bullet").foregroundStyle(m.showQueue ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink))
+            Image(systemName: "list.bullet").foregroundStyle(m.showQueue ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(ink ?? Brand.ink))
         }
         .buttonStyle(IconButtonStyle()).help(m.showQueue ? "Hide the queue" : "Show the queue")
     }

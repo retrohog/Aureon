@@ -256,7 +256,8 @@ enum CloudImporter {
         }
         group.wait()
         if !sh.batch.isEmpty { let r = store.upsert(sh.batch); sh.report.added += r.added; sh.report.updated += r.updated }
-        if !cancelled() { sh.report.removed = store.removeTracks(under: CloudPath.scheme + pid, keeping: existing) }
+        // a bucket that lists as empty is more likely a wrong prefix or a failed listing than a deleted library: keep what we know about it
+        if !cancelled(), !objects.isEmpty { sh.report.removed = store.removeTracks(under: CloudPath.scheme + pid, keeping: existing) }
         return sh.report
     }
 }

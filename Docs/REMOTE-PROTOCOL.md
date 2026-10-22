@@ -43,6 +43,9 @@ with codes −32601 (unknown method), −32602 (invalid params), 401, 403 (path 
 | `library.tracks` | `releaseID?`, `workID?`, `partyID?`, `role?` | `[TrackDTO]` |
 | `library.recordings` | `workID` | `[RecordingGroupDTO]` (a work's tracks per release, with conductor / ensemble / soloists) |
 | `library.search` | `q` | `SearchResults` |
+| `library.people` | `search?`, `limit?` | `[PartyDTO]` (everyone with a credit, any role) |
+| `library.credits` | `partyID` | `CreditGraphDTO`: every record the person is credited on, by capacity, and who they worked with |
+| `library.sharedCredits` | `partyID`, `otherID` | `SharedCreditsDTO`: the records both worked on |
 | `library.changes` | `cursor`, `limit?` | `{revision, cursor, changes, more}` — see below |
 | `library.import` | `path` (inside the music folders) | counts |
 | `art.get` | `trackID` or `entryID`, `size?` (32…1024) | `{mime:"image/jpeg", base64}` or `null` |

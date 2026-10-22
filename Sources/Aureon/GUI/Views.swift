@@ -11,15 +11,19 @@ struct Card<Content: View>: View {
     var subtitle: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title.uppercased()).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.tertiary) }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 11) {
+                Capsule().fill(Brand.gradient).frame(width: 4, height: subtitle == nil ? 20 : 38).padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    if let subtitle, !subtitle.isEmpty { Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                }
             }
-            content
+            VStack(alignment: .leading, spacing: 11) { content }.font(.system(size: 13.5))
         }
-        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.09)))
+        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.ink.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.ink.opacity(0.07), lineWidth: 0.8))
     }
 }
 
@@ -33,7 +37,7 @@ struct Badge: View {
 
 struct Note: View {
     let text: String; var color: Color = .secondary
-    var body: some View { Text(text).font(.caption).foregroundStyle(color).fixedSize(horizontal: false, vertical: true) }
+    var body: some View { Text(text).font(.system(size: 12.5)).foregroundStyle(color).fixedSize(horizontal: false, vertical: true).lineSpacing(1.5) }
 }
 
 func formatRate(_ hz: Double) -> String { hz.truncatingRemainder(dividingBy: 1000) == 0 ? "\(Int(hz / 1000)) kHz" : String(format: "%.1f kHz", hz / 1000) }
@@ -79,6 +83,8 @@ struct SegmentedChoice<T: Hashable>: View {
     let items: [T]
     let label: (T) -> String
     var icon: ((T) -> String)? = nil
+    /// Keep every label on one line (shrinking it a little if it must): for narrow controls.
+    var singleLine = false
 
     var body: some View {
         HStack(spacing: 2) {
@@ -87,7 +93,7 @@ struct SegmentedChoice<T: Hashable>: View {
                 Button { selection = it } label: {
                     HStack(spacing: 4) {
                         if let icon { Image(systemName: icon(it)).font(.system(size: 11)) }
-                        Text(label(it)).font(.system(size: 12, weight: on ? .semibold : .regular)).lineLimit(2).multilineTextAlignment(.center)
+                        Text(label(it)).font(.system(size: 12, weight: on ? .semibold : .regular)).lineLimit(singleLine ? 1 : 2).minimumScaleFactor(singleLine ? 0.7 : 1).multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity, minHeight: 26).padding(.horizontal, 6)
                     .foregroundStyle(on ? Color.white : Color.primary.opacity(0.85))

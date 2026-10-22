@@ -64,12 +64,16 @@ final class LosslessFile: FrameSource {
 
     /// Keeps whatever the file reads from alive (a remote file's reader), released only after the file is disposed.
     private var owner: AnyObject?
+    /// The local file this decoder holds open, registered with `FileUse` so the tag editor leaves it alone.
+    private var usePath: String?
 
     convenience init(path: String) throws {
         var opened: ExtAudioFileRef?
         try check(ExtAudioFileOpenURL(URL(fileURLWithPath: path) as CFURL, &opened), "open \((path as NSString).lastPathComponent)")
         guard let opened else { throw AureonError.message("could not open \(path)") }
         try self.init(opened: opened, owner: nil)
+        usePath = path
+        FileUse.shared.opened(path)
     }
 
     /// Takes over an open ExtAudioFile (the remote-file path builds one on top of AudioFileOpenWithCallbacks).
@@ -114,7 +118,10 @@ final class LosslessFile: FrameSource {
                           sourceBits: bits, totalFrames: frames, codec: codec, transparent: !lossy)
     }
 
-    deinit { if let ref { ExtAudioFileDispose(ref) } }
+    deinit {
+        if let ref { ExtAudioFileDispose(ref) }
+        if let usePath { FileUse.shared.closed(usePath) }
+    }
 
     func seek(to frame: Int64) {
         if let ref { ExtAudioFileSeek(ref, max(0, min(frame, info.totalFrames))) }

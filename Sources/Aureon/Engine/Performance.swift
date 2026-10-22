@@ -13,12 +13,21 @@ struct PerformanceProfile: Codable, Equatable {
     var outFramesPerSecond: Double
     /// DSD input bits per second (all channels) through the multi-stage converter.
     var dsdBitsPerSecond: Double
+    /// DSD output bits per second (all channels) through the interpolation cascade and the 7th-order modulator; nil in a profile measured before
+    /// PCM-to-DSD output existed.
+    var modulatorBitsPerSecond: Double? = nil
 
     enum Tier: String, Codable { case high, medium, low }
 
     /// How many times faster than real time the machine runs the resampler at `rate`.
-    func resampleFactor(rate: Double, channels: Int) -> Double { outFramesPerSecond / max(1, rate * Double(max(1, channels)) / 2) }
+    /// `cost` is the filter's length relative to the standard one (`ResamplerConfig.costFactor`); a longer filter runs proportionally slower.
+    func resampleFactor(rate: Double, channels: Int, cost: Double = 1) -> Double { outFramesPerSecond / max(1, rate * Double(max(1, channels)) / 2 * max(0.1, cost)) }
     func dsdFactor(dsdRate: Double, channels: Int) -> Double { dsdBitsPerSecond / max(1, dsdRate * Double(max(1, channels))) }
+    /// How many times faster than real time this machine makes DSD of `dsdRate` from PCM (interpolation and noise shaping, not the resampler in front).
+    func modulatorFactor(dsdRate: Double, channels: Int) -> Double {
+        (modulatorBitsPerSecond ?? Self.assumedModulatorBitsPerSecond(architecture)) / max(1, dsdRate * Double(max(1, channels)))
+    }
+    static func assumedModulatorBitsPerSecond(_ architecture: String) -> Double { architecture == "arm64" ? 250_000_000 : 70_000_000 }
 
     /// Keep this much headroom: a stream that decodes at 2× real time never runs dry, even while the system is busy elsewhere.
     static let safetyFactor = 2.0
@@ -28,13 +37,14 @@ struct PerformanceProfile: Codable, Equatable {
         return f >= 4 ? .high : (f >= 2 ? .medium : .low)
     }
 
-    func canResample(to rate: Double, channels: Int) -> Bool { resampleFactor(rate: rate, channels: channels) >= Self.safetyFactor }
+    func canResample(to rate: Double, channels: Int, cost: Double = 1) -> Bool { resampleFactor(rate: rate, channels: channels, cost: cost) >= Self.safetyFactor }
+    func canModulate(dsdRate: Double, channels: Int) -> Bool { modulatorFactor(dsdRate: dsdRate, channels: channels) >= Self.safetyFactor }
     func canDecodeDSD(rate: Double, channels: Int) -> Bool { dsdFactor(dsdRate: rate, channels: channels) >= Self.safetyFactor }
 
     /// `rate`, or the highest rate below it (halving) that this machine can resample to with headroom.
-    func capped(_ rate: Double, channels: Int, floor: Double) -> Double {
+    func capped(_ rate: Double, channels: Int, floor: Double, cost: Double = 1) -> Double {
         var r = rate
-        while r > floor + 0.5 && !canResample(to: r, channels: channels) { r /= 2 }
+        while r > floor + 0.5 && !canResample(to: r, channels: channels, cost: cost) { r /= 2 }
         return max(r, floor)
     }
 
@@ -105,13 +115,15 @@ struct PerformanceProfile: Codable, Equatable {
             bitsPerSecond = Double(bytes * 8 * 2) / max(1e-6, CFAbsoluteTimeGetCurrent() - t0)
         }
         try? FileManager.default.removeItem(at: url)
+        // 3. PCM → DSD: 0.1 s of stereo DSD256 (interpolation cascade and 7th-order modulator, both channels in parallel)
+        let modulatorBits = PCMToDSDSource.benchmarkBitsPerSecond()
         #if arch(arm64)
         let arch = "arm64"
         #else
         let arch = "x86_64"
         #endif
         return PerformanceProfile(architecture: arch, model: brand.isEmpty ? arch : brand, cores: ProcessInfo.processInfo.activeProcessorCount,
-                                  memoryBytes: ProcessInfo.processInfo.physicalMemory, outFramesPerSecond: framesPerSecond, dsdBitsPerSecond: bitsPerSecond)
+                                  memoryBytes: ProcessInfo.processInfo.physicalMemory, outFramesPerSecond: framesPerSecond, dsdBitsPerSecond: bitsPerSecond, modulatorBitsPerSecond: modulatorBits)
     }
 
     /// What to assume before the measurement has finished (or when it failed): a cautious figure for each architecture.

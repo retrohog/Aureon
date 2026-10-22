@@ -9,7 +9,7 @@ import CoreData
 ///   Track >──< Genre
 ///   Change                                 append-only log (revision, kind, uid, op) so a remote client can sync deltas
 final class LibraryStore: @unchecked Sendable {
-    private let ctx: NSManagedObjectContext
+    let ctx: NSManagedObjectContext
     private var rev: Int64 = 0
     private var seqCounter: Int64 = 0       // unique, gap-free cursor over the change log (a batch shares one revision but every row has its own seq)
 
@@ -35,7 +35,11 @@ final class LibraryStore: @unchecked Sendable {
                                   ("fileSize", l, true), ("fileMTime", d, true), ("year", i, true), ("mbRecordingID", s, true), ("workInferred", bo, true), ("addedAt", d, true),
                                   ("liked", bo, true), ("likedAt", d, true), ("playCount", i, true), ("lastPlayedAt", d, true),
                                   ("lufs", d, true), ("truePeakDB", d, true), ("lra", d, true), ("drScore", d, true), ("loudnessAt", d, true)])
-        let release = ent("Release", [("uid", s, false), ("key", s, false), ("title", s, true), ("year", i, true), ("mbReleaseID", s, true), ("label", s, true), ("catalogNumber", s, true)])
+        let release = ent("Release", [("uid", s, false), ("key", s, false), ("title", s, true), ("year", i, true), ("mbReleaseID", s, true), ("label", s, true), ("catalogNumber", s, true),
+                                    // figures derived from the album's tracks, kept in step by `commit` so a page of albums is one flat query (see releaseFigures)
+                                    ("aggCount", i, true), ("aggArtists", s, true), ("aggGenre", s, true), ("aggMaxRate", d, true), ("aggMaxBits", i, true),
+                                    ("aggAdded", d, true), ("aggMTime", d, true), ("aggQuality", d, true), ("aggTier", i, true),
+                                    ("sortTitle", s, true), ("sortArtist", s, true), ("sortGenre", s, true)])
         let party = ent("Party", [("uid", s, false), ("key", s, false), ("name", s, false), ("sortName", s, true), ("kind", s, true), ("mbArtistID", s, true)])
         let credit = ent("Credit", [("role", s, false), ("instrument", s, true), ("order", i, true)])
         let work = ent("Work", [("uid", s, false), ("key", s, false), ("title", s, false), ("catalogNumber", s, true), ("musicalKey", s, true), ("mbWorkID", s, true)])
@@ -96,24 +100,28 @@ final class LibraryStore: @unchecked Sendable {
             .split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
-    private func str(_ o: NSManagedObject, _ k: String) -> String? { o.value(forKey: k) as? String }
-    private func int(_ o: NSManagedObject, _ k: String) -> Int? { (o.value(forKey: k) as? NSNumber).map(\.intValue) }
+    func str(_ o: NSManagedObject, _ k: String) -> String? { o.value(forKey: k) as? String }
+    func int(_ o: NSManagedObject, _ k: String) -> Int? { (o.value(forKey: k) as? NSNumber).map(\.intValue) }
     private func dbl(_ o: NSManagedObject, _ k: String) -> Double { (o.value(forKey: k) as? NSNumber)?.doubleValue ?? 0 }
     private func set(_ o: NSManagedObject, _ k: String, _ v: Any?) { o.setValue(v, forKey: k) }
-    private func many(_ o: NSManagedObject, _ k: String) -> [NSManagedObject] { Array((o.value(forKey: k) as? Set<NSManagedObject>) ?? []) }
+    func many(_ o: NSManagedObject, _ k: String) -> [NSManagedObject] { Array((o.value(forKey: k) as? Set<NSManagedObject>) ?? []) }
 
-    private func fetch(_ entity: String, _ predicate: NSPredicate? = nil, sort: [NSSortDescriptor] = [], limit: Int = 0) -> [NSManagedObject] {
+    func fetch(_ entity: String, _ predicate: NSPredicate? = nil, sort: [NSSortDescriptor] = [], limit: Int = 0) -> [NSManagedObject] {
         let r = NSFetchRequest<NSManagedObject>(entityName: entity)
         r.predicate = predicate; r.sortDescriptors = sort; r.fetchLimit = limit
         return (try? ctx.fetch(r)) ?? []
     }
-    private func one(_ entity: String, _ format: String, _ args: CVarArg...) -> NSManagedObject? {
+    func one(_ entity: String, _ format: String, _ args: CVarArg...) -> NSManagedObject? {
         fetch(entity, NSPredicate(format: format, argumentArray: args), limit: 1).first
     }
 
     // MARK: ingest
 
-    private struct Touched { var tracks = Set<String>(), releases = Set<String>(), parties = Set<String>(), works = Set<String>() }
+    private struct Touched {
+        var tracks = Set<String>(), releases = Set<String>(), parties = Set<String>(), works = Set<String>()
+        /// Albums whose figures need recomputing without being logged as changes (one that lost a track, for instance).
+        var aggregate = Set<String>()
+    }
 
     /// Inserts or updates tracks. All changes in one call share a single revision.
     @discardableResult
@@ -163,7 +171,8 @@ final class LibraryStore: @unchecked Sendable {
             set(cr, "track", t); set(cr, "party", party(c, &touched))
         }
 
-        // release
+        // release (the one the track leaves needs its figures refreshed too)
+        if let old = t.value(forKey: "release") as? NSManagedObject, let u = str(old, "uid") { touched.aggregate.insert(u) }
         if let rel = releaseObject(m, &touched) { set(t, "release", rel) } else { set(t, "release", nil) }
 
         // genres
@@ -220,7 +229,7 @@ final class LibraryStore: @unchecked Sendable {
     }
 
     private func commit(_ touched: Touched, deleted: [(kind: String, uid: String)]) {
-        guard !touched.tracks.isEmpty || !touched.releases.isEmpty || !touched.parties.isEmpty || !touched.works.isEmpty || !deleted.isEmpty else { return }
+        guard !touched.tracks.isEmpty || !touched.releases.isEmpty || !touched.parties.isEmpty || !touched.works.isEmpty || !touched.aggregate.isEmpty || !deleted.isEmpty else { return }
         rev += 1
         let now = Date().timeIntervalSince1970
         func log(_ kind: String, _ uid: String, _ op: String) {
@@ -233,6 +242,7 @@ final class LibraryStore: @unchecked Sendable {
         for u in touched.parties { log("party", u, "upsert") }
         for u in touched.works { log("work", u, "upsert") }
         for d in deleted { log(d.kind, d.uid, "delete") }
+        refreshFigures(touched.releases.union(touched.aggregate))
         try? ctx.save()
     }
 
@@ -243,14 +253,16 @@ final class LibraryStore: @unchecked Sendable {
     func removeTracks(under root: String, keeping existing: Set<String>) -> Int {
         ctx.performAndWait {
             var deleted: [(kind: String, uid: String)] = []
+            var touched = Touched()
             let prefix = root.hasSuffix("/") ? root : root + "/"
             for t in fetch("Track", NSPredicate(format: "path BEGINSWITH %@", prefix)) where !existing.contains(str(t, "path") ?? "") {
+                if let r = t.value(forKey: "release") as? NSManagedObject, let u = str(r, "uid") { touched.aggregate.insert(u) }
                 deleted.append(("track", str(t, "uid") ?? "")); ctx.delete(t)
             }
             guard !deleted.isEmpty else { return 0 }
             try? ctx.save()
             deleted += pruneOrphans()
-            commit(Touched(), deleted: deleted)
+            commit(touched, deleted: deleted)
             return deleted.filter { $0.kind == "track" }.count
         }
     }
@@ -294,7 +306,7 @@ final class LibraryStore: @unchecked Sendable {
                         lra: (t.value(forKey: "lra") as? NSNumber)?.doubleValue, dr: (t.value(forKey: "drScore") as? NSNumber)?.doubleValue)
     }
 
-    private func partyDTO(_ p: NSManagedObject, role: CreditRole? = nil) -> PartyDTO {
+    func partyDTO(_ p: NSManagedObject, role: CreditRole? = nil) -> PartyDTO {
         let credits = many(p, "credits").filter { role == nil || str($0, "role") == role!.rawValue || (role == .artist && (str($0, "role") == "featured" || str($0, "role") == "albumArtist")) }
         var count = Set(credits.compactMap { ($0.value(forKey: "track") as? NSManagedObject)?.objectID }).count
         if role == .composer { count = max(count, many(p, "composedWorks").reduce(0) { $0 + many($1, "tracks").count }) }
@@ -309,15 +321,60 @@ final class LibraryStore: @unchecked Sendable {
                        movementCount: many(w, "movements").count, trackCount: tracks.count, recordingCount: max(recordings.count, tracks.isEmpty ? 0 : 1))
     }
 
-    private func releaseDTO(_ r: NSManagedObject) -> ReleaseDTO {
-        let tracks = many(r, "tracks")
+    /// What an album's list entry shows, worked out from its tracks.
+    struct ReleaseFigures: Equatable {
+        var artists: [String] = []
+        var genre: String?
+        var count = 0
+        var maxRate: Double?
+        var maxBits: Int?
+        var added: Double?
+        var mtime: Double?
+    }
+
+    /// From the tracks themselves (visits every track, its credits and genres). Tracks are taken in album order so the artist line is stable.
+    private func releaseFigures(computing r: NSManagedObject) -> ReleaseFigures {
+        let tracks = many(r, "tracks").sorted { (int($0, "discNumber") ?? 1, int($0, "trackNumber") ?? 0, str($0, "path") ?? "") < (int($1, "discNumber") ?? 1, int($1, "trackNumber") ?? 0, str($1, "path") ?? "") }
         var seen = Set<String>(), artists: [String] = []
-        for t in tracks { for c in many(t, "credits") where str(c, "role") == "albumArtist" || str(c, "role") == "artist" {
-            if let n = (c.value(forKey: "party") as? NSManagedObject).flatMap({ str($0, "name") }), seen.insert(n).inserted { artists.append(n) } } }
+        for t in tracks {
+            for c in many(t, "credits").sorted(by: { (int($0, "order") ?? 0) < (int($1, "order") ?? 0) }) where str(c, "role") == "albumArtist" || str(c, "role") == "artist" {
+                if let n = (c.value(forKey: "party") as? NSManagedObject).flatMap({ str($0, "name") }), seen.insert(n).inserted { artists.append(n) }
+            }
+        }
         let genre = tracks.lazy.compactMap { self.many($0, "genres").compactMap { self.str($0, "name") }.sorted().first }.first
-        return ReleaseDTO(id: str(r, "uid") ?? "", title: str(r, "title") ?? "", year: int(r, "year"), trackCount: tracks.count, artistNames: Array(artists.prefix(4)), mbReleaseID: str(r, "mbReleaseID"),
-                          maxSampleRate: tracks.map { dbl($0, "sampleRate") }.max(), maxBitDepth: tracks.compactMap { int($0, "bitDepth") }.max(), genre: genre,
-                          addedAt: tracks.map { dbl($0, "addedAt") }.max())
+        return ReleaseFigures(artists: Array(artists.prefix(4)), genre: genre, count: tracks.count, maxRate: tracks.map { dbl($0, "sampleRate") }.max(),
+                              maxBits: tracks.compactMap { int($0, "bitDepth") }.max(), added: tracks.map { dbl($0, "addedAt") }.max(), mtime: tracks.map { dbl($0, "fileMTime") }.max())
+    }
+
+    /// The figures `commit` stored with the album; nil for an album written before they existed (the backfill fills those in).
+    private func storedFigures(_ r: NSManagedObject) -> ReleaseFigures? {
+        guard let n = int(r, "aggCount") else { return nil }
+        let joined = str(r, "aggArtists") ?? ""
+        return ReleaseFigures(artists: joined.isEmpty ? [] : joined.components(separatedBy: "\u{1F}"), genre: str(r, "aggGenre"), count: n,
+                              maxRate: (r.value(forKey: "aggMaxRate") as? NSNumber)?.doubleValue, maxBits: int(r, "aggMaxBits"),
+                              added: (r.value(forKey: "aggAdded") as? NSNumber)?.doubleValue, mtime: (r.value(forKey: "aggMTime") as? NSNumber)?.doubleValue)
+    }
+
+    private func writeFigures(_ r: NSManagedObject) {
+        let f = releaseFigures(computing: r)
+        let rate = f.maxRate ?? 0, bits = f.maxBits ?? 0
+        let hires = rate > 48_000 || bits > 16
+        set(r, "aggCount", f.count); set(r, "aggArtists", f.artists.joined(separator: "\u{1F}")); set(r, "aggGenre", f.genre)
+        set(r, "aggMaxRate", f.maxRate); set(r, "aggMaxBits", f.maxBits); set(r, "aggAdded", f.added); set(r, "aggMTime", f.mtime)
+        set(r, "aggQuality", rate * Double(bits)); set(r, "aggTier", bits == 1 ? 2 : (hires ? 1 : 0))
+        set(r, "sortTitle", Self.fold(str(r, "title") ?? "")); set(r, "sortArtist", Self.fold(f.artists.first ?? "")); set(r, "sortGenre", Self.fold(f.genre ?? "~"))
+    }
+
+    /// Recomputes the stored figures of the albums with these ids. Call inside performAndWait.
+    private func refreshFigures(_ uids: Set<String>) {
+        guard !uids.isEmpty else { return }
+        for r in fetch("Release", NSPredicate(format: "uid IN %@", uids)) where !r.isDeleted { writeFigures(r) }
+    }
+
+    private func releaseDTO(_ r: NSManagedObject) -> ReleaseDTO {
+        let f = storedFigures(r) ?? releaseFigures(computing: r)
+        return ReleaseDTO(id: str(r, "uid") ?? "", title: str(r, "title") ?? "", year: int(r, "year"), trackCount: f.count, artistNames: f.artists, mbReleaseID: str(r, "mbReleaseID"),
+                          maxSampleRate: f.maxRate, maxBitDepth: f.maxBits, genre: f.genre, addedAt: f.added, artStamp: f.mtime)
     }
 
     // MARK: queries
@@ -466,32 +523,30 @@ final class LibraryStore: @unchecked Sendable {
     static let audioExtensions: Set<String> = ["flac", "m4a", "alac", "wav", "aif", "aiff", "caf"]
 
     /// Scans `folder`, reading tags (never decoding audio) and updating the library. Unchanged files are skipped by mtime/size.
+    /// What the library already knows about the folder comes from one query, so rescanning an unchanged folder costs one stat per file and no database round trip.
     func importFolder(_ folder: URL, progress: ((Int, Int) -> Void)? = nil) -> ImportReport {
         var report = ImportReport()
         let fm = FileManager.default
         let folder = realPath(folder)                           // stored paths and the prune prefix must agree (/var → /private/var)
-        guard let e = fm.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { return report }
+        guard let e = fm.enumerator(at: folder, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey], options: [.skipsHiddenFiles]) else { return report }
         let files = (e.allObjects as? [URL] ?? []).filter { Self.audioExtensions.contains($0.pathExtension.lowercased()) }.sorted { $0.path < $1.path }
+        let known = knownFiles(under: folder.path)
         var batch: [(facts: FileFacts, tags: TrackMetadata)] = []
         var existing = Set<String>()
         for (i, url) in files.enumerated() {
             report.scanned += 1
             existing.insert(url.path)
-            let attrs = try? fm.attributesOfItem(atPath: url.path)
-            let mtime = (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0, size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            if let k = knownFile(url.path), k.mtime == mtime, k.size == size { report.skipped += 1; progress?(i + 1, files.count); continue }
-            do {
-                var facts = FileFacts(path: url.path, mtime: mtime, size: size)
-                if let f = try? LosslessFile(path: url.path) {
-                    facts.duration = f.info.duration; facts.sampleRate = f.info.sampleRate; facts.bitDepth = f.info.sourceBits; facts.channels = f.info.channels; facts.codec = f.info.codec
-                } else { throw AureonError.message("unreadable audio") }
-                batch.append((facts, TagInterpreter.interpret(TagReader.read(path: url.path), fileName: url.lastPathComponent)))
-            } catch { report.failed += 1; report.errors.append("\(url.lastPathComponent): \(error.localizedDescription)") }
+            let (mtime, size) = LibraryIngest.stamp(of: url)
+            if let k = known[url.path], k.mtime == mtime, k.size == size { report.skipped += 1; progress?(i + 1, files.count); continue }
+            do { batch.append(try LibraryIngest.record(url: url, mtime: mtime, size: size)) }
+            catch { report.failed += 1; report.errors.append("\(url.lastPathComponent): \(error.localizedDescription)") }
             if batch.count >= 200 { let r = upsert(batch); report.added += r.added; report.updated += r.updated; batch = [] }
             progress?(i + 1, files.count)
         }
         if !batch.isEmpty { let r = upsert(batch); report.added += r.added; report.updated += r.updated }
-        report.removed = removeTracks(under: folder.path, keeping: existing)
+        // a folder that lists as empty is more likely an unplugged drive than a deleted library: keep what we know about it
+        let looksOffline = files.isEmpty && ((try? fm.contentsOfDirectory(atPath: folder.path))?.isEmpty ?? true)
+        report.removed = looksOffline ? 0 : removeTracks(under: folder.path, keeping: existing)
         return report
     }
 }
@@ -687,6 +742,7 @@ extension LibraryStore {
                 folded += 1
             }
             guard folded > 0 else { return 0 }
+            for r in releases { if let u = str(r, "uid") { touched.aggregate.insert(u) } }          // their artist lines changed
             try? ctx.save()
             // releases keyed by album + album artist may now collide
             for r in releases where !r.isDeleted {
@@ -719,11 +775,15 @@ extension LibraryStore {
     func removeTracks(paths: [String]) -> Int {
         ctx.performAndWait {
             var deleted: [(kind: String, uid: String)] = []
-            for t in fetch("Track", NSPredicate(format: "path IN %@", paths)) { deleted.append(("track", str(t, "uid") ?? "")); ctx.delete(t) }
+            var touched = Touched()
+            for t in fetch("Track", NSPredicate(format: "path IN %@", paths)) {
+                if let r = t.value(forKey: "release") as? NSManagedObject, let u = str(r, "uid") { touched.aggregate.insert(u) }
+                deleted.append(("track", str(t, "uid") ?? "")); ctx.delete(t)
+            }
             guard !deleted.isEmpty else { return 0 }
             try? ctx.save()
             deleted += pruneOrphans()
-            commit(Touched(), deleted: deleted)
+            commit(touched, deleted: deleted)
             return deleted.filter { $0.kind == "track" }.count
         }
     }
@@ -761,6 +821,172 @@ extension LibraryStore {
         ctx.performAndWait {
             for t in fetch("Track", NSPredicate(format: "loudnessAt != nil")) { for k in ["lufs", "truePeakDB", "lra", "drScore", "loudnessAt"] { set(t, k, nil) } }
             try? ctx.save()
+        }
+    }
+}
+
+// MARK: - Query language, tag tree and re-reading edited files (see LibraryQuery, TagEditing)
+
+extension LibraryStore {
+    /// Tracks matching a query, in album order. The predicate runs in SQLite; nothing else of the library is loaded.
+    func tracks(matching q: LibraryQuery, limit: Int = 5000) -> [TrackDTO] {
+        let p = q.predicate
+        return ctx.performAndWait { fetch("Track", p, limit: limit).map(trackDTO).sorted(by: Self.trackOrder) }
+    }
+
+    func count(matching q: LibraryQuery) -> Int {
+        let p = q.predicate
+        return ctx.performAndWait { let r = NSFetchRequest<NSManagedObject>(entityName: "Track"); r.predicate = p; return (try? ctx.count(for: r)) ?? 0 }
+    }
+
+    /// Every genre that has tracks, with how many (counted from the relationship's object IDs, without loading the tracks).
+    func genreCounts() -> [(name: String, count: Int)] {
+        ctx.performAndWait {
+            fetch("Genre").compactMap { g -> (name: String, count: Int)? in
+                guard let n = str(g, "name") else { return nil }
+                let c = g.objectIDs(forRelationshipNamed: "tracks").count
+                return c > 0 ? (n, c) : nil
+            }
+        }
+    }
+
+    /// Stores `tags` as the library's view of the file at `path` (the tag editor's result), with the file's current size and date
+    /// so a later scan sees it as unchanged. Returns false when the audio cannot be read.
+    @discardableResult
+    func update(path given: String, tags: RawTags) -> Bool {
+        let path = libraryPath(given) ?? given                   // keep the spelling the library already uses (/var vs /private/var)
+        let fm = FileManager.default
+        let attrs = try? fm.attributesOfItem(atPath: path)
+        var facts = FileFacts(path: path, mtime: (attrs?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0, size: (attrs?[.size] as? NSNumber)?.int64Value ?? 0)
+        guard let f = try? LosslessFile(path: path) else { return false }
+        facts.duration = f.info.duration; facts.sampleRate = f.info.sampleRate; facts.bitDepth = f.info.sourceBits; facts.channels = f.info.channels; facts.codec = f.info.codec
+        upsert([(facts, TagInterpreter.interpret(tags, fileName: (path as NSString).lastPathComponent))])
+        return true
+    }
+
+    func contains(path: String) -> Bool { libraryPath(path) != nil }
+
+    /// The spelling under which the library stores `path`: as given, or resolved the way a folder import stores it.
+    private func libraryPath(_ path: String) -> String? {
+        if knownFile(path) != nil { return path }
+        let real = realPath(URL(fileURLWithPath: path)).path
+        return real != path && knownFile(real) != nil ? real : nil
+    }
+}
+
+
+// MARK: - Albums a page at a time, bulk file facts and the stored figures
+
+enum AlbumSortKey: String, Sendable { case title, artist, year, added, count, genre, quality }
+/// Resolution class of an album, as `ViewOptions` filters it: CD quality and below, Hi-Res PCM, DSD.
+enum AlbumTier: Int, Sendable { case cd = 0, hiRes = 1, dsd = 2 }
+
+struct AlbumQuery: Equatable, Sendable {
+    var search = ""
+    var sort: AlbumSortKey = .title
+    var ascending = true
+    var tier: AlbumTier?
+}
+
+extension LibraryStore {
+    private func albumRequest(_ q: AlbumQuery) -> NSFetchRequest<NSManagedObject> {
+        let r = NSFetchRequest<NSManagedObject>(entityName: "Release")
+        var preds: [NSPredicate] = []
+        let s = Self.fold(q.search)
+        if !s.isEmpty { preds.append(NSPredicate(format: "key CONTAINS %@", s)) }
+        if let t = q.tier { preds.append(NSPredicate(format: "aggTier == %d", t.rawValue)) }
+        r.predicate = preds.isEmpty ? nil : NSCompoundPredicate(andPredicateWithSubpredicates: preds)
+        let key: String
+        switch q.sort {
+        case .title: key = "sortTitle"; case .artist: key = "sortArtist"; case .year: key = "year"; case .added: key = "aggAdded"
+        case .count: key = "aggCount"; case .genre: key = "sortGenre"; case .quality: key = "aggQuality"
+        }
+        var order = [NSSortDescriptor(key: key, ascending: q.ascending)]
+        if q.sort != .title { order.append(NSSortDescriptor(key: "sortTitle", ascending: q.ascending)) }
+        order.append(NSSortDescriptor(key: "uid", ascending: q.ascending))
+        r.sortDescriptors = order
+        return r
+    }
+
+    /// One page of albums in the order the query asks for. The database sorts and filters; only these `limit` albums are turned into values.
+    func releasePage(_ q: AlbumQuery, offset: Int, limit: Int) -> [ReleaseDTO] {
+        ctx.performAndWait {
+            let r = albumRequest(q); r.fetchOffset = offset; r.fetchLimit = limit
+            return ((try? ctx.fetch(r)) ?? []).map(releaseDTO)
+        }
+    }
+
+    func releaseCount(_ q: AlbumQuery) -> Int {
+        ctx.performAndWait { (try? ctx.count(for: albumRequest(q))) ?? 0 }
+    }
+
+    func release(id: String) -> ReleaseDTO? { ctx.performAndWait { one("Release", "uid == %@", id).map(releaseDTO) } }
+
+    /// Albums that predate the stored figures.
+    func releasesWithoutFigures() -> Int {
+        ctx.performAndWait { let r = NSFetchRequest<NSManagedObject>(entityName: "Release"); r.predicate = NSPredicate(format: "aggCount == nil"); return (try? ctx.count(for: r)) ?? 0 }
+    }
+
+    /// Fills in the figures of albums written by an older version. Does nothing (one count) once every album has them.
+    @discardableResult
+    func backfillReleaseFigures(batch: Int = 300) -> Int {
+        var total = 0
+        while true {
+            let n: Int = ctx.performAndWait {
+                let rows = fetch("Release", NSPredicate(format: "aggCount == nil"), limit: batch)
+                guard !rows.isEmpty else { return 0 }
+                for r in rows { writeFigures(r) }
+                try? ctx.save()
+                ctx.refreshAllObjects()
+                return rows.count
+            }
+            if n == 0 { break }
+            total += n
+        }
+        return total
+    }
+
+    /// Test seam: forgets the stored figures, as in a library written before they existed.
+    func debugClearFigures() {
+        ctx.performAndWait {
+            for r in fetch("Release") { for k in ["aggCount", "aggArtists", "aggGenre", "aggMaxRate", "aggMaxBits", "aggAdded", "aggMTime", "aggQuality", "aggTier", "sortTitle", "sortArtist", "sortGenre"] { set(r, k, nil) } }
+            try? ctx.save()
+        }
+    }
+
+    /// Test seam: the figures worked out from the tracks, whatever is stored.
+    func computedFigures(releaseID: String) -> ReleaseFigures? { ctx.performAndWait { one("Release", "uid == %@", releaseID).map { releaseFigures(computing: $0) } } }
+    func storedFigures(releaseID: String) -> ReleaseFigures? { ctx.performAndWait { one("Release", "uid == %@", releaseID).flatMap { storedFigures($0) } } }
+
+    // MARK: what the library knows about files
+
+    /// Modification time and size of every file stored under `root`, in one query.
+    func knownFiles(under root: String) -> [String: (mtime: Double, size: Int64)] {
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        return knownFiles(NSPredicate(format: "path BEGINSWITH %@", prefix))
+    }
+
+    /// The same for particular files (those a filesystem event named).
+    func knownFiles(paths: [String]) -> [String: (mtime: Double, size: Int64)] {
+        var out: [String: (mtime: Double, size: Int64)] = [:]
+        var i = 0
+        while i < paths.count {
+            let chunk = Array(paths[i..<min(i + 400, paths.count)]); i += 400
+            out.merge(knownFiles(NSPredicate(format: "path IN %@", chunk))) { a, _ in a }
+        }
+        return out
+    }
+
+    private func knownFiles(_ predicate: NSPredicate) -> [String: (mtime: Double, size: Int64)] {
+        ctx.performAndWait {
+            let r = NSFetchRequest<NSDictionary>(entityName: "Track"); r.resultType = .dictionaryResultType
+            r.propertiesToFetch = ["path", "fileMTime", "fileSize"]; r.predicate = predicate
+            var out: [String: (mtime: Double, size: Int64)] = [:]
+            for d in (try? ctx.fetch(r)) ?? [] {
+                guard let p = d["path"] as? String else { continue }
+                out[p] = ((d["fileMTime"] as? NSNumber)?.doubleValue ?? 0, (d["fileSize"] as? NSNumber)?.int64Value ?? 0)
+            }
+            return out
         }
     }
 }

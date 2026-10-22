@@ -12,13 +12,15 @@ struct DJTrack: Equatable {
 /// Hot cues are remembered per track.
 enum HotCueStore {
     private static let key = "aureon.dj.hotcues"
+    static let count = 8
     private static var enabled: Bool { ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil && ProcessInfo.processInfo.environment["AUREON_TESTING"] == nil }
     static var overrideDefaults: UserDefaults?
     private static var defaults: UserDefaults { overrideDefaults ?? .standard }
 
     static func load(path: String) -> [Double?] {
-        guard enabled || overrideDefaults != nil, let d = defaults.dictionary(forKey: key) as? [String: [Double]], let v = d[path], v.count == 4 else { return Array(repeating: nil, count: 4) }
-        return v.map { $0 < 0 ? nil : $0 }
+        guard enabled || overrideDefaults != nil, let d = defaults.dictionary(forKey: key) as? [String: [Double]], let v = d[path], !v.isEmpty else { return Array(repeating: nil, count: count) }
+        let padded = v + Array(repeating: -1, count: max(0, count - v.count))          // cues saved when there were four pads
+        return padded.prefix(count).map { $0 < 0 ? nil : $0 }
     }
     static func save(path: String, cues: [Double?]) {
         guard enabled || overrideDefaults != nil else { return }
@@ -64,7 +66,7 @@ final class DJDeck: ObservableObject, Identifiable {
     @Published var fxParam = 0.5 { didSet { mix.params.fxParam.value = Float(fxParam) } }
     /// Pre-fader listen (headphone cue).
     @Published var pfl = false { didSet { mix.cue.value = pfl ? 1 : 0 } }
-    @Published private(set) var hotCues: [Double?] = Array(repeating: nil, count: 4)
+    @Published private(set) var hotCues: [Double?] = Array(repeating: nil, count: HotCueStore.count)
     @Published private(set) var loopIn: Double?
     @Published private(set) var loopOut: Double?
     @Published private(set) var loopActive = false
@@ -97,7 +99,37 @@ final class DJDeck: ObservableObject, Identifiable {
         onMix?()
     }
 
-    var bpm: Double? { analysis?.bpm }
+    /// Tempo as the track is used: the analysed one, halved or doubled when the analysis picked the wrong octave, or tapped in by hand.
+    var bpm: Double? { manualBPM ?? analysis?.bpm.map { $0 * bpmScale } }
+    @Published var manualBPM: Double? { didSet { refreshBPM() } }
+    @Published var bpmScale = 1.0 { didSet { refreshBPM() } }
+    private var taps: [Date] = []
+    private func refreshBPM() { mix.params.bpm.value = Float(effectiveBPM ?? 0) }
+
+    /// Tap the tempo: the average of the last few taps (a pause longer than two seconds starts over).
+    func tap(now: Date = Date()) {
+        if let last = taps.last, now.timeIntervalSince(last) > 2 { taps = [] }
+        taps.append(now); taps = Array(taps.suffix(8))
+        guard taps.count >= 3 else { return }
+        let gaps = zip(taps.dropFirst(), taps).map { $0.timeIntervalSince($1) }
+        let mean = gaps.reduce(0, +) / Double(gaps.count)
+        if mean > 0 { manualBPM = max(40, min(220, 60 / mean)) }
+    }
+    func resetBPM() { manualBPM = nil; bpmScale = 1; taps = [] }
+
+    /// How the crossfader treats this deck.
+    @Published var assign = CrossAssign.left { didSet { onMix?() } }
+    private var killed: [String: Double] = [:]
+
+    /// A kill switch: drops a band to nothing, and the next press puts it back where it was.
+    func toggleKill(_ band: String) {
+        func flip(_ v: Double, _ set: (Double) -> Void) {
+            if v <= DJMath.eqRange.lowerBound + 0.5 { set(killed[band] ?? 0); killed[band] = nil }       // already cut: put it back (flat if it was never moved)
+            else { killed[band] = v; set(DJMath.eqRange.lowerBound) }
+        }
+        switch band { case "low": flip(low) { low = $0 }; case "mid": flip(mid) { mid = $0 }; default: flip(high) { high = $0 } }
+    }
+    func isKilled(_ band: String) -> Bool { (band == "low" ? low : band == "mid" ? mid : high) <= DJMath.eqRange.lowerBound + 0.5 }
     var effectiveBPM: Double? { DJMath.effectiveBPM(bpm, pitch: pitch) }
     var isLoaded: Bool { track != nil }
     var key: MusicalKey? { analysis?.key }
@@ -137,8 +169,8 @@ final class DJDeck: ObservableObject, Identifiable {
     func setAnalysisForTests(_ a: DJTrackAnalysis) { analysis = a }
 
     func unload() {
-        analysisTask?.cancel(); player.stop(); clearLoop(); track = nil; analysis = nil; playing = false; position = 0; duration = 0; hotCues = Array(repeating: nil, count: 4)
-        mix.params.fxOn.value = 0; fxOn = false
+        analysisTask?.cancel(); player.stop(); clearLoop(); track = nil; analysis = nil; playing = false; position = 0; duration = 0; hotCues = Array(repeating: nil, count: HotCueStore.count)
+        mix.params.fxOn.value = 0; fxOn = false; manualBPM = nil; bpmScale = 1; taps = []
     }
 
     func play() {
@@ -165,7 +197,14 @@ final class DJDeck: ObservableObject, Identifiable {
     }
 
     /// Snaps a position to the nearest beat when quantize is on and the track has a beat grid.
-    func snapped(_ t: Double) -> Double { quantize ? (analysis?.nearestBeat(to: t).map { max(0, $0) } ?? t) : t }
+    func snapped(_ t: Double) -> Double { quantize ? (gridBeat(near: t).map { max(0, $0) } ?? t) : t }
+
+    /// The beat nearest to `t`, on the analysed grid (its first beat) at the tempo in use.
+    func gridBeat(near t: Double) -> Double? {
+        guard let bpm, bpm > 0, let fb = analysis?.firstBeat else { return analysis?.nearestBeat(to: t) }
+        let p = 60 / bpm
+        return fb + ((t - fb) / p).rounded() * p
+    }
 
     // MARK: hot cues
 
@@ -194,7 +233,7 @@ final class DJDeck: ObservableObject, Identifiable {
     func autoLoop(beats: Double, snap: Bool = false) {
         guard track != nil else { return }
         let len = beats * (beatLength ?? 0.5)
-        let a = snap ? (analysis?.nearestBeat(to: position).map { max(0, $0) } ?? position) : snapped(position)
+        let a = snap ? (gridBeat(near: position).map { max(0, $0) } ?? position) : snapped(position)
         loopIn = a; loopOut = min(duration, a + len); loopActive = true; applyLoop()
     }
     func toggleLoop() {
@@ -214,6 +253,52 @@ final class DJDeck: ObservableObject, Identifiable {
 
     /// A momentary nudge (like pushing the jog wheel): +1 = 4 % faster, -1 = 4 % slower, 0 releases.
     func bend(_ x: Double) { bending = x; control.bend = x * 0.04 }
+
+    // MARK: beat jump, loop roll, brake
+
+    /// Moves the playhead by whole beats (negative = back).
+    func beatJump(_ beats: Double) {
+        guard track != nil, let bl = beatLength else { return }
+        seek(to: position + beats * bl)
+    }
+
+    private var roll: (origin: Double, since: Date)?
+
+    /// A loop that lasts only while the pad is held: on release the track carries on from where it would have been had it not been looped.
+    func rollBegin(beats: Double) {
+        guard track != nil, roll == nil else { return }
+        roll = (position, Date())
+        let len = beats * (beatLength ?? 0.5)
+        loopIn = position; loopOut = min(duration, position + len); loopActive = true; applyLoop()
+    }
+    func rollEnd() {
+        guard let r = roll else { return }
+        roll = nil
+        clearLoop()
+        let speed = control.ratio * (1 + control.bend)
+        seek(to: r.origin + Date().timeIntervalSince(r.since) * speed)
+    }
+
+    private var braking: Task<Void, Never>?
+
+    /// Slows the deck to a stop, like pressing a turntable's brake, then pauses it and restores the speed.
+    func brake(seconds: Double = 0.9) {
+        guard playing, braking == nil else { return }
+        let start = control.ratio
+        braking = Task { [weak self] in
+            let steps = 30
+            for i in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(seconds / Double(steps) * 1e9))
+                guard let self, !Task.isCancelled else { return }
+                self.control.ratio = max(0.5, start * (1 - Double(i) / Double(steps)))
+            }
+            guard let self else { return }
+            self.pause()
+            self.control.ratio = 1 + self.pitch
+            self.braking = nil
+        }
+    }
+    func cancelBrake() { braking?.cancel(); braking = nil; control.ratio = 1 + pitch }
 
     /// Reads the engine's state (called ten times a second by the model).
     func refresh() {
@@ -241,6 +326,11 @@ final class DJDeck: ObservableObject, Identifiable {
     func shutdown() { analysisTask?.cancel(); player.stop() }
 }
 
+/// Which side of the crossfader a channel is on: left, right, or straight through (not affected by it).
+enum CrossAssign: String, CaseIterable, Identifiable { case left, thru, right
+    var id: String { rawValue }
+    var title: String { switch self { case .left: "A"; case .thru: "THRU"; case .right: "B" } } }
+
 enum CueRoute: Equatable {
     case none, channels34, device(AudioDeviceID)
 }
@@ -253,6 +343,8 @@ final class DJModel: ObservableObject {
     @Published var curve = CrossfaderCurve.smooth { didSet { applyMix() } }
     @Published private(set) var active = false
     @Published var quantize = true { didSet { decks.forEach { $0.quantize = quantize } } }
+    /// Which parts of the console are shown (see `DJLayout`).
+    @Published var layout = DJLayout.load() { didSet { if layout != oldValue { layout.save() } } }
 
     // master section
     @Published var masterLow = 0.0 { didSet { core.masterLow.value = Float(DJMath.eqGainDB(masterLow)) } }
@@ -290,6 +382,7 @@ final class DJModel: ObservableObject {
     let smart = SmartDJService()
 
     init() {
+        b.assign = .right
         a.onMix = { [weak self] in self?.applyMix() }
         b.onMix = { [weak self] in self?.applyMix() }
         applyMix()
@@ -299,10 +392,41 @@ final class DJModel: ObservableObject {
 
     /// Mixes the two decks' output levels: channel fader × crossfader.
     func applyMix() {
-        let g = curve.gains(crossfader), ga = g.a, gb = g.b
-        a.mix.gain.value = Float(DJMath.channelGain(a.channel) * ga)
-        b.mix.gain.value = Float(DJMath.channelGain(b.channel) * gb)
+        let g = curve.gains(crossfaderReverse ? -crossfader : crossfader)
+        func gain(_ d: DJDeck) -> Double { d.assign == .left ? g.a : d.assign == .right ? g.b : 1 }
+        a.mix.gain.value = Float(DJMath.channelGain(a.channel) * gain(a))
+        b.mix.gain.value = Float(DJMath.channelGain(b.channel) * gain(b))
     }
+
+    /// Flips the crossfader's direction (a "hamster" switch).
+    @Published var crossfaderReverse = false { didSet { applyMix() } }
+    @Published private(set) var autoMixProgress: Double?
+    private var autoMixTask: Task<Void, Never>?
+
+    /// Brings in the idle deck at the playing deck's tempo and slides the crossfader across over `seconds`; the old deck is stopped at the end.
+    func autoMix(seconds: Double) {
+        guard autoMixTask == nil else { return }
+        let toB = crossfader <= 0
+        let incoming = toB ? b : a, outgoing = toB ? a : b
+        guard incoming.isLoaded else { outputError = "Load a track on deck \(incoming.name) first"; return }
+        if incoming.bpm != nil, outgoing.bpm != nil { sync(incoming) }
+        if !incoming.playing { incoming.play() }
+        let from = crossfader, to = toB ? 1.0 : -1.0
+        autoMixTask = Task { [weak self] in
+            let steps = max(1, Int(seconds * 30))
+            for i in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(1e9 / 30))
+                guard let self, !Task.isCancelled else { return }
+                let t = Double(i) / Double(steps)
+                self.crossfader = from + (to - from) * (t * t * (3 - 2 * t))         // eases in and out
+                self.autoMixProgress = t
+            }
+            guard let self else { return }
+            outgoing.pause()
+            self.autoMixProgress = nil; self.autoMixTask = nil
+        }
+    }
+    func cancelAutoMix() { autoMixTask?.cancel(); autoMixTask = nil; autoMixProgress = nil }
 
     func enter(options: PlayerOptions, rate: Double) {
         guard !active else { return }

@@ -34,14 +34,16 @@ enum IRLoader {
         var pos = 12, fmtTag = 0, ch = 0, rate = 0, bits = 0, dataStart = 0, dataLen = 0
         while pos + 8 <= d.count {
             let id = String(decoding: d[pos..<(pos + 4)], as: UTF8.self), len = u32(pos + 4)
-            if id == "fmt " {
+            if id == "fmt ", pos + 24 <= d.count {
                 fmtTag = u16(pos + 8); ch = u16(pos + 10); rate = u32(pos + 12); bits = u16(pos + 22)
                 if fmtTag == 0xFFFE, len >= 26 { fmtTag = u16(pos + 32) }       // sub-format GUID starts with the real tag
             } else if id == "data" { dataStart = pos + 8; dataLen = min(len, d.count - dataStart); break }
             pos += 8 + len + (len & 1)
         }
         guard ch > 0, rate > 0, dataStart > 0 else { throw AureonError.message("incomplete WAV header") }
-        let bytes = bits / 8, frames = dataLen / (bytes * ch)
+        let bytes = bits / 8
+        guard bytes > 0 else { throw AureonError.message("unsupported WAV format (\(bits)-bit)") }
+        let frames = dataLen / (bytes * ch)
         guard frames > 0 else { throw AureonError.message("the impulse response is empty") }
         var out = [[Float]](repeating: [Float](repeating: 0, count: frames), count: min(ch, 2))
         for f in 0..<frames {

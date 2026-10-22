@@ -165,8 +165,15 @@ final class RemoteController: @unchecked Sendable {
             return try encode(library.tracks(releaseID: params.str("releaseID"), workID: params.str("workID"), partyID: params.str("partyID"), role: params.str("role").flatMap(CreditRole.init(rawValue:))))
         case "library.recordings": return try encode(library.recordings(workID: try require(params, "workID")))
         case "library.search": return try encode(library.search(try require(params, "q")))
+        case "library.people": return try encode(library.people(search: params.str("search"), limit: params["limit"] as? Int ?? 500))
+        case "library.credits":
+            guard let g = library.creditGraph(partyID: try require(params, "partyID")) else { throw RemoteError.invalidParams("no such person") }
+            return try encode(g)
+        case "library.sharedCredits":
+            guard let g = library.sharedCredits(try require(params, "partyID"), try require(params, "otherID")) else { throw RemoteError.invalidParams("no such person") }
+            return try encode(g)
         case "library.changes":
-            let cursor = Int64(params.num("cursor") ?? 0), limit = min(max(params["limit"] as? Int ?? 500, 1), 2000)
+            let cursor = Int64(exactly: (params.num("cursor") ?? 0).rounded()) ?? 0, limit = min(max(params["limit"] as? Int ?? 500, 1), 2000)
             let ch = library.changes(afterSeq: cursor, limit: limit)
             let last = ch.last?.seq ?? cursor
             return try encode(LibraryChangeSet(revision: library.revision, cursor: last, changes: ch, more: ch.count == limit && last < library.lastSeq))

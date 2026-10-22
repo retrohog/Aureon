@@ -19,7 +19,9 @@ struct WindowChrome: NSViewRepresentable {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.styleMask.insert(.fullSizeContentView)
-            w.isMovableByWindowBackground = true
+            // Not movable by its background: SwiftUI wraps every AppKit control (sliders, pop-up menus, check boxes) in a container that counts as
+            // background, so with this on, pressing on any of them started dragging the window instead of reaching the control. The title bar still drags.
+            w.isMovableByWindowBackground = false
             layoutButtons()
             for n in [NSWindow.didResizeNotification, NSWindow.didEndLiveResizeNotification, NSWindow.didBecomeKeyNotification, NSWindow.didExitFullScreenNotification, NSWindow.didChangeScreenNotification] {
                 observers.append(NotificationCenter.default.addObserver(forName: n, object: w, queue: .main) { [weak self] _ in self?.layoutButtons() })

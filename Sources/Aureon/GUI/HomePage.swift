@@ -5,16 +5,16 @@ struct HomePage: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var art: AlbumArt
     @EnvironmentObject var radio: RadioModel
+    @EnvironmentObject var stage: StageModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let l = m.library
         PageScaffold(title: "Home") {
             hero
             HStack(spacing: 14) {
-                PromoTile(title: "Radio", subtitle: "Free stations from around the world, upscaled automatically", symbol: "dot.radiowaves.left.and.right",
-                          colors: [Color(red: 0.98, green: 0.30, blue: 0.40), Color(red: 1.0, green: 0.55, blue: 0.32)]) { m.tab = .radio }
-                PromoTile(title: "Podcasts", subtitle: "Top shows, categories and every language", symbol: "mic.fill",
-                          colors: [Color(red: 0.55, green: 0.35, blue: 0.95), Color(red: 0.95, green: 0.40, blue: 0.75)]) { m.tab = .podcasts }
+                PromoTile(title: "Radio", subtitle: "Free stations from around the world, upscaled automatically", symbol: "dot.radiowaves.left.and.right", tint: Brand.accent) { m.tab = .radio }
+                PromoTile(title: "Podcasts", subtitle: "Top shows, categories and every language", symbol: "mic.fill", tint: Brand.accent2) { m.tab = .podcasts }
             }
             if !l.recentAlbums.isEmpty { rail("Recently added", l.recentAlbums, more: .albums) }
             if !l.hiResAlbums.isEmpty { rail("Hi-Res albums", l.hiResAlbums, more: .albums) }
@@ -30,53 +30,45 @@ struct HomePage: View {
 
     // MARK: hero
 
+    /// The hero is a pane of glass over the album-colour backdrop: the cover's colours reach it from behind, nothing is painted on it.
     @ViewBuilder private var hero: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         if let item = m.focusItem, let d = m.focusDisplay {
-            ZStack(alignment: .leading) {
-                heroBackground
-                HStack(spacing: 22) {
-                    CoverView(image: m.hero.image ?? item.thumb, palette: m.hero.palette, corner: 12, symbol: item.isStream ? "dot.radiowaves.left.and.right" : "music.note").frame(width: 172, height: 172)
-                        .shadow(color: .black.opacity(0.45), radius: 18, y: 8)
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(m.isActive ? (item.isStream ? "ON AIR" : "NOW PLAYING") : "CONTINUE LISTENING").microLabel().foregroundStyle(.white.opacity(0.7))
-                        Text(d.title).font(.system(size: 28, weight: .bold)).tracking(-0.5).foregroundStyle(.white).lineLimit(2)
-                        if !d.artist.isEmpty { Text(d.artist).font(.system(size: 16, weight: .medium)).foregroundStyle(.white.opacity(0.9)).lineLimit(1) }
-                        if !d.detail.isEmpty { Text(d.detail).font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.65)).lineLimit(1) }
-                        HStack(spacing: 8) {
-                            PillButton(title: m.isActive && m.status.state == .playing ? "Pause" : "Play", symbol: m.isActive && m.status.state == .playing ? "pause.fill" : "play.fill", filled: true) { m.togglePlay() }
-                            PillButton(title: "Now Playing", symbol: "waveform") { m.tab = .player }
-                        }.padding(.top, 10)
-                    }
-                    Spacer(minLength: 0)
-                }.padding(24)
+            HStack(spacing: 22) {
+                CoverView(image: m.hero.image ?? item.thumb, palette: m.hero.palette, corner: 12, symbol: item.isStream ? "dot.radiowaves.left.and.right" : "music.note").frame(width: 172, height: 172)
+                    .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(m.isActive ? (item.isStream ? "ON AIR" : "NOW PLAYING") : "CONTINUE LISTENING").microLabel().foregroundStyle(Brand.accent)
+                    Text(d.title).font(.system(size: 28, weight: .bold)).tracking(-0.5).lineLimit(2)
+                    if !d.artist.isEmpty { Text(d.artist).font(.system(size: 16, weight: .medium)).foregroundStyle(.secondary).lineLimit(1) }
+                    if !d.detail.isEmpty { Text(d.detail).font(.system(size: 12.5)).foregroundStyle(.tertiary).lineLimit(1) }
+                    HStack(spacing: 8) {
+                        PillButton(title: m.isActive && m.status.state == .playing ? "Pause" : "Play", symbol: m.isActive && m.status.state == .playing ? "pause.fill" : "play.fill", filled: true) { m.togglePlay() }
+                        PillButton(title: "Now Playing", symbol: "waveform") { stage.open(m, reduceMotion: reduceMotion) }
+                    }.padding(.top, 10)
+                }
+                Spacer(minLength: 0)
             }
-            .frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.1), lineWidth: 0.8))
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading).frame(height: 220)
+            .glassSurface(shape, tint: m.hero.palette.accent.color.opacity(0.07))
         } else {
             ZStack(alignment: .leading) {
-                LinearGradient(colors: [Brand.accent, Brand.accent2], startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: "waveform").font(.system(size: 220, weight: .ultraLight)).foregroundStyle(.white.opacity(0.12)).offset(x: 360, y: 10)
+                Image(systemName: "waveform").font(.system(size: 220, weight: .ultraLight)).foregroundStyle(Brand.accent.opacity(0.16)).offset(x: 360, y: 10)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("AUREON").microLabel().foregroundStyle(.white.opacity(0.8))
-                    Text("Listen without compromise.").font(.system(size: 32, weight: .bold)).tracking(-0.6).foregroundStyle(.white)
-                    Text("Bit-perfect playback, from your own library or from radio stations around the world.").font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
+                    Text("AUREON").microLabel().foregroundStyle(Brand.accent)
+                    Text("Listen without compromise.").font(.system(size: 32, weight: .bold)).tracking(-0.6)
+                    Text("Bit-perfect playback, from your own library or from radio stations around the world.").font(.system(size: 14)).foregroundStyle(.secondary)
                     HStack(spacing: 8) {
-                        Button { chooseFolder() } label: { Label("Add Music Folder", systemImage: "folder.badge.plus").font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 8).background(Capsule().fill(.white)).foregroundStyle(.black) }.buttonStyle(.plain)
-                        Button { m.tab = .radio } label: { Label("Browse Radio", systemImage: "dot.radiowaves.left.and.right").font(.system(size: 12.5, weight: .semibold)).padding(.horizontal, 14).padding(.vertical, 8).background(Capsule().fill(.black.opacity(0.25))).foregroundStyle(.white) }.buttonStyle(.plain)
+                        Button { chooseFolder() } label: { Label("Add Music Folder", systemImage: "folder.badge.plus").font(.system(size: 12.5, weight: .semibold)) }
+                            .buttonStyle(.borderedProminent).tint(Brand.accent).controlSize(.large)
+                        Button { m.tab = .radio } label: { Label("Browse Radio", systemImage: "dot.radiowaves.left.and.right").font(.system(size: 12.5, weight: .semibold)) }
+                            .buttonStyle(.bordered).controlSize(.large)
                     }.padding(.top, 8)
                 }.padding(28)
             }
-            .frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-    }
-
-    private var heroBackground: some View {
-        ZStack {
-            LinearGradient(colors: [m.hero.palette.grid[0].color, m.hero.palette.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing)
-            if let img = m.hero.image ?? m.focusItem?.thumb {
-                GeometryReader { g in Image(nsImage: img).resizable().scaledToFill().frame(width: g.size.width, height: g.size.height).clipped().blur(radius: 60).saturation(1.3).opacity(0.5) }
-            }
-            Color.black.opacity(0.25)
+            .frame(maxWidth: .infinity, alignment: .leading).frame(height: 220).clipShape(shape)
+            .glassSurface(shape)
         }
     }
 
@@ -102,32 +94,43 @@ struct HomePage: View {
     private func chooseFolder() {
         let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.allowsMultipleSelection = true
         p.message = "Choose the folder(s) that contain your music"
-        if p.runModal() == .OK { p.urls.forEach { m.library.addFolder($0) } }
+        DispatchQueue.main.async { if p.runModal() == .OK { p.urls.forEach { m.library.addFolder($0) } } }
     }
 }
 
+/// A door to another page, as a glass tile: the tint lives only in the symbol and a faint glow on hover.
 struct PromoTile: View {
     let title: String
     let subtitle: String
     let symbol: String
-    let colors: [Color]
+    var tint: Color = Brand.accent
     let action: () -> Void
     @StateObject private var hover = Box(false)
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
         Button(action: action) {
-            ZStack(alignment: .bottomLeading) {
-                LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-                Image(systemName: symbol).font(.system(size: 92, weight: .ultraLight)).foregroundStyle(.white.opacity(0.22)).offset(x: 150, y: -14).frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(spacing: 14) {
+                Image(systemName: symbol).font(.system(size: 21, weight: .medium)).symbolRenderingMode(.hierarchical).foregroundStyle(tint)
+                    .frame(width: 48, height: 48)
+                    .background(Circle().fill(tint.opacity(0.14)))
+                    .overlay(Circle().strokeBorder(tint.opacity(0.32), lineWidth: 0.8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 22, weight: .bold)).tracking(-0.3)
-                    Text(subtitle).font(.system(size: 12)).opacity(0.9).lineLimit(2)
-                }.foregroundStyle(.white).padding(16)
+                    Text(title).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(.tertiary).offset(x: hover.v ? 2 : 0)
             }
-            .frame(maxWidth: .infinity).frame(height: 112).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .scaleEffect(hover.v ? 1.015 : 1)
+            .padding(16)
+            .frame(maxWidth: .infinity).frame(height: 96)
+            .contentShape(shape)
+            .glassSurface(shape, tint: hover.v ? tint.opacity(0.07) : nil)
+            .shadow(color: tint.opacity(hover.v ? 0.2 : 0), radius: 16)
+            .scaleEffect(hover.v ? 1.01 : 1)
         }
         .buttonStyle(.plain).onHover { h in withAnimation(.easeOut(duration: 0.14)) { hover.v = h } }
+        .accessibilityLabel(title).accessibilityHint(subtitle)
     }
 }
 
@@ -140,7 +143,7 @@ struct SettingsPage: View {
     private struct Chip: Hashable, Identifiable { var id: String; var title: String; var icon: String }
     private var chips: [Chip] {
         SettingsSection.allCases.map { Chip(id: "s:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
-            + m.sidebar.hiddenTabs.filter { [.audio, .dsp, .deepDive, .rip, .convert, .cloud].contains($0) }.map { Chip(id: "p:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
+            + m.sidebar.hiddenTabs.filter { [.audio, .dsp, .deepDive, .rip, .convert, .cloud, .intelligence].contains($0) }.map { Chip(id: "p:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
     }
     private var selection: Binding<Chip> {
         Binding(get: {
@@ -160,6 +163,7 @@ struct SettingsPage: View {
                 case .audio: AudioTab()
                 case .dsp: DSPTab()
                 case .deepDive: DeepDiveTab()
+                case .intelligence: IntelligenceTab()
                 default:
                     Card(title: t.rawValue, subtitle: "Hidden from the sidebar") {
                         Button("Open \(t.rawValue)") { m.djMode = false; m.tab = t }
@@ -170,6 +174,7 @@ struct SettingsPage: View {
                 case .general: GeneralSettings()
                 case .sidebar: SidebarSettings()
                 case .connect: ConnectTab()
+                case .midi: MIDIPage()
                 case .system: DiagnosticsTab()
                 }
             }
@@ -192,7 +197,7 @@ struct GeneralSettings: View {
             Card(title: "Volume safety", subtitle: "Volume controls move only when you grab the knob; a click elsewhere nudges by a few per cent") {
                 HStack {
                     Text("Never go above").frame(width: 110, alignment: .leading)
-                    Slider(value: Binding(get: { Double(m.volumeLimit) }, set: { m.volumeLimit = Float($0) }), in: 0.2...1, step: 0.05)
+                    ValueSlider(value: Binding(get: { Double(m.volumeLimit) }, set: { m.volumeLimit = Float($0) }), in: 0.2...1, step: 0.05)
                     Text("\(Int(m.volumeLimit * 100))%").monospacedDigit().frame(width: 48, alignment: .trailing)
                 }
                 Note(text: m.volumeLimit < 1 ? "Aureon's volume controls stop at \(Int(m.volumeLimit * 100))% of the device volume." : "No ceiling. Consider setting one if you use headphones.")
@@ -200,6 +205,10 @@ struct GeneralSettings: View {
             Card(title: "Artwork", subtitle: "Covers come from the file's own tags first (FLAC pictures, ID3, ALAC covr)") {
                 Toggle("Look up missing covers and artist portraits online", isOn: $m.fetchMissingArt)
                 Note(text: "Only the artist and album names are sent — to the iTunes Search API, MusicBrainz / Cover Art Archive, Deezer and Wikipedia. Results are cached on this Mac.")
+            }
+            Card(title: "Lyrics", subtitle: "Lyrics come from an .lrc file next to the song and from the file's own tags first") {
+                LyricsSettingsToggle()
+                Note(text: "Only the song's title, artist, album and length are sent, to LRCLIB (lrclib.net). Results are cached on this Mac. Writing lyrics by listening to a song is a separate, on-device feature in Intelligence, and only happens when you say yes for that song.")
             }
             Card(title: "About", subtitle: "") {
                 HStack(spacing: 14) {

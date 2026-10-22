@@ -6,6 +6,11 @@ struct DiagnosticsTab: View {
     var body: some View {
         VStack(spacing: 18) {
             SystemCard(sys: m.system)
+            Card(title: "Freeze recorder", subtitle: "If the interface ever stops responding for about half a second, Aureon saves what it was doing") {
+                let n = StallMonitor.shared.files.count
+                Note(text: n == 0 ? "Nothing recorded so far." : "\(n) freeze\(n == 1 ? "" : "s") recorded. Send the newest file if one happens often.")
+                Button("Show the recordings") { try? FileManager.default.createDirectory(at: StallMonitor.folder, withIntermediateDirectories: true); NSWorkspace.shared.open(StallMonitor.folder) }
+            }
             Card(title: "Hardware path diagnostics", subtitle: "Verify exclusive access, integer-format negotiation and callback health on \(m.selectedDevice?.name ?? "the output device")") {
                 Note(text: "Always runs: device identification, formats and a silent timing test. The checks below change device state briefly and restore it. Playback is stopped first.")
                 Toggle("Exclusive access: acquire, refuse a competing process, release", isOn: $m.diagHog)

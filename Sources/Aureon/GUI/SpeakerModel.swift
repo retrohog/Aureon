@@ -42,6 +42,9 @@ final class SpeakerModel: ObservableObject {
                        set: { v in if let i = self.setup.members.firstIndex(where: { $0.uid == uid }) { self.setup.members[i] = v } })
     }
 
+    /// The volume of the main output changed: the others follow it.
+    func matchVolume(_ v: Float) { sink?.matchOthers(to: v) }
+
     func add(_ d: OutputDeviceInfo) {
         guard !d.uid.isEmpty, !setup.members.contains(where: { $0.uid == d.uid }) else { return }
         setup.members.append(SpeakerMember(uid: d.uid, name: d.name))
@@ -122,21 +125,21 @@ struct SpeakerSetupCard: View {
     var body: some View {
         Card(title: "Speaker setup", subtitle: "Use several outputs at once: the laptop's own speakers together with speakers on the headphone jack, a USB DAC or anything else") {
             Toggle("Play through more than one output", isOn: Binding(get: { sp.setup.enabled }, set: { on in
-                if on { m.refreshDevices(); sp.enable(primary: m.selectedDevice.flatMap { d in listOutputDevices().first { $0.id == d.id } }) } else { sp.setup.enabled = false }
+                if on { m.refreshDevices(); sp.enable(primary: m.devices.first { $0.id == m.deviceID }) } else { sp.setup.enabled = false }
             }))
             if sp.setup.enabled {
                 if sp.setup.members.count < 2 { Note(text: "Add at least one more output below. Until then the sound plays through the main output only.", color: .orange) }
                 ForEach(sp.setup.members) { mem in
-                    if let b = sp.member(mem.uid) { memberRow(b, isMain: listOutputDevices().first { $0.uid == mem.uid }?.id == m.deviceID) }
+                    if let b = sp.member(mem.uid) { memberRow(b, isMain: m.devices.first { $0.uid == mem.uid }?.id == m.deviceID) }
                 }
                 HStack(spacing: 10) {
                     AddSpeakerButton()
-                    Menu("Quick set-ups") { ForEach(SpeakerModel.Preset.allCases) { p in Button(p.rawValue) { sp.apply(p) } } }.fixedSize()
+                    QuickSetups()
                 }
                 if sp.setup.members.contains(where: { $0.role == .bass }) {
                     HStack {
                         Text("Crossover").frame(width: 110, alignment: .leading)
-                        Slider(value: $sp.setup.crossoverHz, in: 50...250, step: 5)
+                        ValueSlider(value: $sp.setup.crossoverHz, in: 50...250, step: 5)
                         Text("\(Int(sp.setup.crossoverHz)) Hz").monospacedDigit().frame(width: 60, alignment: .trailing)
                     }
                     Toggle("Keep the bass out of the other speakers", isOn: $sp.setup.bassManagement)
@@ -162,22 +165,39 @@ struct SpeakerSetupCard: View {
             Note(text: b.wrappedValue.role.blurb)
             HStack {
                 Text("Distance").frame(width: 90, alignment: .leading)
-                Slider(value: b.distanceM, in: 0...6, step: 0.1)
+                ValueSlider(value: b.distanceM, in: 0...6, step: 0.1)
                 Text(b.wrappedValue.distanceM == 0 ? "not set" : String(format: "%.1f m", b.wrappedValue.distanceM)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
             HStack {
                 Text("Extra delay").frame(width: 90, alignment: .leading)
-                Slider(value: b.extraDelayMs, in: 0...100, step: 0.5)
+                ValueSlider(value: b.extraDelayMs, in: 0...100, step: 0.5)
                 Text(String(format: "%.1f ms", b.wrappedValue.extraDelayMs)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
             HStack {
                 Text("Level").frame(width: 90, alignment: .leading)
-                Slider(value: b.trimDB, in: -12...6, step: 0.5)
+                ValueSlider(value: b.trimDB, in: -12...6, step: 0.5)
                 Text(String(format: "%+.1f dB", b.wrappedValue.trimDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.05)))
+    }
+}
+
+private struct QuickSetups: View {
+    @EnvironmentObject var sp: SpeakerModel
+    @StateObject private var openBox = Box(false)
+
+    var body: some View {
+        Button { openBox.v.toggle() } label: { Label("Quick set-ups", systemImage: "wand.and.stars") }
+            .popover(isPresented: Binding(get: { openBox.v }, set: { openBox.v = $0 }), arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(SpeakerModel.Preset.allCases) { p in
+                        Button { sp.apply(p); openBox.v = false } label: { HStack { Text(p.rawValue); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
+                    }
+                    Text("Roles are set by device name: the laptop's own speakers are recognised, everything else counts as external.").font(.caption2).foregroundStyle(.secondary).padding(8).frame(width: 250, alignment: .leading)
+                }.padding(8).frame(minWidth: 260)
+            }
     }
 }
 
@@ -189,7 +209,7 @@ private struct AddSpeakerButton: View {
     private var openBinding: Binding<Bool> { Binding(get: { openBox.v }, set: { openBox.v = $0 }) }
 
     var body: some View {
-        let free = listOutputDevices().filter { d in !d.uid.isEmpty && !sp.setup.members.contains { $0.uid == d.uid } }
+        let free = m.devices.filter { d in !d.uid.isEmpty && !sp.setup.members.contains { $0.uid == d.uid } }
         Button { m.refreshDevices(); open.toggle() } label: { Label("Add an output…", systemImage: "plus") }
             .popover(isPresented: openBinding, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -212,7 +232,7 @@ struct OutputSwitcher: View {
     private var openBinding: Binding<Bool> { Binding(get: { openBox.v }, set: { openBox.v = $0 }) }
 
     var body: some View {
-        let multi = sp.isActive(devices: listOutputDevices())
+        let multi = sp.isActive(devices: m.devices)
         Button { m.refreshDevices(); open.toggle() } label: {
             HStack(spacing: 9) {
                 Image(systemName: multi ? "hifispeaker.2.fill" : "hifispeaker").font(.system(size: 14)).frame(width: 20).foregroundStyle(Brand.accent)

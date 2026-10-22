@@ -7,6 +7,9 @@
 # when full Xcode with the Metal toolchain is installed; otherwise the app is built without it and Smart DJ falls back to plain ranking.
 #   SKIP_SMARTDJ=1  never build it       REBUILD_SMARTDJ=1  rebuild even if a build exists
 #
+# The lyrics speech model (Whisper) is another separate program (Packages/WhisperHelper, WhisperKit), built and embedded the same way.
+#   SKIP_WHISPER=1  never build it       REBUILD_WHISPER=1  rebuild even if a build exists
+#
 # --with-helper embeds the privileged quiet-mode helper (Contents/MacOS/AureonHelper) and its launchd plist
 #               (Contents/Library/LaunchDaemons/org.aureon.helper.plist) for SMAppService. macOS only lets a *signed* app register it:
 #               set CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)". Without it the bundle is ad-hoc signed.
@@ -51,6 +54,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
   <key>NSMicrophoneUsageDescription</key><string>Some Audio Unit plugins request audio input access.</string>
   <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, finds other Aureon servers, finds Chromecast, Sonos and DLNA speakers to play to, and syncs your library to the companion app.</string>
+  <key>NSDesktopFolderUsageDescription</key><string>Aureon reads and plays music that you keep in your Desktop folder.</string>
+  <key>NSDocumentsFolderUsageDescription</key><string>Aureon reads and plays music that you keep in your Documents folder.</string>
+  <key>NSDownloadsFolderUsageDescription</key><string>Aureon reads and plays music that you keep in your Downloads folder.</string>
+  <key>NSRemovableVolumesUsageDescription</key><string>Aureon plays music from your external drives and USB DACs.</string>
+  <key>NSNetworkVolumesUsageDescription</key><string>Aureon plays music from your network shares and NAS.</string>
   <key>NSBonjourServices</key><array><string>_aureon._tcp</string><string>_googlecast._tcp</string><string>_aureonsync._tcp</string><string>_aureonpair._tcp</string></array>
   <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>Audio</string>
@@ -100,6 +108,40 @@ if [ "${SKIP_SMARTDJ:-0}" != 1 ]; then
   fi
 fi
 
-codesign --force --deep -s "$IDENTITY" "$APP" 2>&1 | tail -1
+# Lyrics generation: the on-device speech model (Whisper via WhisperKit/CoreML), a separate program like the Smart DJ model.
+#   SKIP_WHISPER=1  never build it       REBUILD_WHISPER=1  rebuild even if a build exists
+WHISPER_SRC="Packages/WhisperHelper"
+WHISPER_OUT="$WHISPER_SRC/.build/xcode/Build/Products/Release"
+if [ "${SKIP_WHISPER:-0}" != 1 ]; then
+  if [ ! -x "$WHISPER_OUT/AureonWhisper" ] || [ "${REBUILD_WHISPER:-0}" = 1 ]; then
+    if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find xcodebuild >/dev/null 2>&1; then
+      echo "Building the lyrics speech-model helper (first time: a few minutes)…"
+      ( cd "$WHISPER_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonWhisper -configuration Release -destination 'platform=macOS' \
+          -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-whisper-build.log 2>&1 ) \
+        || echo "note: the lyrics helper did not build (see /tmp/aureon-whisper-build.log); lyrics from files and the internet still work."
+    else
+      echo "note: Xcode was not found, so generating lyrics with a speech model is not included."
+    fi
+  fi
+  if [ -x "$WHISPER_OUT/AureonWhisper" ]; then
+    H="$APP/Contents/Helpers/AureonWhisper"
+    mkdir -p "$H"
+    cp "$WHISPER_OUT/AureonWhisper" "$H/"
+    for b in "$WHISPER_OUT"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$H/"; done
+    echo "Lyrics speech-model helper included ($(du -sh "$H" | cut -f1))"
+  fi
+fi
+
+# Resource bundles inside the helpers are sealed first: codesign refuses to seal the app around nested code that is not signed.
+for b in "$APP"/Contents/Helpers/*/*.bundle; do [ -e "$b" ] && codesign --force -s "$IDENTITY" "$b" >/dev/null 2>&1; done
+
+if [ "$IDENTITY" = "-" ]; then
+  # An ad-hoc signature is identified by the hash of the binary, which changes with every build, so macOS forgets the folder and volume
+  # access you granted and asks again. Pinning the designated requirement to the bundle identifier keeps those grants across rebuilds.
+  codesign --force -s - -r='designated => identifier "org.aureon.player"' "$APP" 2>&1 | tail -1
+else
+  codesign --force --deep -s "$IDENTITY" "$APP" 2>&1 | tail -1
+fi
+codesign --verify --strict "$APP" 2>&1 | tail -2 || true
 echo "Installed: $APP$([ "$WITH_HELPER" = 1 ] && echo ' (with helper)')"
 if [ "$WITH_HELPER" = 1 ] && [ "$IDENTITY" = "-" ]; then echo "note: ad-hoc signed; macOS will not let you register the helper (set CODESIGN_IDENTITY)."; fi

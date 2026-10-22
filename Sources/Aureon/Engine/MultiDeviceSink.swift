@@ -209,6 +209,7 @@ final class MultiDeviceSink: AudioSink, @unchecked Sendable {
         var pull: UnsafeMutablePointer<Float>?
         var map: UnsafeMutablePointer<Int>?
         var primed = false
+        var originalVolume: Float?
         init(device: OutputDevice, member: SpeakerMember, ring: StereoRing?) { self.device = device; self.member = member; self.ring = ring; delay = StereoDelay(maxFrames: 96_000) }
     }
 
@@ -248,6 +249,17 @@ final class MultiDeviceSink: AudioSink, @unchecked Sendable {
         guard parts.count >= 2 else { return nil }
     }
 
+    /// The volume an output starts at when it joins: the main output's, or, when that is unknown, no more than a cautious level.
+    static func joiningVolume(current: Float?, main: Float?) -> Float? {
+        if let main { return min(1, max(0, main)) }
+        return current.map { min($0, 0.35) }
+    }
+
+    /// Keeps the other outputs at the main output's volume while it is changed.
+    func matchOthers(to volume: Float) {
+        for p in parts.dropFirst() { p.device.writeVolume(volume) }
+    }
+
     // MARK: configure / start
 
     func configure(for info: StreamInfo, options: PlayerOptions) -> SinkReport {
@@ -259,6 +271,13 @@ final class MultiDeviceSink: AudioSink, @unchecked Sendable {
         }
         lines.append("Speaker setup: " + parts.map { "\($0.device.name) as \($0.member.role.title.lowercased())" }.joined(separator: ", "))
         if !skipped.isEmpty { lines.append("Not connected, left out: " + skipped.joined(separator: ", ")) }
+        // an output that joins in must not come in at whatever level it was last left at: it takes the main output's volume before any sound reaches it
+        let main = primaryOutput.device.readVolume()
+        for p in parts.dropFirst() {
+            p.originalVolume = p.device.readVolume()
+            if let v = Self.joiningVolume(current: p.originalVolume, main: main) { p.device.writeVolume(v) }
+        }
+        lines.append(main != nil ? "Other outputs set to the main output's volume (\(Int((main ?? 0) * 100)) %)" : "The main output does not report a volume: the others were limited to a low level")
         publish(setup)
         return SinkReport(lines: lines, bitPerfect: false)
     }
@@ -384,7 +403,10 @@ final class MultiDeviceSink: AudioSink, @unchecked Sendable {
 
     func shutdown() {
         stop()
-        for p in parts.dropFirst() { p.device.restore() }
+        for p in parts.dropFirst() {
+            if let v = p.originalVolume { p.device.writeVolume(v) }
+            p.device.restore()
+        }
         primaryOutput.shutdown()
     }
 }

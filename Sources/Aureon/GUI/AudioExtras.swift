@@ -14,12 +14,12 @@ struct HeadphoneCard: View {
                 }.fixedSize()
                 HStack {
                     Text("Cut frequency").frame(width: 110, alignment: .leading)
-                    Slider(value: $m.settings.rt.crossfeed.cutoffHz, in: 300...2000, step: 10)
+                    ValueSlider(value: $m.settings.rt.crossfeed.cutoffHz, in: 300...2000, step: 10)
                     Text("\(Int(m.settings.rt.crossfeed.cutoffHz)) Hz").monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
                 HStack {
                     Text("Feed level").frame(width: 110, alignment: .leading)
-                    Slider(value: $m.settings.rt.crossfeed.feedDB, in: 1...15, step: 0.5)
+                    ValueSlider(value: $m.settings.rt.crossfeed.feedDB, in: 1...15, step: 0.5)
                     Text(String(format: "%.1f dB", m.settings.rt.crossfeed.feedDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
                 Note(text: "Feeds a low-passed copy of each channel to the other ear, like loudspeakers in a room. Stereo only.")
@@ -94,7 +94,7 @@ struct RoomCard: View {
             }
             HStack {
                 Text("Trim").frame(width: 110, alignment: .leading)
-                Slider(value: $m.settings.rt.convolution.gainDB, in: -18...6, step: 0.5)
+                ValueSlider(value: $m.settings.rt.convolution.gainDB, in: -18...6, step: 0.5)
                 Text(String(format: "%+.1f dB", m.settings.rt.convolution.gainDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
             Toggle("Lower the level if the correction would boost anywhere (prevents clipping)", isOn: $m.settings.rt.convolution.normalize)
@@ -120,7 +120,7 @@ struct SystemCard: View {
             Toggle("Allow the audio callback more of each IO cycle", isOn: $sys.useCycleUsage)
             if sys.useCycleUsage {
                 HStack {
-                    Slider(value: $sys.cycleUsage, in: 0.2...0.95, step: 0.05)
+                    ValueSlider(value: $sys.cycleUsage, in: 0.2...0.95, step: 0.05)
                     Text("\(Int(sys.cycleUsage * 100)) %").monospacedDigit().frame(width: 48, alignment: .trailing)
                 }
                 Note(text: "Helps with heavy processing such as long convolution. The system default is 50 %.")
@@ -130,7 +130,7 @@ struct SystemCard: View {
             if sys.quietMode {
                 HStack {
                     Text("Priority").frame(width: 70, alignment: .leading)
-                    Slider(value: $sys.nice, in: -20...(-1), step: 1)
+                    ValueSlider(value: $sys.nice, in: -20...(-1), step: 1)
                     Text("nice \(Int(sys.nice))").monospacedDigit().frame(width: 60, alignment: .trailing)
                 }
             }

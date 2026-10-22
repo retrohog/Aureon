@@ -49,6 +49,31 @@ A *group* is a run of tracks with the same output rate, channel count and DoP-ne
 with no gap; `Boundary` records map "frames consumed by the device" back to (track, position) exactly. At a format change
 the group drains, the sink reconfigures the device clock, and a new group starts.
 
+## Transitions (crossfade and smart)
+
+Off by default: songs chain gapless as above. With Audio → Transitions on, the engine thread blends the end of one track into the start
+of the next **before the ring**, so the render callback, `RingBuffer` and `RCUBox` are unchanged (`Pipeline/Transition.swift`):
+
+```
+outgoing chain ─┐
+                ├─► TransitionMixer ─► ring ─► Renderer ─► DAC
+incoming chain ─┘
+```
+
+* Near the end of a track the engine decides once (`TransitionPlanner`): the overlap length (the setting, at most 45 % of either track),
+  where it ends (trailing digital silence left out) and where the next track starts (leading silence skipped). In Smart mode a track that
+  fades out by itself keeps its fade and the next one comes in underneath it. The loudness handover starts the next track at the level the
+  current one ends at (BS.1770 loudness of its first 10 s and the last 6 s, the stretch a crossfade covers, after ReplayGain) and eases it to its own level, by at most −max / +max/2 dB.
+* `EdgeAnalyzer` decodes only the first and last 20 s of a file on a utility queue when it becomes upcoming; results are cached on disk
+  next to the loudness cache. A missing analysis never blocks playback: that transition simply uses the plain settings.
+* `TransitionMixer` sums both complete chains in Double with the chosen curve. A peak guard working one block ahead turns the mix down only
+  where it would exceed full scale, with gain ramps and no steps. All of its buffers are allocated when the overlap starts.
+* The overlap writes three `Boundary` records: the outgoing track's fading half, the incoming track from the midpoint (the title flips
+  there) and the incoming track after the overlap. The overlap is marked not transparent, so the signal path is orange only while it plays.
+* A queue edit that changes the next track while its overlap is still in the ring truncates at the overlap's start and writes the outgoing
+  tail again, unmixed; a seek rebuilds the heard track's chain rather than seeking inside a mixer.
+* Never blended, always gapless: DoP, internet radio, format changes, repeat-one, and songs from the same folder ("keep albums gapless").
+
 ## Live queue editing
 
 The queue is `[QueueEntry]` with stable UUIDs plus a version counter. The engine thread notices a new version and

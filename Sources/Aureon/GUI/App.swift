@@ -9,7 +9,7 @@ struct AureonApp: App {
         WindowGroup("Aureon") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 860, minHeight: 540)
+                .frame(minWidth: model.djMode ? 1280 : 860, minHeight: 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
                 .onOpenURL { model.add(urls: [$0], play: true) }
                 .onAppear { AppDelegate.model = model }
         }
@@ -49,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         MainActor.assumeIsolated { ScrollRouter.shared.install() }
+        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { StallMonitor.shared.start() }
         // earlier versions opened large; once per size policy, bring the window to a comfortable default (users can still resize it afterwards)
         let key = "aureon.windowPolicy", policy = 2
         if UserDefaults.standard.integer(forKey: key) < policy {
@@ -167,7 +168,7 @@ extension DemoData {
         // does SwiftUI's Slider sit on an NSSlider that the scroll router can find and drive?
         final class Probe: ObservableObject { @Published var v = 0.3 }
         let probe = Probe()
-        struct V: View { @ObservedObject var p: Probe; var body: some View { Slider(value: $p.v, in: 0...1).frame(width: 300).padding(20) } }
+        struct V: View { @ObservedObject var p: Probe; var body: some View { ValueSlider(value: $p.v, in: 0...1).frame(width: 300).padding(20) } }
         let host = NSHostingView(rootView: V(p: probe)); host.frame = NSRect(x: 0, y: 0, width: 340, height: 80)
         let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false); win.contentView = host
         host.layoutSubtreeIfNeeded(); RunLoop.current.run(until: Date().addingTimeInterval(0.3)); host.layoutSubtreeIfNeeded()
@@ -213,6 +214,8 @@ extension DemoData {
     if env["AUREON_DEMO_LIB"] != nil, let src = ProcessInfo.processInfo.arguments.dropFirst().last { DemoData.importDemoLibrary(of: src, into: model) }
     if env["AUREON_DEMO"] != nil { DemoData.populate(model) }
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
+    // the scrubber asks for its waveform when it appears, which an offscreen snapshot never does: ask up front (the first track runs first)
+    for it in model.items.reversed() where !it.isStream { WaveformStore.shared.request(it.path) }
     if env["AUREON_QUEUE"] != nil { model.showQueue = true }
     if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; if env["AUREON_AUTO"] != nil { model.dj.smart.enable() } } } }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
@@ -277,6 +280,141 @@ extension DemoData {
             let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             win.contentView = host; win.appearance = NSAppearance(named: model.theme.isLight ? .aqua : .darkAqua)
             host.layoutSubtreeIfNeeded()
+            if env["AUREON_BENCH_CLICK"] != nil {
+                // can a person still click things on the page after a song is playing? Real mouse events, sent to the window.
+                win.setFrameOrigin(NSPoint(x: -6000, y: -6000)); win.makeKeyAndOrderFront(nil)
+                func pump(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+                @MainActor func click(_ x: CGFloat, _ y: CGFloat) {
+                    let p = NSPoint(x: x, y: host.bounds.height - y)
+                    for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                        if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { win.sendEvent(e) }
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+                    }
+                }
+                @MainActor func probe(_ label: String) -> String {
+                    var hits = 0, tried = 0, tabs = Set<String>()
+                    for y in stride(from: 260, through: 700, by: 30) { for x in stride(from: 240, through: 1000, by: 40) {
+                        model.tab = .home; pump(0.05); let before = model.tab
+                        click(CGFloat(x), CGFloat(y)); tried += 1
+                        if model.tab != before { hits += 1; tabs.insert(model.tab.rawValue) }
+                    } }
+                    model.tab = .home; pump(0.1)
+                    return "\(label): \(hits) of \(tried) clicks navigated somewhere \(tabs.sorted())"
+                }
+                var report: [String] = []
+                pump(1.5)
+                report.append(probe("before playing"))
+                if let st = model.library.store, let f = st.releases(limit: 5).first { model.play(tracks: st.tracks(releaseID: f.id), at: 0) }
+                pump(3.0)
+                report.append(probe("while playing"))
+                FileHandle.standardError.write(Data((report.joined(separator: "\n") + "\n").utf8))
+                model.player.stop(); exit(0)
+            }
+            if env["AUREON_BENCH_HOME"] != nil {
+                RunLoop.current.run(until: Date().addingTimeInterval(1.0)); host.layoutSubtreeIfNeeded()
+                var last = CFAbsoluteTimeGetCurrent(), worst = 0.0, count = 0
+                let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in let now = CFAbsoluteTimeGetCurrent(); let late = now - last - 0.01; if late > 0.05 { count += 1 }; worst = max(worst, late); last = now }
+                func pump(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+                var report: [String] = []
+                pump(1.0); report.append(String(format: "home idle: worst stall %.0f ms", worst * 1000)); worst = 0
+                if let st = model.library.store, let f = st.releases(limit: 5).first { model.play(tracks: st.tracks(releaseID: f.id), at: 0) }
+                pump(6.0); report.append(String(format: "home while playing 6 s: worst stall %.0f ms, %d stalls over 50 ms", worst * 1000, count))
+                let t0 = CFAbsoluteTimeGetCurrent(); var n = 0
+                let sub = model.objectWillChange.sink { n += 1 }; pump(3); sub.cancel()
+                report.append("model publishes in 3 s of playback: \(n)")
+                _ = t0
+                timer.invalidate()
+                FileHandle.standardError.write(Data((report.joined(separator: "\n") + "\n").utf8))
+                model.player.stop(); exit(0)
+            }
+            if env["AUREON_BENCH_ALBUM"] != nil {
+                RunLoop.current.run(until: Date().addingTimeInterval(1.0)); host.layoutSubtreeIfNeeded()
+                var last = CFAbsoluteTimeGetCurrent(), worst = 0.0
+                let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in let now = CFAbsoluteTimeGetCurrent(); worst = max(worst, now - last - 0.01); last = now }
+                func pump(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+                var report: [String] = []
+                let albums = model.library.albums
+                report.append("albums: \(albums.count)")
+                for (i, a) in albums.prefix(5).enumerated() {
+                    worst = 0; model.library.selectedID = a.id; pump(0.6)
+                    report.append(String(format: "open album %d: worst stall %.0f ms", i, worst * 1000))
+                    worst = 0
+                    if let st = model.library.store { model.play(tracks: st.tracks(releaseID: a.id), at: 0) }
+                    pump(2.5)
+                    report.append(String(format: "play from album %d: worst stall %.0f ms", i, worst * 1000))
+                    worst = 0; model.player.send(.next); pump(1.5)
+                    report.append(String(format: "next track %d: worst stall %.0f ms", i, worst * 1000))
+                }
+                timer.invalidate()
+                FileHandle.standardError.write(Data((report.joined(separator: "\n") + "\n").utf8))
+                model.player.stop(); exit(0)
+            }
+            if env["AUREON_DUMP_CONTROLS"] != nil {
+                win.isMovableByWindowBackground = true
+                RunLoop.current.run(until: Date().addingTimeInterval(1.5)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                var lines: [String] = []
+                func walk(_ v: NSView) {
+                    if v is NSControl {
+                        let f = v.convert(v.bounds, to: host)
+                        let center = host.convert(NSPoint(x: f.midX, y: f.midY), to: host.superview)
+                        let hit = host.hitTest(NSPoint(x: f.midX, y: f.midY))
+                        lines.append("\(type(of: v)) frame=\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) canMoveWindow=\(v.mouseDownCanMoveWindow) enabled=\((v as? NSControl)?.isEnabled ?? false) hit=\(hit.map { String(describing: type(of: $0)) } ?? "nil") hitIsSelf=\(hit === v) hitCanMove=\(String(describing: hit?.mouseDownCanMoveWindow)) \(center.x > 0 ? "" : "")")
+                    }
+                    for c in v.subviews { walk(c) }
+                }
+                walk(host)
+                FileHandle.standardError.write(Data(("CONTROLS tab=\(model.tab)\n" + lines.joined(separator: "\n") + "\n").utf8))
+                model.player.stop(); exit(0)
+            }
+            if env["AUREON_DUMP_SCROLL"] != nil {
+                RunLoop.current.run(until: Date().addingTimeInterval(1.5)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                var lines: [String] = []
+                func walk(_ v: NSView, _ d: Int) {
+                    if let sv = v as? NSScrollView {
+                        let f = sv.convert(sv.bounds, to: host)
+                        lines.append("\(String(repeating: " ", count: d))NSScrollView \(type(of: sv)) frame=\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))x\(Int(f.height)) doc=\(Int(sv.documentView?.frame.width ?? 0))x\(Int(sv.documentView?.frame.height ?? 0)) hidden=\(sv.isHiddenOrHasHiddenAncestor) vert=\(sv.hasVerticalScroller) offY=\(Int(sv.contentView.bounds.minY))")
+                    }
+                    for c in v.subviews { walk(c, d + 1) }
+                }
+                walk(host, 0)
+                FileHandle.standardError.write(Data(("SCROLLVIEWS tab=\(model.tab) \n" + lines.joined(separator: "\n") + "\n").utf8))
+                model.player.stop(); exit(0)
+            }
+            if env["AUREON_BENCH_SONGS"] != nil, let src = files.first {
+                // a big Songs list, changing tracks the way a person does: how long is the interface unresponsive?
+                let n = Int(env["AUREON_BENCH_SONGS"] ?? "") ?? 4000
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent("aureon-bench-\(getpid())", isDirectory: true)
+                try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                for i in 0..<n { try? FileManager.default.linkItem(atPath: src, toPath: root.appendingPathComponent(String(format: "%05d Song.flac", i)).path) }
+                let rep = model.library.store?.importFolder(root)
+                FileHandle.standardError.write(Data("BENCH import: \(String(describing: rep)) stats \(String(describing: model.library.store?.stats()))\n".utf8))
+                model.library.category = .songs
+                model.library.refresh()
+                if let st = model.library.store { var all: [TrackDTO] = [], off = 0; while true { let page = st.allTracks(offset: off, limit: 2000); all += page; if page.count < 2000 { break }; off += 2000 }; model.library.songs = all }
+                model.tab = .songs
+                RunLoop.current.run(until: Date().addingTimeInterval(0.5)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                var last = CFAbsoluteTimeGetCurrent(), worst = 0.0, worstWhen = ""
+                var phase = "idle"
+                let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in
+                    let now = CFAbsoluteTimeGetCurrent(); let late = now - last - 0.01
+                    if late > worst { worst = late; worstWhen = phase }
+                    last = now
+                }
+                func pump(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+                var report: [String] = []
+                for round in 0..<6 {
+                    worst = 0
+                    phase = "play \(round)"
+                    let songs = model.library.songs
+                    guard songs.count > 10 else { break }
+                    model.play(tracks: songs, at: (round * 700 + 5) % songs.count)
+                    pump(2.5)
+                    report.append(String(format: "round %d: worst main-thread stall %.0f ms", round, worst * 1000))
+                }
+                timer.invalidate()
+                FileHandle.standardError.write(Data((["BENCH songs: \(model.library.songs.count) in the list"] + report).joined(separator: "\n").appending("\n").utf8))
+                model.player.stop(); exit(0)
+            }
             if env["AUREON_BENCH"] != nil {
                 // how long does it take to swap between two heavy pages? (layout + display, synchronous)
                 var times: [Double] = []
@@ -296,11 +434,21 @@ extension DemoData {
                     times[0], times.sorted()[times.count / 2], times.max() ?? 0, redraws, CFAbsoluteTimeGetCurrent() - c0).utf8))
                 model.player.stop(); exit(0)
             }
-            let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
-            host.cacheDisplay(in: host.bounds, to: rep)
-            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
-            model.player.stop()
-            exit(0)
+            func capture() {
+                let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                host.cacheDisplay(in: host.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+                model.player.stop()
+                exit(0)
+            }
+            if let secs = Double(env["AUREON_SNAPSHOT_LIVE"] ?? "") {
+                // a real, ordered-in (but far off-screen) window, captured after `secs` of the *main* run loop: Swift tasks (`.task`) only run there,
+                // not inside the nested run loops used above, which cannot drain the main queue
+                win.setFrameOrigin(NSPoint(x: -6000, y: -6000)); win.makeKeyAndOrderFront(nil)
+                DispatchQueue.main.asyncAfter(deadline: .now() + secs) { MainActor.assumeIsolated { host.layoutSubtreeIfNeeded(); host.displayIfNeeded(); capture() } }
+                return
+            }
+            capture()
         }
     }
     RunLoop.main.run()

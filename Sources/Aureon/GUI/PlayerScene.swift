@@ -5,12 +5,18 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @EnvironmentObject var m: PlayerModel
+    @EnvironmentObject var stage: StageModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("aureon.lyrics.show") private var lyricsShow = true
 
     var body: some View {
         GeometryReader { geo in
+            ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
+                    header.padding(.bottom, -8)
                     hero(width: geo.size.width - 56)
+                    LyricsSection(availableHeight: geo.size.height).id(Self.lyricsID)
                     if geo.size.width >= 940 {
                         // the signal path takes what it needs; the rest of the row is the queue
                         HStack(alignment: .top, spacing: 18) {
@@ -22,11 +28,55 @@ struct NowPlayingView: View {
                         UpNextPanel()
                     }
                     LiveVisualizerPanel()
+                    BookletSection()
                 }
-                .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 28)
+                .padding(.horizontal, 28).padding(.top, 10).padding(.bottom, 28)
+            }
+            // the lyrics lookup starts from the scroll view, which is always on screen (the lyrics panel is empty until it has something to show)
+            .task(id: LyricsDriver.trigger(for: m, show: lyricsShow)) { await LyricsDriver.ask(m, show: lyricsShow) }
+            // the Lyrics buttons ask for the panel; it may still be loading, so scroll once now and once it has laid out
+            .onChange(of: stage.lyricsPending) { _, pending in if pending { revealLyrics(proxy) } }
+            .task { if stage.lyricsPending { revealLyrics(proxy) } }
             }
         }
         .environment(\.colorScheme, .dark)
+    }
+
+    private static let lyricsID = "aureon.lyrics.section"
+
+    private func revealLyrics(_ proxy: ScrollViewProxy) {
+        stage.lyricsPending = false
+        withAnimation(.smooth(duration: 0.4)) { proxy.scrollTo(Self.lyricsID, anchor: .top) }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            withAnimation(.smooth(duration: 0.3)) { proxy.scrollTo(Self.lyricsID, anchor: .top) }
+        }
+    }
+
+    /// Close (back to the page it was opened from, the cover settling into the bar) and full window ⇄ beside the sidebar.
+    private var header: some View {
+        HStack(spacing: 6) {
+            // with the sidebar tucked away, the window's own buttons sit at the top left
+            if stage.immersive { Color.clear.frame(width: 62, height: 1) }
+            Button { stage.close(m, reduceMotion: reduceMotion) } label: {
+                Image(systemName: "chevron.down").font(.system(size: 13, weight: .semibold))
+            }
+            .keyboardShortcut(.escape, modifiers: [])
+            .help("Close Now Playing (Esc)")
+            .accessibilityLabel("Close Now Playing")
+            Spacer(minLength: 0)
+            LyricsButton(size: 12, shortcut: false)
+            Button { stage.toggleImmersive(reduceMotion: reduceMotion) } label: {
+                Image(systemName: stage.immersive ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right").font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
+            .help(stage.immersive ? "Show the sidebar (⇧⌘F)" : "Fill the window (⇧⌘F)")
+            .accessibilityLabel(stage.immersive ? "Show the sidebar" : "Fill the window")
+        }
+        .buttonStyle(IconButtonStyle())
+        .foregroundStyle(.white)
+        .frame(height: 32)
     }
 
     @ViewBuilder private func hero(width: CGFloat) -> some View {
@@ -34,15 +84,25 @@ struct NowPlayingView: View {
         let side = min(max(width * 0.40, 220), 340)
         if width >= 700 {
             HStack(alignment: .bottom, spacing: 34) {
-                CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note").frame(width: side, height: side)
-                    .shadow(color: .black.opacity(0.5), radius: 34, y: 18)
-                    .id(m.hero.token).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                // the frame is the one that morphs from the bar's cover; the picture inside cross-fades from song to song
+                ZStack {
+                    CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
+                        .id(m.hero.token).transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                .stageMatched(.cover)
+                .frame(width: side, height: side)
+                .shadow(color: .black.opacity(0.5), radius: 34, y: 18)
                 info(item).frame(maxWidth: .infinity, minHeight: side, alignment: .bottomLeading)
             }
         } else {
             VStack(spacing: 24) {
-                CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20).frame(width: min(side, 340), height: min(side, 340))
-                    .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
+                ZStack {
+                    CoverView(image: m.hero.image, palette: m.hero.palette, corner: 20, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
+                        .id(m.hero.token).transition(.opacity)
+                }
+                .stageMatched(.cover)
+                .frame(width: min(side, 340), height: min(side, 340))
+                .shadow(color: .black.opacity(0.5), radius: 30, y: 16)
                 info(item)
             }
         }
@@ -63,7 +123,7 @@ struct NowPlayingView: View {
             if let raw = m.status.sourceInfo, m.isActive {
                 FormatBadges(source: raw, output: m.status.info, bitrate: m.status.live?.bitrate).padding(.top, 14)
                 if let a = item?.analysis {
-                    HStack(spacing: 8) {
+                    WrapLayout(spacing: 8, lineSpacing: 8) {
                         HWBadge(text: "PEAK", detail: String(format: "%.1f dBFS", a.peakDB), tone: a.peakDB > -0.1 ? .orange : .neutral, lit: a.peakDB > -0.1)
                         HWBadge(text: "DR", detail: String(format: "%.0f", a.dynamicRange), tone: .neutral, lit: false)
                         if let l = a.lufs { HWBadge(text: "LUFS", detail: String(format: "%.1f", l), tone: .neutral, lit: false) }
@@ -96,30 +156,46 @@ struct NowPlayingView: View {
         return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
     }
 
+    /// The full row when there is room; narrower windows drop the 10-second skips and the divider, then shuffle and repeat, before anything is clipped.
     private var transport: some View {
+        ViewThatFits(in: .horizontal) {
+            transportRow(skips: true, modes: true)
+            transportRow(skips: false, modes: true)
+            transportRow(skips: false, modes: false)
+        }
+        .buttonStyle(TransportButtonStyle(size: 15))
+        .frame(maxWidth: .infinity)
+        .animation(.smooth(duration: 0.2), value: m.status.state)
+    }
+
+    private func transportRow(skips: Bool, modes: Bool) -> some View {
         HStack(spacing: 6) {
-            ShuffleButton(size: 14, tint: .white)
+            Group {
+            if modes { ShuffleButton(size: 14, tint: .white) }
             Button { m.player.send(.previous) } label: { Image(systemName: "backward.fill") }.keyboardShortcut(.leftArrow, modifiers: .command).help("Previous")
-            Button { m.player.send(.seekBy(-10)) } label: { Image(systemName: "gobackward.10") }.keyboardShortcut(.leftArrow, modifiers: []).help("Back 10 s")
-                .disabled(m.status.sourceInfo?.isLive == true)
+            if skips {
+                Button { m.player.send(.seekBy(-10)) } label: { Image(systemName: "gobackward.10") }.keyboardShortcut(.leftArrow, modifiers: []).help("Back 10 s")
+                    .disabled(m.status.sourceInfo?.isLive == true)
+            }
             Button { m.togglePlay() } label: {
                 Image(systemName: m.isActive && m.status.state == .playing ? "pause.fill" : "play.fill")
                     .contentTransition(.symbolEffect(.replace)).font(.system(size: 22))
             }
             .buttonStyle(PlayButtonStyle(tint: m.hero.palette.accent.color)).keyboardShortcut(.space, modifiers: []).help("Play / pause")
-            Button { m.player.send(.seekBy(10)) } label: { Image(systemName: "goforward.10") }.keyboardShortcut(.rightArrow, modifiers: []).help("Forward 10 s")
-                .disabled(m.status.sourceInfo?.isLive == true)
+            if skips {
+                Button { m.player.send(.seekBy(10)) } label: { Image(systemName: "goforward.10") }.keyboardShortcut(.rightArrow, modifiers: []).help("Forward 10 s")
+                    .disabled(m.status.sourceInfo?.isLive == true)
+            }
             Button { m.player.send(.next) } label: { Image(systemName: "forward.fill") }.keyboardShortcut(.rightArrow, modifiers: .command).help("Next")
-            RepeatButton(size: 14, tint: .white)
-            Divider().frame(height: 18).overlay(.white.opacity(0.2))
+            if modes { RepeatButton(size: 14, tint: .white) }
+            }
+            .disabled(m.items.isEmpty)
+            if skips { Divider().frame(height: 18).overlay(.white.opacity(0.2)) }
             HeartButton(path: m.focusItem.flatMap { $0.isStream ? nil : $0.path }, size: 15, ink: .white)
             AddToPlaylistButton(path: m.focusItem.flatMap { $0.isStream ? nil : $0.path }, size: 15, ink: .white)
-            QueueButton()
+            QueueButton(ink: .white)
         }
-        .buttonStyle(TransportButtonStyle(size: 15))
-        .disabled(m.items.isEmpty)
         .frame(maxWidth: .infinity)
-        .animation(.smooth(duration: 0.2), value: m.status.state)
     }
 
     private var volume: some View {
@@ -190,7 +266,7 @@ struct UpNextRow: View {
     }
 }
 
-/// The big scrubber of the Now Playing page. Only this view observes the playhead.
+/// The big waveform scrubber of the Now Playing page, with elapsed and remaining time. Only this view observes the playhead.
 struct NowPlayingScrubber: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var progress: ProgressModel
@@ -199,10 +275,9 @@ struct NowPlayingScrubber: View {
     var body: some View {
         let live = m.status.sourceInfo?.isLive == true && m.isActive
         let dur = max(progress.duration, 0.001), pos = m.scrub ?? progress.position
-        VStack(spacing: 2) {
-            FluidSlider(value: Binding(get: { m.scrub ?? progress.position }, set: { m.scrub = $0 }), range: 0...dur, tint: tint, enabled: m.isActive && !live, bubble: { clock($0) }, scrollStep: 5) { editing in
-                if !editing, let t = m.scrub { m.player.send(.seekTo(t)); m.scrub = nil }
-            }
+        VStack(spacing: 6) {
+            WaveformScrubber(style: .stage, tint: tint)
+                .stageMatched(.waveform)
             HStack {
                 Text(live ? "LIVE" : clock(pos)).foregroundStyle(live ? Brand.pink : .white.opacity(0.55)); Spacer(); Text(live ? "" : "-" + clock(max(0, dur - pos))).foregroundStyle(.white.opacity(0.55))
             }.font(.system(size: 11, weight: .medium, design: .monospaced)).monospacedDigit()
@@ -256,7 +331,7 @@ struct LiveVisualizerPanel: View {
                 }
             }
             if m.visualizerEnabled {
-                TimelineView(.animation(minimumInterval: 1.0 / 60)) { _ in
+                TimelineView(.animation(minimumInterval: UIRate.analyserInterval)) { _ in
                     Group {
                         switch mode.v {
                         case 0: SpectrumCanvas(analysis: m.player.analysis).frame(height: 150)

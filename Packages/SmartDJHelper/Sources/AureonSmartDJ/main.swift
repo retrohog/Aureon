@@ -8,7 +8,7 @@ import Tokenizers
 
 // AureonSmartDJ: a tiny language-model server on stdin/stdout, one JSON object per line.
 //
-//   → {"op":"load","model":"mlx-community/Qwen2.5-0.5B-Instruct-4bit"}
+//   → {"op":"load","model":"mlx-community/Qwen2.5-0.5B-Instruct-4bit"}   (or an absolute path to a local MLX model folder)
 //   ← {"event":"progress","fraction":0.4,"message":"Downloading the model"}      (zero or more)
 //   ← {"event":"loaded","seconds":1.8}                                            or {"event":"error","message":"…"}
 //   → {"op":"generate","id":7,"system":"…","user":"…","schema":{…JSON schema…},"maxTokens":200}
@@ -33,7 +33,10 @@ final class Server: @unchecked Sendable {
         do {
             send(["event": "progress", "fraction": 0.0, "message": "Preparing the model"])
             let last = LastFraction()
-            let c = try await #huggingFaceLoadModelContainer(configuration: ModelConfiguration(id: model)) { progress in
+            // an absolute path is a model folder the user loaded on the Intelligence page (checked there against the size cap); anything
+            // else is a Hugging Face model id, downloaded once and cached
+            let configuration = model.hasPrefix("/") ? ModelConfiguration(directory: URL(fileURLWithPath: model, isDirectory: true)) : ModelConfiguration(id: model)
+            let c = try await #huggingFaceLoadModelContainer(configuration: configuration) { progress in
                 let f = progress.fractionCompleted
                 if last.shouldReport(f) { send(["event": "progress", "fraction": f, "message": f < 1 ? "Downloading the model" : "Loading the model"]) }
             }

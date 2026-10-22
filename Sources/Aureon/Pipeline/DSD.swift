@@ -19,8 +19,9 @@ struct DSDSettings: Equatable, Codable {
 }
 
 func dsdRateName(_ rate: Double) -> String {
-    let base = 44_100.0
-    let k = Int((rate / base).rounded())
+    // the 44.1 kHz family (DSD64 = 2.8224 MHz) or the 48 kHz family (3.072 MHz)
+    let k44 = Int((rate / 44_100).rounded()), k48 = Int((rate / 48_000).rounded())
+    let k = abs(rate - Double(k48) * 48_000) < abs(rate - Double(k44) * 44_100) ? k48 : k44
     return k >= 64 ? "DSD\(k)" : "DSD"
 }
 

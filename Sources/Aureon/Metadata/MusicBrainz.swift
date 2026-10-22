@@ -148,7 +148,7 @@ final class MusicBrainzClient: @unchecked Sendable {
     func request(_ path: String, _ query: [String: String]) async throws -> Data { try await get(path, query) }
 
     private func get(_ path: String, _ query: [String: String]) async throws -> Data {
-        var c = URLComponents(string: Self.base + path)!
+        guard var c = URLComponents(string: Self.base + path) else { throw NetworkError.badResponse("invalid MusicBrainz request") }
         c.queryItems = (query.merging(["fmt": "json"]) { a, _ in a }).sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var req = URLRequest(url: c.url!); req.setValue(identity.userAgent, forHTTPHeaderField: "User-Agent"); req.setValue("application/json", forHTTPHeaderField: "Accept")
         for attempt in 0..<3 {

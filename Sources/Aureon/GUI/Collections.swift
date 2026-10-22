@@ -125,6 +125,9 @@ struct TrackMenu: View {
             Divider()
             Button("Add to Queue") { m.library.onAdd?(tracks, false) }
             Button("Play Next") { m.playNext(tracks) }
+            Divider()
+            Button("Edit Tags…") { TagEditorWindow.open(paths: tracks.map(\.path), model: m) }
+                .disabled(!tracks.contains { TagEditing.isEditable($0.path) })
             if let pid = playlistID {
                 Divider()
                 if tracks.count == 1 { Button("Move Up") { c.move(first, in: pid, by: -1) }; Button("Move Down") { c.move(first, in: pid, by: 1) } }
@@ -163,6 +166,7 @@ struct LikedPage: View {
 struct PlaylistsPage: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var c: CollectionsModel
+    @StateObject private var describe = Box(false)
 
     var body: some View {
         if let id = c.selected, let p = c.playlists.first(where: { $0.id == id }) { PlaylistDetail(playlist: p) }
@@ -171,6 +175,7 @@ struct PlaylistsPage: View {
 
     private var list: some View {
         PageScaffold(title: "Playlists", subtitle: "\(c.playlists.count)", trailing: {
+            PillButton(title: "Describe a Playlist", symbol: "text.badge.plus") { describe.v = true }
             PillButton(title: "New Playlist", symbol: "plus", filled: true) { newPlaylist() }
         }) {
             if c.playlists.isEmpty {
@@ -184,6 +189,9 @@ struct PlaylistsPage: View {
             }
         }
         .onAppear { c.refresh() }
+        .sheet(isPresented: $describe.v) {
+            NaturalPlaylistSheet(ai: IntelligenceCenter.shared, service: IntelligenceCenter.shared.playlists).environmentObject(m).environmentObject(c)
+        }
     }
 
     private func newPlaylist() {

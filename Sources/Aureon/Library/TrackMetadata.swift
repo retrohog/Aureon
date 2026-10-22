@@ -154,7 +154,7 @@ enum TagInterpreter {
         if a.contains("lyric") { return (.lyricist, nil) }
         if a.contains("arrang") { return (.arranger, nil) }
         if a.contains("produc") { return (.producer, nil) }
-        if a.contains("engineer") || a.contains("mix") { return (.engineer, nil) }
+        if a.contains("engineer") || a.contains("mix") || a.contains("mastering") { return (.engineer, nil) }
         return (.performer, annotation.trimmingCharacters(in: .whitespaces))
     }
 
@@ -224,8 +224,8 @@ enum TagInterpreter {
         m.credits += credits(.ensemble, names: list(t, "ENSEMBLE", "ORCHESTRA", "CHOIR"))
         m.credits += credits(.lyricist, names: list(t, "LYRICIST", "LYRICIST"))
         m.credits += credits(.arranger, names: list(t, "ARRANGER"))
-        m.credits += credits(.producer, names: list(t, "PRODUCER"))
-        m.credits += credits(.engineer, names: list(t, "ENGINEER", "MIXER"))
+        m.credits += credits(.producer, names: list(t, "PRODUCER", "COPRODUCER", "EXECUTIVEPRODUCER"))
+        m.credits += credits(.engineer, names: list(t, "ENGINEER", "MIXER", "MIXENGINEER", "RECORDINGENGINEER", "MASTERINGENGINEER"))
         m.credits += credits(.remixer, names: list(t, "REMIXER"))
         for p in t.all("PERFORMER") + t.all("SOLOIST", "SOLOISTS") {
             for piece in p.contains("(") ? [p] : splitMultiple(p) {
