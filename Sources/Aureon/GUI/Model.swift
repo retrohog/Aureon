@@ -142,12 +142,12 @@ final class PlayerModel: ObservableObject {
     @Published var themeFamily = "aureon" { didSet { if themeFamily != oldValue { resolveTheme() } } }
     @Published var appearance = AppearanceMode.dark { didSet { if appearance != oldValue { resolveTheme() } } }
 
-    private func resolveTheme() {
+    private func resolveTheme(persist: Bool = true) {
         let systemLight = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
         let light = appearance == .light || (appearance == .system && systemLight)
-        theme = Theme.resolve(family: themeFamily, light: light)
+        theme = themeFamily == "album" ? Theme.album(from: hero.palette, light: light) : Theme.resolve(family: themeFamily, light: light)
         Theme.current = theme
-        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(themeFamily, forKey: "aureon.themeFamily"); defaults.set(appearance.rawValue, forKey: "aureon.appearance") }
+        if persist, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(themeFamily, forKey: "aureon.themeFamily"); defaults.set(appearance.rawValue, forKey: "aureon.appearance") }
     }
     let navigator = Navigator()
     let radio = RadioModel()
@@ -165,6 +165,10 @@ final class PlayerModel: ObservableObject {
     @Published var shuffle = ShuffleMode.off { didSet { if shuffle != oldValue { applyShuffle(from: oldValue); defaults.set(shuffle.rawValue, forKey: "aureon.shuffle") } } }
     @Published var repeatMode = RepeatMode.off { didSet { player.repeatMode = repeatMode; defaults.set(repeatMode.rawValue, forKey: "aureon.repeat") } }
     private var originalOrder: [UUID] = []
+    private var metaQueue: [UUID] = []
+    private var metaSeen = Set<UUID>()
+    private var metaRunning = 0
+    private var metaFor: UUID?
     private var shuffleNet: TransitionNet?
     private var countedPlay: UUID?
     @Published var viewOptions: [String: ViewOptions] = [:] { didSet { if let d = try? JSONEncoder().encode(viewOptions), ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(d, forKey: "aureon.viewOptions") } } }
@@ -179,7 +183,7 @@ final class PlayerModel: ObservableObject {
         }
     }
     let albumArt = AlbumArt()
-    @Published var hero = HeroArt()
+    @Published var hero = HeroArt() { didSet { if themeFamily == "album", hero.token != oldValue.token { resolveTheme(persist: false) } } }
     @Published var fetchMissingArt = true { didSet { defaults.set(fetchMissingArt, forKey: "aureon.fetchArt"); if fetchMissingArt && !oldValue { lookUpMissingArtwork() } } }
     let artFetcher = ArtworkFetcher()
     private var heroLoading = ""
@@ -370,7 +374,7 @@ final class PlayerModel: ObservableObject {
         let entries = player.append(found.map(\.path))      // the engine reconciles this live, even while playing
         let new = zip(entries, found).map { QueueItem(id: $0.id, url: $1, title: $1.deletingPathExtension().lastPathComponent) }
         items += new
-        for n in new { Task { await loadMetadata(n.id) } }
+        for n in new.prefix(3) { requestMetadata(n.id) }
         originalOrder += new.map(\.id)
         if shuffle != .off && !start { reshuffle(keeping: nil) }
         if start, let first = new.first { play(first.id) }
@@ -434,7 +438,7 @@ final class PlayerModel: ObservableObject {
         addTracks(tracks, play: true)
     }
 
-    func clear() { player.stop(); player.clearQueue(); started = false; items = []; originalOrder = []; resetStatus() }
+    func clear() { player.stop(); player.clearQueue(); started = false; items = []; originalOrder = []; metaQueue = []; metaSeen = []; resetStatus() }
 
     private func resetStatus() { status = PlayerStatus(); progress.update(position: 0, duration: 0); objectWillChange.send() }
 
@@ -530,6 +534,7 @@ final class PlayerModel: ObservableObject {
     }
 
     func play(_ id: UUID, at seconds: Double = 0) {
+        requestMetadata(id, urgent: true)
         if isActive && seconds == 0 { player.send(.jump(id)); return }
         started = true
         resetStatus()
@@ -564,6 +569,7 @@ final class PlayerModel: ObservableObject {
         if player.queueRevision != lastQueueRev { reconcileItems() }
         refreshHero()
         countPlay()
+        if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { requestMetadata(id, urgent: true); for k in 1...2 where i + k < items.count { requestMetadata(items[i + k].id) } } }
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }
         if started && s.trackID != lastDeepDiveID && tab == .deepDive { loadDeepDiveForCurrent() }
         let playing = started && s.state == .playing
@@ -588,7 +594,7 @@ final class PlayerModel: ObservableObject {
             if let t = known[e.path] { return QueueItem(id: e.id, url: url, title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "") }
             return QueueItem(id: e.id, url: url, title: url.deletingPathExtension().lastPathComponent)
         }
-        for id in fresh { Task { await loadMetadata(id) } }
+        _ = fresh                                   // covers load as their rows appear (see requestMetadata)
     }
 
     /// Adds library tracks to the queue (and optionally starts the first).
@@ -597,24 +603,66 @@ final class PlayerModel: ObservableObject {
         let entries = player.append(tracks.map(\.path))
         let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
         items += new; lastQueueRev = player.queueRevision
-        for n in new { Task { await loadMetadata(n.id) } }
+        for n in new.prefix(3) { requestMetadata(n.id) }
         originalOrder += new.map(\.id)
         if shuffle != .off { reshuffle(keeping: start ? new.first?.id : nil) }
         if start, let first = new.first { play(first.id) }
     }
 
-    /// Replaces the queue with `tracks` and starts the one at `index`; the songs before it stay in the queue so Previous works.
+    /// How much of a list goes into the queue when one song is clicked: a little history for Previous, plenty ahead. A whole library is never queued.
+    nonisolated static let queueWindow = (before: 30, after: 470)
+    nonisolated static func queueRange(count: Int, index: Int) -> Range<Int> {
+        max(0, index - queueWindow.before)..<min(count, index + queueWindow.after + 1)
+    }
+
+    /// Replaces the queue with songs from `tracks` around `index` and starts the one at `index`. While something is playing the engine just jumps
+    /// to the new queue (the output device is not torn down), so changing songs quickly stays instant.
     func play(tracks: [TrackDTO], at index: Int) {
         guard tracks.indices.contains(index) else { return }
+        let range = Self.queueRange(count: tracks.count, index: index)
+        let slice = Array(tracks[range]), start = index - range.lowerBound
+        func item(_ e: QueueEntry, _ t: TrackDTO) -> QueueItem { QueueItem(id: e.id, url: URL(fileURLWithPath: t.path), title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "") }
+        if isActive {
+            let entries = player.replace(with: slice.map(\.path), startAt: start)
+            items = zip(entries, slice).map(item)
+            lastQueueRev = player.queueRevision
+            originalOrder = items.map(\.id)
+            let first = items[start].id
+            if shuffle != .off { reshuffle(keeping: first) }
+            requestMetadata(first, urgent: true)
+            for k in 1...2 where start + k < items.count { requestMetadata(items[start + k].id) }
+            return
+        }
         clear()
-        let entries = player.append(tracks.map(\.path))
-        items = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
+        let entries = player.append(slice.map(\.path))
+        items = zip(entries, slice).map(item)
         lastQueueRev = player.queueRevision
-        for n in items { Task { await loadMetadata(n.id) } }
         originalOrder = items.map(\.id)
-        let first = items[index].id
+        let first = items[start].id
         if shuffle != .off { reshuffle(keeping: first) }
         play(first)
+    }
+
+    // MARK: lazy tags and covers
+
+    /// Reads a queued song's tags and cover when it is about to matter (playing soon, or its row is on screen), at most three at a time.
+    func requestMetadata(_ id: UUID, urgent: Bool = false) {
+        guard let i = items.firstIndex(where: { $0.id == id }), items[i].artSource == .unknown, !items[i].locked, !items[i].isStream else { return }
+        if metaSeen.contains(id) {
+            if urgent, let k = metaQueue.firstIndex(of: id) { metaQueue.remove(at: k); metaQueue.insert(id, at: 0) }
+            return
+        }
+        metaSeen.insert(id)
+        if urgent { metaQueue.insert(id, at: 0) } else { metaQueue.append(id) }
+        pumpMetadata()
+    }
+
+    private func pumpMetadata() {
+        while metaRunning < 3, !metaQueue.isEmpty {
+            let id = metaQueue.removeFirst()
+            metaRunning += 1
+            Task { await loadMetadata(id); metaRunning -= 1; pumpMetadata() }
+        }
     }
 
     /// Queues songs right after the one that is playing.
@@ -625,7 +673,7 @@ final class PlayerModel: ObservableObject {
         let new = zip(entries, tracks).map { QueueItem(id: $0.id, url: URL(fileURLWithPath: $1.path), title: $1.title, artist: $1.artistLine, album: $1.releaseTitle ?? "") }
         items.insert(contentsOf: new, at: min(at, items.count)); lastQueueRev = player.queueRevision
         originalOrder += new.map(\.id)
-        for n in new { Task { await loadMetadata(n.id) } }
+        for n in new.prefix(3) { requestMetadata(n.id) }
     }
 
     // MARK: shuffle

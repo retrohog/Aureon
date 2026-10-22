@@ -122,21 +122,24 @@ final class DJMixerCore: @unchecked Sendable {
         d.peakL.value = max(pl, d.peakL.value * 0.9); d.peakR.value = max(pr, d.peakR.value * 0.9)
     }
 
+    /// One deck into the master and cue sums (a method of its own: no array is built on the audio thread).
+    private func mixIn(_ d: Deck, frames n: Int) {
+        pull(d, frames: n)
+        if d.cue.value != 0 { for i in 0..<n { cL[i] += d.l[i]; cR[i] += d.r[i] } }
+        let g0 = d.lastGain, g1 = d.gain.value
+        let step = (g1 - g0) / Float(n)
+        var g = g0
+        for i in 0..<n { g += step; mL[i] += d.l[i] * g; mR[i] += d.r[i] * g }
+        d.lastGain = g1
+    }
+
     /// Fills `master` (interleaved stereo Float) and, if given, `cue` (the headphone mix) with `frames` frames.
     func process(master out: UnsafeMutablePointer<Float>, cue cueOut: UnsafeMutablePointer<Float>?, frames: Int) {
         var done = 0
         while done < frames {
             let n = min(DJMixerCore.block, frames - done)
             for i in 0..<n { mL[i] = 0; mR[i] = 0; cL[i] = 0; cR[i] = 0 }
-            for d in [a, b] {
-                pull(d, frames: n)
-                if d.cue.value != 0 { for i in 0..<n { cL[i] += d.l[i]; cR[i] += d.r[i] } }
-                let g0 = d.lastGain, g1 = d.gain.value
-                let step = (g1 - g0) / Float(n)
-                var g = g0
-                for i in 0..<n { g += step; mL[i] += d.l[i] * g; mR[i] += d.r[i] * g }
-                d.lastGain = g1
-            }
+            mixIn(a, frames: n); mixIn(b, frames: n)
             refreshMasterEQ()
             eqLow.process(mL, mR, frames: n); eqMid.process(mL, mR, frames: n); eqHigh.process(mL, mR, frames: n)
             let t = trim.value

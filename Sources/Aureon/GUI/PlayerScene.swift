@@ -182,6 +182,7 @@ struct UpNextRow: View {
         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.white.opacity(hover.v ? 0.1 : 0)))
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
         .onTapGesture { m.play(item.id) }
+        .onAppear { m.requestMetadata(item.id) }
     }
 }
 

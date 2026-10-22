@@ -215,17 +215,21 @@ enum LibraryOrdering {
         let f = a.filter { r in
             switch o.quality { case .all: true; case .hiRes: r.isHiRes && !r.isDSD; case .cd: !r.isHiRes; case .dsd: r.isDSD }
         }
-        let s = f.sorted { x, y in
+        // every sort key is computed once per item, not once per comparison
+        struct K { var a: String; var n: Double; var t: String }
+        let keyed: [(ReleaseDTO, K)] = f.map { r in
+            let t = key(r.title)
             switch o.sort {
-            case .artist: return (key(x.artistNames.first ?? ""), key(x.title)) < (key(y.artistNames.first ?? ""), key(y.title))
-            case .year: return ((x.year ?? 0), key(x.title)) < ((y.year ?? 0), key(y.title))
-            case .added: return ((x.addedAt ?? 0), key(x.title)) < ((y.addedAt ?? 0), key(y.title))
-            case .count: return (x.trackCount, key(x.title)) < (y.trackCount, key(y.title))
-            case .genre: return (key(x.genre ?? "~"), key(x.title)) < (key(y.genre ?? "~"), key(y.title))
-            case .quality: return ((x.maxSampleRate ?? 0) * Double(x.maxBitDepth ?? 0), key(x.title)) < ((y.maxSampleRate ?? 0) * Double(y.maxBitDepth ?? 0), key(y.title))
-            default: return key(x.title) < key(y.title)
+            case .artist: return (r, K(a: key(r.artistNames.first ?? ""), n: 0, t: t))
+            case .year: return (r, K(a: "", n: Double(r.year ?? 0), t: t))
+            case .added: return (r, K(a: "", n: r.addedAt ?? 0, t: t))
+            case .count: return (r, K(a: "", n: Double(r.trackCount), t: t))
+            case .genre: return (r, K(a: key(r.genre ?? "~"), n: 0, t: t))
+            case .quality: return (r, K(a: "", n: (r.maxSampleRate ?? 0) * Double(r.maxBitDepth ?? 0), t: t))
+            default: return (r, K(a: "", n: 0, t: t))
             }
         }
+        let s = keyed.sorted { ($0.1.a, $0.1.n, $0.1.t) < ($1.1.a, $1.1.n, $1.1.t) }.map(\.0)
         return o.ascending ? s : s.reversed()
     }
 
@@ -233,26 +237,30 @@ enum LibraryOrdering {
         let f = t.filter { r in
             switch o.quality { case .all: true; case .hiRes: isHiRes(r) && r.bitDepth != 1; case .cd: !isHiRes(r); case .dsd: r.bitDepth == 1 }
         }
-        let s = f.sorted { x, y in
+        struct K { var a: String; var b: String; var n: Double; var m: Double; var t: String }
+        let keyed: [(TrackDTO, K)] = f.map { r in
+            let t = key(r.title)
             switch o.sort {
-            case .artist: return (key(x.artistLine), key(x.releaseTitle ?? ""), x.trackNumber ?? 0) < (key(y.artistLine), key(y.releaseTitle ?? ""), y.trackNumber ?? 0)
-            case .album: return (key(x.releaseTitle ?? ""), x.discNumber ?? 1, x.trackNumber ?? 0) < (key(y.releaseTitle ?? ""), y.discNumber ?? 1, y.trackNumber ?? 0)
-            case .year: return ((x.year ?? 0), key(x.title)) < ((y.year ?? 0), key(y.title))
-            case .duration: return x.duration < y.duration
-            case .quality: return (x.sampleRate * Double(x.bitDepth), key(x.title)) < (y.sampleRate * Double(y.bitDepth), key(y.title))
-            case .added: return ((x.addedAt ?? 0), key(x.title)) < ((y.addedAt ?? 0), key(y.title))
-            case .genre: return (key(x.genres.first ?? "~"), key(x.title)) < (key(y.genres.first ?? "~"), key(y.title))
-            case .plays: return ((x.playCount ?? 0), key(x.title)) < ((y.playCount ?? 0), key(y.title))
-            case .recent: return ((x.lastPlayedAt ?? 0), key(x.title)) < ((y.lastPlayedAt ?? 0), key(y.title))
-            case .size: return ((x.fileSize ?? 0), key(x.title)) < ((y.fileSize ?? 0), key(y.title))
-            default: return key(x.title) < key(y.title)
+            case .artist: return (r, K(a: key(r.artistLine), b: key(r.releaseTitle ?? ""), n: 0, m: Double(r.trackNumber ?? 0), t: t))
+            case .album: return (r, K(a: key(r.releaseTitle ?? ""), b: "", n: Double(r.discNumber ?? 1), m: Double(r.trackNumber ?? 0), t: t))
+            case .year: return (r, K(a: "", b: "", n: Double(r.year ?? 0), m: 0, t: t))
+            case .duration: return (r, K(a: "", b: "", n: r.duration, m: 0, t: ""))
+            case .quality: return (r, K(a: "", b: "", n: r.sampleRate * Double(r.bitDepth), m: 0, t: t))
+            case .added: return (r, K(a: "", b: "", n: r.addedAt ?? 0, m: 0, t: t))
+            case .genre: return (r, K(a: key(r.genres.first ?? "~"), b: "", n: 0, m: 0, t: t))
+            case .plays: return (r, K(a: "", b: "", n: Double(r.playCount ?? 0), m: 0, t: t))
+            case .recent: return (r, K(a: "", b: "", n: r.lastPlayedAt ?? 0, m: 0, t: t))
+            case .size: return (r, K(a: "", b: "", n: Double(r.fileSize ?? 0), m: 0, t: t))
+            default: return (r, K(a: "", b: "", n: 0, m: 0, t: t))
             }
         }
+        let s = keyed.sorted { ($0.1.a, $0.1.b, $0.1.n, $0.1.m, $0.1.t) < ($1.1.a, $1.1.b, $1.1.n, $1.1.m, $1.1.t) }.map(\.0)
         return o.ascending ? s : s.reversed()
     }
 
     static func rows(_ r: [LibraryModel.Row], _ o: ViewOptions) -> [LibraryModel.Row] {
-        let s = r.sorted { o.sort == .count ? ($0.count, key($0.title)) < ($1.count, key($1.title)) : key($0.title) < key($1.title) }
+        let keyed = r.map { ($0, key($0.title)) }
+        let s = keyed.sorted { o.sort == .count ? ($0.0.count, $0.1) < ($1.0.count, $1.1) : $0.1 < $1.1 }.map(\.0)
         return o.ascending ? s : s.reversed()
     }
 

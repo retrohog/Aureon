@@ -23,7 +23,7 @@ final class AutoDJController: ObservableObject {
     @Published private(set) var canRate = false
     @Published var mixBeats = 32
     @Published var vibe = AutoVibe.steady
-    @Published var strictKey = true
+    @Published var strictKey = false
 
     /// The tracks Auto DJ may choose from. Set by the interface.
     var library: () -> [DJTrack] = { [] }
@@ -89,12 +89,22 @@ final class AutoDJController: ObservableObject {
         }
         analysed = pool.count
         guard !missing.isEmpty, analysisTask == nil else { return }
+        let order = Array(missing.shuffled().prefix(150))
         analysisTask = Task { [weak self] in
-            for path in missing.shuffled().prefix(80) {
-                if Task.isCancelled { break }
-                let a = await Task.detached(priority: .utility) { AnalysisCache.shared.analysis(path: path) }.value
-                guard let self else { return }
-                if let a { self.pool[path] = a; self.analysed = self.pool.count }
+            // three at a time, so a first handful of tracks is ready within seconds
+            await withTaskGroup(of: (String, DJTrackAnalysis?).self) { group in
+                var next = 0
+                func feed(_ g: inout TaskGroup<(String, DJTrackAnalysis?)>) {
+                    guard next < order.count else { return }
+                    let path = order[next]; next += 1
+                    g.addTask(priority: .utility) { (path, AnalysisCache.shared.analysis(path: path)) }
+                }
+                for _ in 0..<3 { feed(&group) }
+                while let (path, a) = await group.next() {
+                    if Task.isCancelled { group.cancelAll(); break }
+                    if let a, let self { self.pool[path] = a; self.analysed = self.pool.count }
+                    feed(&group)
+                }
             }
             self?.analysisTask = nil
         }
@@ -110,17 +120,25 @@ final class AutoDJController: ObservableObject {
     }
 
     private func pickFirst() -> DJTrack? {
-        let c = candidates(excluding: nil).filter { !recent.contains($0.track.path) }
+        var c = candidates(excluding: nil).filter { !recent.contains($0.track.path) }
+        if c.isEmpty { c = pool.compactMap { (p, a) in tracks[p].map { AutoCandidate(track: $0, analysis: a) } }.filter { !recent.contains($0.track.path) } }
         // open with something calm-to-medium so there is room to build
         return c.sorted { abs($0.analysis.energy - 0.5) < abs($1.analysis.energy - 0.5) }.prefix(5).randomElement(using: &rng)?.track
     }
 
     private func chooseNext(after c: DJDeck) {
         guard let cur = c.analysis else { return }
-        let ranked = AutoPlanner.rank(current: cur, candidates: candidates(excluding: c.track?.path), recent: recent, vibe: vibe, strictKey: strictKey, net: net)
+        var ranked = AutoPlanner.rank(current: cur, candidates: candidates(excluding: c.track?.path), recent: recent, vibe: vibe, strictKey: strictKey, net: net)
+        if ranked.isEmpty && strictKey { ranked = AutoPlanner.rank(current: cur, candidates: candidates(excluding: c.track?.path), recent: recent, vibe: vibe, strictKey: false, net: net) }
+        if ranked.isEmpty {
+            // nothing with a usable tempo: any analysed track will do, with a plain fade
+            let rest = pool.compactMap { (p, a) -> AutoCandidate? in guard p != c.track?.path, !recent.contains(p), let t = tracks[p] else { return nil }; return AutoCandidate(track: t, analysis: a) }
+            ranked = rest.shuffled().prefix(3).map { (candidate: $0, score: Float(0.3)) }
+        }
         guard !ranked.isEmpty else {
-            status = pool.isEmpty ? "Analysing your library…" : "No suitable next track"
-            chooseAfter = Date().addingTimeInterval(3); return
+            status = analysed < 2 ? "Analysing your library… (\(analysed) ready)" : "No other track to play next"
+            if pool.isEmpty || analysed < 2 { refreshPool() }
+            chooseAfter = Date().addingTimeInterval(2); return
         }
         // among the top few, prefer the best but not always: variety without picking something poor
         let top = ranked.prefix(3).filter { $0.score >= ranked[0].score - 0.06 }
@@ -163,19 +181,18 @@ final class AutoDJController: ObservableObject {
                 let d = model.freeDeck()
                 d.load(t)
                 if d.isLoaded { if let a = pool[t.path] { d.setAnalysisForTests(a) }; recent.append(t.path); settle(d) }
-            } else { status = pool.isEmpty ? "Analysing your library…" : "No tracks to play"; chooseAfter = Date().addingTimeInterval(2) }
+            } else { status = "Analysing your library… (\(analysed) ready)"; refreshPool(); chooseAfter = Date().addingTimeInterval(2) }
         case .playing:
             guard let c = current else { phase = .starting; return }
             if !c.isLoaded { phase = .starting; current = nil; return }
             // track ended by itself with nothing queued: carry on with a fresh pick
             if !c.playing && c.position >= c.duration - 0.2 { c.unload(); current = nil; phase = .starting; return }
             if c.analysis != nil, Date() >= chooseAfter { chooseNext(after: c) }
-            canRate = false
         case .armed:
             guard let c = current, let i = incoming, let p = plan else { phase = .playing; return }
             if !c.isLoaded { phase = .starting; return }
-            canRate = false
             if c.position >= p.aStart || (!c.playing && c.position >= c.duration - 0.2) {
+                canRate = false
                 i.play(); phase = .blending; status = "Mixing into \(i.track?.title ?? "next track")"
                 blend(c, i, p)
             }

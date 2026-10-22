@@ -61,6 +61,16 @@ extension LibraryModel {
     }
 }
 
+/// Presents the review sheet. It observes the library model itself: the window's root view does not, so a sheet driven from there never closed.
+struct DuplicateSheetHost: View {
+    @ObservedObject var lib: LibraryModel
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        Color.clear.frame(width: 0, height: 0)
+            .sheet(isPresented: $lib.showDuplicates) { DuplicateReviewSheet(lib: lib).environmentObject(m) }
+    }
+}
+
 /// Shown at the top of the library after an import finds likely duplicates.
 struct DuplicateBanner: View {
     @ObservedObject var lib: LibraryModel
@@ -104,7 +114,7 @@ struct DuplicateReviewSheet: View {
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button { dismiss() } label: { Image(systemName: "xmark") }.buttonStyle(IconButtonStyle())
+                Button { lib.showDuplicates = false; dismiss() } label: { Image(systemName: "xmark") }.buttonStyle(IconButtonStyle())
             }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
             Divider()
             if groups.isEmpty {
@@ -121,8 +131,8 @@ struct DuplicateReviewSheet: View {
             HStack(spacing: 10) {
                 if let m = message.v, !groups.isEmpty { Text(m).font(.caption).foregroundStyle(.secondary) }
                 Spacer()
-                Button("Ignore these") { lib.ignoreDuplicates(groups); dismiss() }.disabled(groups.isEmpty).help("Never suggest these again")
-                Button("Close") { dismiss() }
+                Button("Ignore these") { lib.ignoreDuplicates(groups); lib.showDuplicates = false; dismiss() }.disabled(groups.isEmpty).help("Never suggest these again")
+                Button("Close") { lib.showDuplicates = false; dismiss() }
                 Button { confirm(plan, bytes) } label: { Text("Move \(plan.count) file\(plan.count == 1 ? "" : "s") to Trash…") }
                     .buttonStyle(.borderedProminent).tint(Brand.accent).disabled(plan.isEmpty)
             }.padding(14)

@@ -13,12 +13,24 @@ final class CollectionsModel: ObservableObject {
 
     func attach(_ s: LibraryStore?) { store = s; refresh() }
 
+    private var refreshing = false, again = false
+
+    /// Reads likes and playlists on a background queue (they can hold thousands of songs) and publishes the result.
     func refresh() {
         guard let store else { return }
-        liked = store.likedPaths()
-        playlists = store.playlists()
-        likedTracks = store.likedTracks()
-        if let id = selected { if playlists.contains(where: { $0.id == id }) { selectedTracks = store.playlistTracks(id: id) } else { selected = nil; selectedTracks = [] } }
+        if refreshing { again = true; return }
+        refreshing = true
+        let sel = selected
+        Task.detached(priority: .userInitiated) {
+            let l = store.likedPaths(), p = store.playlists(), lt = store.likedTracks()
+            let st = sel.flatMap { id in p.contains { $0.id == id } ? store.playlistTracks(id: id) : nil }
+            await MainActor.run {
+                self.liked = l; self.playlists = p; self.likedTracks = lt
+                if let id = self.selected { if let st, id == sel { self.selectedTracks = st } else if !p.contains(where: { $0.id == id }) { self.selected = nil; self.selectedTracks = [] } }
+                self.refreshing = false
+                if self.again { self.again = false; self.refresh() }
+            }
+        }
     }
 
     func isLiked(_ path: String) -> Bool { liked.contains(path) }
@@ -26,8 +38,8 @@ final class CollectionsModel: ObservableObject {
     func toggleLike(path: String) {
         guard let store else { return }
         let now = !liked.contains(path)
-        store.setLiked(paths: [path], liked: now)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { refresh() }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { if now { liked.insert(path) } else { liked.remove(path) } }      // the heart answers at once
+        Task.detached(priority: .userInitiated) { store.setLiked(paths: [path], liked: now); await MainActor.run { self.refresh() } }
     }
 
     func setLiked(_ tracks: [TrackDTO], _ on: Bool) { store?.setLiked(paths: tracks.map(\.path), liked: on); refresh() }

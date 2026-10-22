@@ -49,22 +49,22 @@ extension RemixAction {
         switch self {
         case .none: break
         case .filterSweep:                                                                  // close a low-pass and open it again
-            s.filter = -0.92 * tri(p) * tri(p).squareRoot()
+            s.filter = -0.7 * tri(p) * tri(p).squareRoot()
         case .echoOut:                                                                      // throw an echo, let the tail ring
-            s.fx = .echo; s.fxOn = true; s.fxParam = 0.5; s.fxWet = p < 0.5 ? 0.55 : 0.55 * (1 - (p - 0.5) * 2)
+            s.fx = .echo; s.fxOn = true; s.fxParam = 0.5; s.fxWet = p < 0.5 ? 0.4 : 0.4 * (1 - (p - 0.5) * 2)
         case .reverbWash:
-            s.fx = .reverb; s.fxOn = true; s.fxParam = 0.8; s.fxWet = 0.6 * tri(p)
+            s.fx = .reverb; s.fxOn = true; s.fxParam = 0.8; s.fxWet = 0.4 * tri(p)
         case .loopRoll:                                                                     // 1 beat, then half, then quarter: the roll tightens
             s.loopBeats = b < 2 ? 1 : (b < 3 ? 0.5 : 0.25)
         case .bassDrop:                                                                     // the low end vanishes, then slams back
             s.lowDB = DJMath.eqRange.lowerBound
             if p > 0.97 { s.lowDB = 0 }
         case .riser:                                                                        // a high-pass climbing with a flanger
-            s.filter = 0.85 * p; s.fx = .flanger; s.fxOn = true; s.fxParam = 0.3 + 0.6 * p; s.fxWet = 0.25 + 0.35 * p
+            s.filter = 0.6 * p; s.fx = .flanger; s.fxOn = true; s.fxParam = 0.3 + 0.4 * p; s.fxWet = 0.2 + 0.25 * p
         case .stutter:
-            s.fx = .gate; s.fxOn = true; s.fxParam = p < 0.5 ? 0.5 : 0.8; s.fxWet = 0.85
+            s.fx = .gate; s.fxOn = true; s.fxParam = p < 0.5 ? 0.5 : 0.8; s.fxWet = 0.7
         case .flangerSweep:
-            s.fx = .flanger; s.fxOn = true; s.fxParam = 0.5; s.fxWet = 0.5 * tri(p)
+            s.fx = .flanger; s.fxOn = true; s.fxParam = 0.5; s.fxWet = 0.35 * tri(p)
         }
         return s
     }
@@ -224,8 +224,9 @@ final class RemixPolicy {
     }
 
     /// Picks a move: a draw from the scores sharpened by `sharpness`, so strong candidates win most of the time and weaker ones sometimes do.
-    func choose<R: RandomNumberGenerator>(_ c: RemixContext, using rng: inout R, sharpness: Float = 6) -> RemixAction {
-        let s = scores(c)
+    func choose<R: RandomNumberGenerator>(_ c: RemixContext, using rng: inout R, sharpness: Float = 6, allowed: Set<RemixAction>? = nil) -> RemixAction {
+        var s = scores(c)
+        if let allowed { for a in RemixAction.allCases where !allowed.contains(a) && a != .none { s[a.rawValue] = 0 } }
         let weights = s.map { exp(sharpness * $0) }
         var r = Float.random(in: 0..<weights.reduce(0, +), using: &rng)
         for (i, wgt) in weights.enumerated() { r -= wgt; if r <= 0 { return RemixAction(rawValue: i) ?? .none } }

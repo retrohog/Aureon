@@ -50,13 +50,14 @@ struct ContentView: View {
                     .padding(10).transition(.opacity).allowsHitTesting(false)
             }
         }
+        .ignoresSafeArea(.container, edges: .top)           // the sidebar and pages run under the (transparent) title bar, so the window buttons sit inside the app
         .background(WindowChrome().frame(width: 0, height: 0))
         .alert("Save your DSP settings?", isPresented: Binding(get: { m.showDSPPrompt }, set: { if !$0 && m.showDSPPrompt { m.cancelDSPPrompt() } })) {
             Button("Save") { m.resolveDSPPrompt(save: true) }
             Button("Don't Save") { m.resolveDSPPrompt(save: false) }
             Button("Stay Here", role: .cancel) { m.cancelDSPPrompt() }
         } message: { Text("You changed the equalizer or plug-ins. Saved settings come back next time; if you don't save them they stay for this session only and are gone when Aureon quits.") }
-        .sheet(isPresented: Binding(get: { m.library.showDuplicates }, set: { m.library.showDuplicates = $0 })) { DuplicateReviewSheet(lib: m.library).environmentObject(m) }
+        .background(DuplicateSheetHost(lib: m.library))
         .animation(.easeOut(duration: 0.2), value: m.djMode)
         .animation(.smooth(duration: 0.28), value: m.showQueue)
         .animation(.easeOut(duration: 0.16), value: m.tab)
@@ -86,6 +87,15 @@ struct ContentView: View {
     @ViewBuilder private var backdrop: some View {
         if m.tab == .player {
             AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil, intensity: 1)
+        } else if m.theme.family == "album" {
+            // the cover's colours spread over every page
+            if m.theme.isLight {
+                Brand.canvas
+                RadialGradient(colors: [m.hero.palette.grid[1].color.opacity(0.35), .clear], center: .topTrailing, startRadius: 0, endRadius: 640).allowsHitTesting(false)
+                RadialGradient(colors: [m.hero.palette.grid[7].color.opacity(0.30), .clear], center: .bottomLeading, startRadius: 0, endRadius: 640).allowsHitTesting(false)
+            } else {
+                AmbientBackground(palette: m.hero.palette, image: m.hero.image, animated: false, intensity: 0.6)
+            }
         } else {
             Brand.canvas
             if m.theme.family == "aureon" {
@@ -293,6 +303,7 @@ struct QueueRow: View {
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.smooth(duration: 0.14)) { hover.v = h } }
         .onTapGesture { if playing { m.togglePlay() } else { m.play(item.id) } }
+        .onAppear { m.requestMetadata(item.id) }
         .animation(.smooth(duration: 0.2), value: playing)
     }
 

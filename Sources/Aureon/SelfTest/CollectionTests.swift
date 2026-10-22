@@ -71,6 +71,28 @@ struct CollectionTests {
         expect(lib.normalizeArtists() == 0, "running it again changes nothing")
     }
 
+    func collaborationsFoldIntoTheKnownArtist() {
+        let lib = try! LibraryStore()
+        lib.upsert([song("Solo", artist: "Badshah", album: "One", path: "/k/1.flac"),
+                    song("Duet", artist: "Badshah, Aastha Gill", album: "Singles", path: "/k/2.flac"),
+                    song("Trio", artist: "Badshah, Karan Aujla, Hiten", album: "Trio", path: "/k/3.flac"),
+                    song("Mix", artist: "Badshah & Sharvi Yadav", album: "Mix", path: "/k/4.flac"),
+                    song("Band", artist: "Earth, Wind & Fire", album: "Hits", path: "/k/5.flac"),
+                    song("Rap", artist: "Tyler, The Creator", album: "Igor", path: "/k/6.flac"),
+                    song("Other", artist: "Arijit Singh, Pritam", album: "Film", path: "/k/7.flac"),
+                    song("Own", artist: "Arijit Singh", album: "Own", path: "/k/8.flac")])
+        let n = lib.normalizeArtists()
+        expect(n == 4, "four collaboration names folded: \(n)")
+        let names = lib.parties(role: .artist).map(\.name).sorted()
+        expect(names == ["Aastha Gill", "Arijit Singh", "Badshah", "Earth, Wind & Fire", "Hiten", "Karan Aujla", "Pritam", "Sharvi Yadav", "Tyler, The Creator"], "\(names)")
+        let badshah = lib.parties(role: .artist).first { $0.name == "Badshah" }!
+        expect(lib.tracks(partyID: badshah.id, role: .artist).count == 4, "all four Badshah songs are under him")
+        expect(lib.track(path: "/k/3.flac")!.artistLine == "Badshah feat. Karan Aujla, Hiten", lib.track(path: "/k/3.flac")!.artistLine)
+        let aa = lib.parties(role: .artist).first { $0.name == "Aastha Gill" }!
+        expect(lib.tracks(partyID: aa.id, role: .artist).map(\.title) == ["Duet"], "the guest still finds her song")
+        expect(lib.normalizeArtists() == 0)
+    }
+
     func likesAndPlaylists() {
         let lib = try! LibraryStore()
         lib.upsert((1...5).map { song("Song \($0)", artist: "Alice", album: "A", path: "/c/\($0).flac") })

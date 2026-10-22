@@ -145,6 +145,17 @@ final class Player: @unchecked Sendable {
         entries.insert(contentsOf: moving, at: max(0, min(destination - before, entries.count)))
         queueVersion += 1; lock.unlock()
     }
+    /// Replaces the whole queue and starts playing entry `index`, in one step: the running engine just jumps (no teardown of the output device).
+    @discardableResult
+    func replace(with paths: [String], startAt index: Int) -> [QueueEntry] {
+        let new = paths.map { QueueEntry(path: $0) }
+        lock.lock()
+        entries = new; queueVersion += 1
+        if new.indices.contains(index) { commands.append(.jump(new[index].id)) }
+        lock.unlock()
+        return new
+    }
+
     func clearQueue() { lock.lock(); entries = []; queueVersion += 1; lock.unlock() }
 
     /// Puts the queue in this order (ids that are not in `ids` keep their relative order at the end). Safe during playback: the engine reconciles it like any edit.

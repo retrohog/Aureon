@@ -9,7 +9,7 @@ final class RemixController: ObservableObject {
 
     @Published var enabled = false { didSet { if enabled != oldValue { enabled ? begin() : end() } } }
     /// 0 = let it breathe, 1 = busy.
-    @Published var intensity = 0.5
+    @Published var intensity = 0.3
     @Published private(set) var status = "Off"
     @Published private(set) var current = RemixAction.none
     @Published private(set) var actionCount = 0
@@ -137,9 +137,16 @@ final class RemixController: ObservableObject {
         lastBar = bar; barsSince += 1
         guard pending == nil, let contour = contour(for: d) else { return }
         let next = bar + 1
+        // Moves are rare and on phrase lines: at most one every few bars, sparser at low settings, and the hard-hitting ones only when asked for
+        let minGap = Int(16 - 12 * intensity)
+        guard barsSince >= minGap, next % 4 == 0 else { return }
         guard d.duration - (fb + Double(next) * 4 * 60 / bpm) > 4 * 60 / bpm * 2,                // not in the last two bars
               let ctx = RemixPlanner.context(analysis: a, contour: contour, bar: next, intensity: intensity, barsSinceAction: barsSince, last: last) else { return }
-        let choice = policy.choose(ctx, using: &rng, sharpness: Float(4 + 6 * intensity))
+        var allowed: Set<RemixAction> = [.none, .filterSweep, .echoOut, .reverbWash, .flangerSweep]
+        if intensity >= 0.45 { allowed.insert(.riser) }
+        if intensity >= 0.6 { allowed.formUnion([.bassDrop, .loopRoll]) }
+        if intensity >= 0.8 { allowed.insert(.stutter) }
+        let choice = policy.choose(ctx, using: &rng, sharpness: Float(4 + 4 * intensity), allowed: allowed)
         guard choice != .none else { status = "Listening…"; return }
         // start it exactly on the next bar line
         let speed = max(0.5, d.control.ratio * (1 + d.control.bend))

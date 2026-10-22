@@ -18,8 +18,8 @@ struct RemixTests {
             while b < a.beats { let s = a.state(atBeat: b); if s != .neutral { touched = true }; expect(s.filter >= -1 && s.filter <= 1 && s.fxWet >= 0 && s.fxWet <= 1 && s.fxParam >= 0 && s.fxParam <= 1, "\(a.title) stays in range at \(b)"); b += 0.125 }
             expect(touched, "\(a.title) actually does something")
         }
-        expect(RemixAction.filterSweep.state(atBeat: 4).filter < -0.8 && RemixAction.filterSweep.state(atBeat: 0.5).filter > -0.3, "the sweep closes in the middle and opens again")
-        expect(RemixAction.riser.state(atBeat: 7.5).filter > 0.7 && RemixAction.riser.state(atBeat: 1).filter < 0.2, "the riser climbs")
+        expect(RemixAction.filterSweep.state(atBeat: 4).filter < -0.6 && RemixAction.filterSweep.state(atBeat: 0.5).filter > -0.3, "the sweep closes in the middle and opens again")
+        expect(RemixAction.riser.state(atBeat: 7.5).filter > 0.5 && RemixAction.riser.state(atBeat: 1).filter < 0.2, "the riser climbs")
         expect(RemixAction.bassDrop.state(atBeat: 2).lowDB == DJMath.eqRange.lowerBound && RemixAction.bassDrop.state(atBeat: 3.99).lowDB == 0, "the bass is cut, then slams back on the beat")
         expect(RemixAction.loopRoll.state(atBeat: 0.5).loopBeats == 1 && RemixAction.loopRoll.state(atBeat: 2.5).loopBeats == 0.5 && RemixAction.loopRoll.state(atBeat: 3.5).loopBeats == 0.25, "the roll tightens")
         expect(RemixAction.echoOut.state(atBeat: 7.9).fxWet < 0.05, "the echo's feed fades out so the tail rings out")
@@ -122,7 +122,7 @@ extension RemixTests {
             r.perform(.echoOut, on: m.a)
             expect(m.a.fxOn && m.a.fxKind == .echo && r.current == .echoOut, "the echo is thrown")
             spinFor(1.0) { m.tick(); return false }
-            expect(m.a.fxOn && m.a.fxWet > 0.3, "…and is on while the move runs: wet \(m.a.fxWet)")
+            expect(m.a.fxOn && m.a.fxWet > 0.25, "…and is on while the move runs: wet \(m.a.fxWet)")
             spinFor(6) { m.tick(); return r.current == .none }
             expect(!m.a.fxOn && m.a.fxKind == .reverb && abs(m.a.fxWet - 0.2) < 1e-9, "when it ends the deck's own effect settings are back: on \(m.a.fxOn) kind \(m.a.fxKind) wet \(m.a.fxWet)")
             expect(r.actionCount == 1 && r.canRate && r.history == [.echoOut])

@@ -159,3 +159,33 @@ struct DJDeckTests {
 }
 
 extension DJModel { var autoBlendIsOff: Bool { autoBlend == nil } }
+
+extension DJDeckTests {
+    /// Nothing loaded, nothing analysed yet: Auto DJ has to analyse a few tracks, start one by itself and mix into the next.
+    func autoDJStartsFromScratch() {
+        MainActor.assumeIsolated {
+            let m = DJModel()
+            m.outputFactory = { core in let p = PullOutput(core: core, speed: 1); p.keep = false; return p }
+            var o = PlayerOptions(); o.bufferSeconds = 0.25
+            m.enter(options: o, rate: 48_000)
+            defer { m.exit() }
+            let stamp = Int(Date().timeIntervalSince1970)
+            let tracks: [DJTrack] = (0..<3).map { i in
+                let f = beatWAV("cold\(stamp)-\(i).wav", bpm: 118 + Double(i) * 3, seconds: 24)
+                return DJTrack(path: f.path, title: "Cold \(i)", artist: "")
+            }
+            expect(tracks.allSatisfy { AnalysisCache.shared.cached(path: $0.path) == nil }, "none of them analysed yet")
+            m.auto.library = { tracks }
+            m.auto.persistence = false
+            m.auto.mixBeats = 8
+            m.auto.enabled = true
+            expect(m.auto.strictKey == false, "harmonic-only is off by default")
+            wait(timeout: 40) { m.tick(); return m.decks.contains { $0.playing } }
+            expect(m.decks.contains { $0.playing }, "it picked a track and started it by itself: \(m.auto.status)")
+            wait(timeout: 60) { m.tick(); return m.auto.mixes >= 1 }
+            expect(m.auto.mixes >= 1, "and mixed into another one: \(m.auto.status), analysed \(m.auto.analysed)")
+            expect(m.decks.filter(\.playing).count == 1, "leaving one deck playing")
+            m.auto.enabled = false
+        }
+    }
+}

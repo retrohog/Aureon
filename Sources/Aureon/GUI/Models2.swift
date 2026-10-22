@@ -30,11 +30,24 @@ final class LibraryModel: ObservableObject {
     var onLibraryChanged: (() -> Void)?
     var onAdd: (([TrackDTO], Bool) -> Void)?
     var onReplace: (([TrackDTO]) -> Void)?
-    @Published var albums: [ReleaseDTO] = []
+    @Published var albums: [ReleaseDTO] = [] { didSet { albumsVersion &+= 1 } }
     @Published var artistAlbums: [ReleaseDTO] = []
     @Published var recentAlbums: [ReleaseDTO] = []
     @Published var hiResAlbums: [ReleaseDTO] = []
-    @Published var songs: [TrackDTO] = []
+    @Published var songs: [TrackDTO] = [] { didSet { songsVersion &+= 1 } }
+    private var songsVersion = 0, albumsVersion = 0
+    private var songMemo: (version: Int, options: ViewOptions, result: [TrackDTO])?
+    private var albumMemo: (version: Int, options: ViewOptions, result: [ReleaseDTO])?
+
+    /// Sorted and filtered once per change of the list or of the options (sorting thousands of songs on every redraw made the page crawl).
+    func orderedSongs(_ o: ViewOptions) -> [TrackDTO] {
+        if let m = songMemo, m.version == songsVersion, m.options == o { return m.result }
+        let r = LibraryOrdering.songs(songs, o); songMemo = (songsVersion, o, r); return r
+    }
+    func orderedAlbums(_ o: ViewOptions) -> [ReleaseDTO] {
+        if let m = albumMemo, m.version == albumsVersion, m.options == o { return m.result }
+        let r = LibraryOrdering.albums(albums, o); albumMemo = (albumsVersion, o, r); return r
+    }
     // duplicates
     @Published var duplicateGroups: [DuplicateGroup] = []
     @Published var showDuplicates = false
@@ -79,9 +92,11 @@ final class LibraryModel: ObservableObject {
             }
             let result = out
             let albums = cat == .albums ? store.releases(search: q.isEmpty ? nil : q) : []
-            var songs = cat == .songs ? store.allTracks(limit: 5000) : []
+            var songs: [TrackDTO] = []
+            if cat == .songs { var off = 0; while true { let page = store.allTracks(offset: off, limit: 2000); songs += page; if page.count < 2000 || songs.count >= 60_000 { break }; off += 2000 } }
             if cat == .songs, !q.isEmpty { songs = songs.filter { ($0.title + " " + $0.artistLine + " " + ($0.releaseTitle ?? "")).localizedCaseInsensitiveContains(q) } }
-            await MainActor.run { self.rows = result; self.albums = albums; self.songs = songs; self.stats = store.stats() }
+            let finalSongs = songs
+            await MainActor.run { self.rows = result; self.albums = albums; self.songs = finalSongs; self.stats = store.stats() }
         }
     }
 

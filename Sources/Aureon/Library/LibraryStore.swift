@@ -641,15 +641,25 @@ extension LibraryStore {
     @discardableResult
     func normalizeArtists() -> Int {
         ctx.performAndWait {
-            let candidates = fetch("Party", NSPredicate(format: "key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@", " feat", " ft", "featuring"))
+            let candidates = fetch("Party", NSPredicate(format: "key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@ OR key CONTAINS %@", " feat", " ft", "featuring", ", ", " & ", " x "))
             guard !candidates.isEmpty else { return 0 }
+            // names that already stand alone in the library: "Badshah, Aastha Gill" is a collaboration because "Badshah" is an artist on his own
+            let separators = [", ", " & ", " x "]
+            var known = Set<String>()
+            for p in fetch("Party") { if let k = str(p, "key"), !separators.contains(where: { k.contains($0) }) { known.insert(k) } }
             var touched = Touched()
             var deleted: [(kind: String, uid: String)] = []
             var releases: [NSManagedObject] = []
             var folded = 0
             for old in candidates {
                 let name = str(old, "name") ?? ""
-                let (primary, featured) = TagInterpreter.splitFeaturing(name)
+                var (primary, featured) = TagInterpreter.splitFeaturing(name)
+                if featured.isEmpty {
+                    // "A, B & C" where A is a known artist: A is the artist, the others are guests
+                    let parts = name.replacingOccurrences(of: " & ", with: ", ").replacingOccurrences(of: " x ", with: ", ").components(separatedBy: ", ")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    if parts.count >= 2, known.contains(Self.fold(parts[0])) { primary = parts[0]; featured = Array(parts.dropFirst()) }
+                }
                 guard !featured.isEmpty, Self.fold(primary) != Self.fold(name) else { continue }
                 let prim = party(Credit(role: .artist, name: primary), &touched)
                 guard prim !== old else { continue }
@@ -659,11 +669,11 @@ extension LibraryStore {
                     let siblings = many(track, "credits")
                     if siblings.contains(where: { $0 !== c && ($0.value(forKey: "party") as? NSManagedObject) === prim && str($0, "role") == role }) { ctx.delete(c) } else { set(c, "party", prim) }
                     if role == "artist" {
-                        for f in featured {
+                        for (n, f) in featured.enumerated() {
                             let fp = party(Credit(role: .featured, name: f), &touched)
                             if !many(track, "credits").contains(where: { ($0.value(forKey: "party") as? NSManagedObject) === fp }) {
                                 let cr = NSEntityDescription.insertNewObject(forEntityName: "Credit", into: ctx)
-                                set(cr, "role", CreditRole.featured.rawValue); set(cr, "order", 99); set(cr, "track", track); set(cr, "party", fp)
+                                set(cr, "role", CreditRole.featured.rawValue); set(cr, "order", 99 + n); set(cr, "track", track); set(cr, "party", fp)
                             }
                         }
                     }

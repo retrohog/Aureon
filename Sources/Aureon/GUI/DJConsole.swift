@@ -480,7 +480,7 @@ struct DJBrowser: View {
     init() { _lib = ObservedObject(wrappedValue: LibraryModelBridge.shared.model!) }
 
     var body: some View {
-        let songs = LibraryOrdering.songs(lib.songs, ViewOptions.defaults(for: .songs))
+        let songs = lib.orderedSongs(ViewOptions.defaults(for: .songs))
         VStack(spacing: 6) {
             HStack {
                 Text("LIBRARY").microLabel().foregroundStyle(.secondary)

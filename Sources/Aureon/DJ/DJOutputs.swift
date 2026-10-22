@@ -62,7 +62,7 @@ final class CoreAudioDJOutput: DJOutput {
                 for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = sample(i, ch) } }
             } else {
                 let o = out.assumingMemoryBound(to: Int32.self)
-                for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = Int32(clamping: Int64(max(-1, min(1, sample(i, ch))) * 2_147_483_647)) } }
+                for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = Int32(clamping: Int64((max(-1, min(1, sample(i, ch))) * 2_147_483_648).rounded())) } }
             }
         }, "AudioDeviceCreateIOProcID")
         guard let procID else { throw AureonError.message("could not create IOProc") }
@@ -108,7 +108,7 @@ final class CoreAudioCueOutput: DJOutput {
                 for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = ch < 2 ? s[i * 2 + ch] : 0 } }
             } else {
                 let o = out.assumingMemoryBound(to: Int32.self)
-                for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = ch < 2 ? Int32(clamping: Int64(max(-1, min(1, s[i * 2 + ch])) * 2_147_483_647)) : 0 } }
+                for i in 0..<frames { for ch in 0..<devCh { o[i * devCh + ch] = ch < 2 ? Int32(clamping: Int64((max(-1, min(1, s[i * 2 + ch])) * 2_147_483_648).rounded())) : 0 } }
             }
         }, "AudioDeviceCreateIOProcID")
         guard let procID else { throw AureonError.message("could not create IOProc") }

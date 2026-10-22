@@ -27,6 +27,7 @@ struct Theme: Identifiable, Equatable {
     static let families: [(id: String, name: String, blurb: String, dark: Theme, light: Theme)] = {
         let defs: [(String, String, String, (UInt32, UInt32, UInt32, UInt32, UInt32), (UInt32, UInt32, UInt32, UInt32, UInt32), Bool)] = [
             ("aureon", "Aureon", "The default: graphite and coral", (0x1B1B1B, 0x252525, 0xFFFFFF, 0xFF4566, 0xFF8C4D), (0xF7F7F9, 0xE9E9EE, 0x000000, 0xE5334F, 0xFF7A3D), true),
+            ("album", "Album", "Colours flow from the cover that is playing", (0x1B1B1B, 0x141414, 0xFFFFFF, 0xFF4566, 0xFF8C4D), (0xF4F4F6, 0xE8E8EC, 0x111111, 0xE5334F, 0xFF7A3D), false),
             ("evergreen", "Evergreen", "Forest at night, morning meadow by day", (0x0F1B15, 0x14271D, 0xE8F5EC, 0x3DDC84, 0xC9F27B), (0xF3F8F4, 0xE0EDE5, 0x14281D, 0x1E9E5B, 0x7FA82A), false),
             ("nord", "Nord", "Arctic, muted blues", (0x2E3440, 0x3B4252, 0xECEFF4, 0x88C0D0, 0xA3BE8C), (0xECEFF4, 0xE0E5EC, 0x2E3440, 0x5E81AC, 0x7AA18E), false),
             ("catppuccin", "Catppuccin", "Mocha and Latte: soft pastels", (0x1E1E2E, 0x181825, 0xCDD6F4, 0xCBA6F7, 0xF5C2E7), (0xEFF1F5, 0xE6E9EF, 0x4C4F69, 0x8839EF, 0xEA76CB), false),
@@ -47,6 +48,20 @@ struct Theme: Identifiable, Equatable {
     static func named(_ id: String?) -> Theme {
         if id == "light" { return families[0].light }
         return all.first { $0.id == id } ?? .aureon
+    }
+
+    /// The "Album" theme: surfaces, ink and accents taken from the colours of the current cover. Rebuilt whenever the cover changes.
+    static func album(from p: ArtPalette, light: Bool) -> Theme {
+        func tint(_ c: RGB, s: Double, v: Double) -> Color { let h = c.hsb; return RGB(h: h.h, s: max(0, min(1, h.s * s)), v: max(0, min(1, v))).color }
+        let base = p.grid[4], edge = p.grid[0], side = p.grid[6], a = p.accent.hsb, second = p.grid[2]
+        if light {
+            return Theme(id: "album.light", family: "album", name: "Album", blurb: "Colours flow from the cover that is playing", isLight: true,
+                         canvas: tint(base, s: 0.22, v: 0.97), sidebar: tint(edge, s: 0.32, v: 0.91), ink: tint(base, s: 0.55, v: 0.14),
+                         accent: RGB(h: a.h, s: max(0.55, min(0.9, a.s)), v: 0.62).color, accent2: tint(second, s: 1.1, v: 0.6))
+        }
+        return Theme(id: "album", family: "album", name: "Album", blurb: "Colours flow from the cover that is playing", isLight: false,
+                     canvas: tint(base, s: 0.95, v: 0.19), sidebar: tint(side, s: 0.95, v: 0.13), ink: .white,
+                     accent: RGB(h: a.h, s: max(0.4, min(0.9, a.s)), v: 0.95).color, accent2: tint(second, s: 1.1, v: 0.95))
     }
 
     static func resolve(family: String, light: Bool) -> Theme {
@@ -84,7 +99,7 @@ struct ThemePicker: View {
     }
 
     private func swatch(_ id: String, _ name: String, _ blurb: String) -> some View {
-        let t = Theme.resolve(family: id, light: m.theme.isLight)
+        let t = id == "album" ? Theme.album(from: m.hero.palette, light: m.theme.isLight) : Theme.resolve(family: id, light: m.theme.isLight)
         let on = m.themeFamily == id
         return Button { withAnimation(.easeOut(duration: 0.2)) { m.themeFamily = id } } label: {
             VStack(alignment: .leading, spacing: 7) {

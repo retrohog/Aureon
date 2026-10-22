@@ -62,9 +62,9 @@ func extraTests() -> [(String, TestFn)] {
     t += [("auto.net", auto.netSeparatesGoodFromBadMixes), ("auto.learn", auto.netLearnsFromFeedback), ("auto.persist", auto.netPersists), ("auto.planner", auto.plannerPicksTheBestNextTrack),
           ("auto.plan", auto.mixPlanGeometry), ("auto.blend", auto.blendAutomation)]
     let deckT = DJDeckTests()
-    t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops), ("auto.engine", deckT.autoDJMixesTwoTracks)]
+    t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops), ("auto.engine", deckT.autoDJMixesTwoTracks), ("auto.cold", deckT.autoDJStartsFromScratch)]
     let coll = CollectionTests()
-    t += [("lib.featuring", coll.featuringIsSplit), ("lib.composerSplit", coll.composersAreSplitCleanly), ("lib.guests", coll.guestsLiveUnderTheirHostArtist), ("lib.tidy", coll.existingLibrariesAreTidied), ("lib.playlists", coll.likesAndPlaylists)]
+    t += [("lib.featuring", coll.featuringIsSplit), ("lib.composerSplit", coll.composersAreSplitCleanly), ("lib.guests", coll.guestsLiveUnderTheirHostArtist), ("lib.tidy", coll.existingLibrariesAreTidied), ("lib.collab", coll.collaborationsFoldIntoTheKnownArtist), ("lib.playlists", coll.likesAndPlaylists)]
     let dup = DuplicateTests()
     t += [("dup.titles", dup.titlesNormalise), ("dup.songs", dup.songDuplicates), ("dup.albums", dup.albumDuplicates), ("dup.remove", dup.removalFromTheLibrary)]
     let rep = RepeatTests()
@@ -75,6 +75,8 @@ func extraTests() -> [(String, TestFn)] {
     t += [("dspm.profiles", dspm.profilesSaveAndComeBack), ("dspm.throttle", dspm.appliesAreThrottled), ("dspm.prompt", dspm.leavingTheDSPPageAsksFirst), ("dspm.master", dspm.turningOnTheEqualizerSwitchesTheDSPPathOn)]
     let rmx = RemixTests()
     t += [("remix.actions", rmx.performancesAreWellFormed), ("remix.context", rmx.contextComesFromTheTrack), ("remix.rules", rmx.policyKnowsTheRules), ("remix.learn", rmx.policyLearnsAndPersists), ("remix.controller", rmx.controllerPerformsAndRestores)]
+    let diag = DiagnosticTests()
+    t += [("diag.sorting", diag.sortingALargeLibraryIsFast), ("diag.queueWindow", diag.clickingASongQueuesAWindowNotTheLibrary), ("diag.rapidChanges", diag.changingSongsQuicklyNeverBlocks), ("diag.jumpBitPerfect", diag.theNewSongArrivesBitPerfectAfterAJump)]
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]

@@ -152,10 +152,15 @@ final class AnalysisEngine: @unchecked Sendable {
         vDSP_vmul(history, 1, window, 1, &windowed, 1, vDSP_Length(N))
         windowed.withUnsafeBufferPointer { wp in
             wp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: N / 2) { cp in
-                var split = DSPSplitComplex(realp: &real, imagp: &imag)
-                vDSP_ctoz(cp, 2, &split, 1, vDSP_Length(N / 2))
-                vDSP_fft_zrip(setup, &split, 1, log2n, FFTDirection(kFFTDirection_Forward))
-                vDSP_zvmags(&split, 1, &mags, 1, vDSP_Length(N / 2))
+                // the split-complex view must point at storage that stays valid for every call that uses it
+                real.withUnsafeMutableBufferPointer { rp in
+                    imag.withUnsafeMutableBufferPointer { ip in
+                        var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                        vDSP_ctoz(cp, 2, &split, 1, vDSP_Length(N / 2))
+                        vDSP_fft_zrip(setup, &split, 1, log2n, FFTDirection(kFFTDirection_Forward))
+                        vDSP_zvmags(&split, 1, &mags, 1, vDSP_Length(N / 2))
+                    }
+                }
             }
         }
         mags[0] = 0

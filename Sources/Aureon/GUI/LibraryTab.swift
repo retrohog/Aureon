@@ -180,10 +180,10 @@ struct LibraryPage: View {
             DuplicateBanner(lib: lib)
             switch tab {
             case .albums:
-                let albums = LibraryOrdering.albums(lib.albums, opts)
+                let albums = lib.orderedAlbums(opts)
                 if opts.list { AlbumList(albums: albums, open: { lib.selectedID = $0.id }) }
                 else { AlbumGrid(albums: albums, open: { lib.selectedID = $0.id }, minimum: 100 + CGFloat(opts.size) * 100) }
-            case .songs: SongList(tracks: LibraryOrdering.songs(lib.songs, opts), numbered: false, letters: opts.letters && opts.sort == .title, sortHeader: true)
+            case .songs: SongList(tracks: lib.orderedSongs(opts), numbered: false, letters: opts.letters && opts.sort == .title, sortHeader: true)
             case .artists: ArtistsView(rows: LibraryOrdering.rows(lib.rows, opts), opts: opts, open: { lib.selectedID = $0 })
             default: rowList
             }
@@ -726,7 +726,6 @@ struct SongRow: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var hover = Box(false)
     @StateObject private var flash = Box(0.0)
-    @StateObject private var pressed = Box(false)
 
     var body: some View {
         HStack(spacing: 12) {
@@ -759,10 +758,8 @@ struct SongRow: View {
             }
         }
         .overlay(alignment: .leading) { if playing { Capsule().fill(Brand.accent).frame(width: 3, height: 16).padding(.leading, 2).transition(.scale(scale: 0.2).combined(with: .opacity)) } }
-        .scaleEffect(pressed.v ? 0.992 : 1)
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
-        .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { _ in if !pressed.v { withAnimation(.easeOut(duration: 0.08)) { pressed.v = true } } }.onEnded { _ in withAnimation(.easeOut(duration: 0.12)) { pressed.v = false } })
         .onTapGesture {
             flash.v = 1
             DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.75)) { flash.v = 0 } }
