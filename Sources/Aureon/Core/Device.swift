@@ -92,7 +92,7 @@ final class OutputDevice {
         return true
     }
 
-    /// Ask the stream to use an integer physical format of >= `bits` at `rate` (Audirvana "Integer Mode").
+    /// Ask the stream to use an integer physical format of >= `bits` at `rate` ("Integer Mode").
     /// Returns a description of what was chosen, or nil if nothing better than the default exists.
     func negotiateIntegerFormat(rate: Double, bits: Int, channels: Int) -> String? {
         guard let stream = outputStreams.first else { return nil }

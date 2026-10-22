@@ -12,7 +12,7 @@ This page lists what the code in this repository does today, grouped by area. Fo
 | 🧪 | **Experimental.** Works end to end in tests, but has not been verified against the real hardware or models it is meant for, or it is off by default for a reason. Read the note before relying on it. |
 | 🎛 | Verified against simulated devices or published specifications only. No real device was available. |
 
-Requirements: macOS 15 or later, Swift 6 toolchain (the Command Line Tools are enough). Some visual effects use macOS 26's Liquid Glass and fall back to standard materials on older systems.
+Requirements: Swift 6 toolchain (the Command Line Tools are enough). Some visual effects use macOS 26's Liquid Glass and fall back to standard materials on older systems.
 
 ---
 

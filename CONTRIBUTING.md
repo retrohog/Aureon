@@ -9,8 +9,8 @@ Thanks for helping make a better open-source music player.
 2. **The audio callback is sacred.** In `Renderer.render`, `RTProcessor.process` and the sink callbacks: no locks, no allocation, no I/O, no
    Objective-C messaging that you can avoid. Communicate with it through atomics (`RingBuffer`) and hand new objects over with `RCUBox`.
 3. **Test the delivered samples.** New pipeline stages get an end-to-end test using `RecordingSink`.
-4. **Clean-room.** Do not copy code from, or decompile, commercial players. Describe observed *behaviour* in
-   `Docs/RESEARCH.md` and implement from first principles.
+4. **Clean-room.** Do not copy code from, or decompile, commercial players. Describe observed *behaviour* in your
+   pull request and implement from first principles.
 
 ## Workflow
 

@@ -32,7 +32,6 @@
       <stop offset="0" stop-color="#ffd98a" stop-opacity="0.55"/>
       <stop offset="1" stop-color="#ffd98a" stop-opacity="0"/>
     </radialGradient>
-
     <clipPath id="planetClip"><circle cx="512" cy="566" r="238"/></clipPath>
     <mask id="crescent" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
       <circle cx="512" cy="566" r="238" fill="#fff"/>
@@ -45,27 +44,21 @@
     <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="22"/></filter>
     <filter id="haze" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
     <clipPath id="front"><rect x="-520" y="-2" width="1040" height="220"/></clipPath>
-
     <path id="ring" fill-rule="evenodd"
       d="M-432 0A432 120 0 1 0 432 0A432 120 0 1 0 -432 0Z
          M-404 -15A404 87 0 1 0 404 -15A404 87 0 1 0 -404 -15Z"/>
     <path id="star" d="M0 -118Q9 -9 118 0Q9 9 0 118Q-9 9 -118 0Q-9 -9 0 -118Z"/>
   </defs>
-
-
-
   <!-- ring, back half (the planet covers its middle) -->
   <g transform="translate(512 566) rotate(15)">
     <use href="#ring" fill="url(#ringFill)" opacity="0.92"/>
   </g>
-
   <!-- planet -->
   <circle cx="512" cy="566" r="238" fill="url(#body)" stroke="#3a4f8c" stroke-opacity="0.45" stroke-width="3"/>
   <g clip-path="url(#planetClip)">
     <g filter="url(#soft)" opacity="0.95"><rect width="1024" height="1024" fill="#f29a36" mask="url(#glowBand)"/></g>
   </g>
   <rect width="1024" height="1024" fill="url(#rim)" mask="url(#crescent)"/>
-
   <!-- ring, front half -->
   <g transform="translate(512 566) rotate(15)" clip-path="url(#front)">
     <use href="#ring" fill="url(#ringFill)" stroke="#060914" stroke-width="9" paint-order="stroke"/>
@@ -75,7 +68,6 @@
       <ellipse cx="0" cy="-10" rx="409" ry="94"/>
     </g>
   </g>
-
   <!-- the star that lights it -->
   <g transform="translate(232 238)">
     <circle r="120" fill="url(#starGlow)"/>

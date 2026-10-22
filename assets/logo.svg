@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Aureon logo mark (transparent background): a navy planet lit in gold by its star, wearing a record-groove ring. -->
+  <defs>
+    <radialGradient id="sky" cx="0.32" cy="0.26" r="0.95">
+      <stop offset="0" stop-color="#121a36"/>
+      <stop offset="0.45" stop-color="#070a17"/>
+      <stop offset="1" stop-color="#010103"/>
+    </radialGradient>
+    <radialGradient id="body" cx="0.34" cy="0.3" r="0.85" fx="0.28" fy="0.22">
+      <stop offset="0" stop-color="#4a64a6"/>
+      <stop offset="0.35" stop-color="#22336a"/>
+      <stop offset="0.7" stop-color="#0c1434"/>
+      <stop offset="1" stop-color="#03050e"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0.15" y1="0.1" x2="0.75" y2="0.8">
+      <stop offset="0" stop-color="#fff8e8"/>
+      <stop offset="0.45" stop-color="#f8d99a"/>
+      <stop offset="1" stop-color="#e9952f"/>
+    </linearGradient>
+    <linearGradient id="ringFill" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e7a947"/>
+      <stop offset="0.3" stop-color="#fbe3b0"/>
+      <stop offset="0.55" stop-color="#fffaf0"/>
+      <stop offset="0.85" stop-color="#f6d593"/>
+      <stop offset="1" stop-color="#d9913a"/>
+    </linearGradient>
+    <linearGradient id="starFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fffbef"/>
+      <stop offset="1" stop-color="#f3cf86"/>
+    </linearGradient>
+    <radialGradient id="starGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffd98a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffd98a" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="planetClip"><circle cx="512" cy="566" r="238"/></clipPath>
+    <mask id="crescent" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <circle cx="512" cy="566" r="238" fill="#fff"/>
+      <circle cx="526" cy="582" r="237" fill="#000"/>
+    </mask>
+    <mask id="glowBand" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
+      <circle cx="512" cy="566" r="238" fill="#fff"/>
+      <circle cx="560" cy="622" r="232" fill="#000"/>
+    </mask>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="haze" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+    <clipPath id="front"><rect x="-520" y="-2" width="1040" height="220"/></clipPath>
+    <path id="ring" fill-rule="evenodd"
+      d="M-432 0A432 120 0 1 0 432 0A432 120 0 1 0 -432 0Z
+         M-404 -15A404 87 0 1 0 404 -15A404 87 0 1 0 -404 -15Z"/>
+    <path id="star" d="M0 -118Q9 -9 118 0Q9 9 0 118Q-9 9 -118 0Q-9 -9 0 -118Z"/>
+  </defs>
+  <!-- ring, back half (the planet covers its middle) -->
+  <g transform="translate(512 566) rotate(15)">
+    <use href="#ring" fill="url(#ringFill)" opacity="0.92"/>
+  </g>
+  <!-- planet -->
+  <circle cx="512" cy="566" r="238" fill="url(#body)" stroke="#3a4f8c" stroke-opacity="0.45" stroke-width="3"/>
+  <g clip-path="url(#planetClip)">
+    <g filter="url(#soft)" opacity="0.95"><rect width="1024" height="1024" fill="#f29a36" mask="url(#glowBand)"/></g>
+  </g>
+  <rect width="1024" height="1024" fill="url(#rim)" mask="url(#crescent)"/>
+  <!-- ring, front half -->
+  <g transform="translate(512 566) rotate(15)" clip-path="url(#front)">
+    <use href="#ring" fill="url(#ringFill)" stroke="#060914" stroke-width="9" paint-order="stroke"/>
+    <ellipse cx="0" cy="-15" rx="404" ry="87" fill="none" stroke="#f0a23c" stroke-width="5"/>
+    <g fill="none" stroke="#b9822f" stroke-opacity="0.38" stroke-width="2">
+      <ellipse cx="0" cy="-5" rx="414" ry="100"/>
+      <ellipse cx="0" cy="-10" rx="409" ry="94"/>
+    </g>
+  </g>
+  <!-- the star that lights it -->
+  <g transform="translate(232 238)">
+    <circle r="120" fill="url(#starGlow)"/>
+    <use href="#star" fill="#ffe2a0" filter="url(#haze)" opacity="0.6"/>
+    <use href="#star" fill="url(#starFill)"/>
+  </g>
+  <g transform="translate(348 140) scale(0.26)">
+    <use href="#star" fill="url(#starFill)" opacity="0.85"/>
+  </g>
+</svg>

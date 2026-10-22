@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 230" width="1000" height="230" role="img" aria-label="Aureon signal path">
+<defs>
+  <linearGradient id="sp_gold" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#f8d99a"/><stop offset="1" stop-color="#dd9a45"/>
+  </linearGradient>
+  <linearGradient id="sp_bg" x1="0" y1="0" x2="0.4" y2="1">
+    <stop offset="0" stop-color="#0c1327"/><stop offset="1" stop-color="#060912"/>
+  </linearGradient>
+  <marker id="sp_arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#c9963f"/>
+  </marker>
+</defs>
+<rect x="0" y="0" width="1000" height="230" rx="18" fill="url(#sp_bg)"/>
+<text x="40" y="40" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" letter-spacing="3" fill="#8f9ab6">SIGNAL PATH</text>
+<text x="960" y="40" text-anchor="end" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600" letter-spacing="2" fill="#f0b45f">BIT-PERFECT BY DEFAULT</text>
+<rect x="40.0" y="78" width="150" height="74" rx="12" fill="#101728" stroke="#27314f" stroke-width="1.2"/>
+<text x="115.0" y="109" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" letter-spacing="1.1" fill="#e9ebf3">FILE</text>
+<text x="115.0" y="130" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="9.6" fill="#98a3be">FLAC · ALAC · WAV · AIFF · DSF</text>
+<path d="M 196.0 115.0 H 224.5" stroke="#c9963f" stroke-width="1.6" fill="none" marker-end="url(#sp_arrow)" opacity="0.75"/>
+<rect x="232.5" y="78" width="150" height="74" rx="12" fill="#101728" stroke="#27314f" stroke-width="1.2"/>
+<text x="307.5" y="109" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" letter-spacing="1.1" fill="#e9ebf3">DECODE</text>
+<text x="307.5" y="130" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="9.6" fill="#98a3be">32-bit integer, native rate</text>
+<path d="M 388.5 115.0 H 417.0" stroke="#c9963f" stroke-width="1.6" fill="none" marker-end="url(#sp_arrow)" opacity="0.75"/>
+<rect x="425.0" y="78" width="150" height="74" rx="12" fill="#151d38" stroke="#c9963f" stroke-width="1.6"/>
+<text x="500.0" y="109" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" letter-spacing="1.1" fill="#f8d99a">DSP</text>
+<text x="500.0" y="130" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="9.6" fill="#98a3be">opt-in: EQ · upsampling · crossfeed</text>
+<path d="M 581.0 115.0 H 609.5" stroke="#c9963f" stroke-width="1.6" fill="none" marker-end="url(#sp_arrow)" opacity="0.75"/>
+<rect x="617.5" y="78" width="150" height="74" rx="12" fill="#101728" stroke="#27314f" stroke-width="1.2"/>
+<text x="692.5" y="109" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" letter-spacing="1.1" fill="#e9ebf3">CORE AUDIO</text>
+<text x="692.5" y="130" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="9.6" fill="#98a3be">exclusive, hog mode</text>
+<path d="M 773.5 115.0 H 802.0" stroke="#c9963f" stroke-width="1.6" fill="none" marker-end="url(#sp_arrow)" opacity="0.75"/>
+<rect x="810.0" y="78" width="150" height="74" rx="12" fill="#101728" stroke="#27314f" stroke-width="1.2"/>
+<text x="885.0" y="109" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="700" letter-spacing="1.1" fill="#e9ebf3">DAC</text>
+<text x="885.0" y="130" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="9.6" fill="#98a3be">the bits you asked for</text>
+<text x="40" y="200" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif" font-size="11.5" fill="#8f9ab6">Nothing touches the samples unless you switch it on — the DSP block is bypassed by default, not just set to neutral.</text>
+</svg>
