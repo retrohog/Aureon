@@ -30,6 +30,7 @@ enum SelfTestRunner {
               ("resampler.preRinging", s.preRingingDiffersByPhase), ("resampler.seekDeterministic", s.seekIsDeterministic),
               ("resampler.targetSelection", s.targetSelection)]
         t += extraTests()
+        t += upscalerTests()
         return t
     }
 

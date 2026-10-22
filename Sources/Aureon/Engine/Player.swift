@@ -92,6 +92,10 @@ final class Player: @unchecked Sendable {
     let analysisTap = AnalysisTap()
     private let rtQueue = DispatchQueue(label: "aureon.rtbuild", qos: .userInitiated)
     private let rtGeneration = Atomic<Int>(0)
+    /// The AI enhancer for lossy streams (switched in the Intelligence settings). Tests substitute their own before `start`.
+    lazy var upscaler: NeuralUpscaler = { NeuralUpscaler.shared.observeSettings(); return .shared }()
+    /// How much audio is queued for the device: tells the enhancer how long it may wait for a block.
+    let playoutGauge = PlayoutGauge()
     private var irCache: [String: PreparedIR] = [:]
     private let irLock = NSLock()
     private(set) lazy var analysis = AnalysisEngine(tap: analysisTap)
@@ -247,7 +251,7 @@ final class Player: @unchecked Sendable {
 
     // MARK: opening a track (builds the whole ingestion chain)
 
-    private struct Opened { var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double?; var live: LiveMetadata? = nil }
+    private struct Opened { var source: FrameSource; var raw: StreamInfo; var stages: [String]; var gainDB: Double?; var live: LiveMetadata? = nil; var neural = false }
 
     private struct DecodePlan { var base: FrameSource; var raw: StreamInfo; var key: String; var isDoP: Bool; var stages: [String]; var live: LiveMetadata? = nil }
 
@@ -354,12 +358,17 @@ final class Player: @unchecked Sendable {
             }
             chain = DoPStampSource(chain, clock: clock)
         } else {
+        var neural = false
             // sample rate
             let rate = chain.info.sampleRate
             var target = upsamplingTarget(source: rate, mode: s.upsampling.mode, deviceRates: rates, maxRate: s.upsampling.maxRate)
             if let dr = s.deckRate { target = abs(rate - dr) < 0.5 ? nil : dr }
             if isLive, s.radio.upscale, !rates.isEmpty, s.deckRate == nil {
                 target = upsamplingTarget(source: rate, mode: .deviceMax, deviceRates: rates, maxRate: s.radio.maxRate)
+            // AI enhancer (lossy sources only): sinc to the model's rate, the model, then on to the device rate below
+            if let n = upscaler.makeNode(upstream: chain, raw: plan.raw, deckRate: s.deckRate, gauge: playoutGauge) {
+                chain = n.source; stages += n.stages; neural = true
+            }
                 if target == nil, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
             }
             if target == nil, s.upsampling.downsampleToFit, !rates.isEmpty, !nearest(rate, in: rates) { target = fitRate(source: rate, deviceRates: rates) }
@@ -396,7 +405,7 @@ final class Player: @unchecked Sendable {
             if s.polarityInverted { chain = InvertSource(chain); stages.append("Polarity inverted") }
             if let v = varispeed { chain = VarispeedSource(chain, control: v); stages.append("Pitch control") }
         }
-        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live)
+        return Opened(source: chain, raw: plan.raw, stages: stages, gainDB: gainDB, live: plan.live, neural: neural)
     }
 
     /// Decodes upcoming tracks into RAM (and warms ReplayGain data) on a background queue.
@@ -499,6 +508,7 @@ final class Player: @unchecked Sendable {
         if fmt.sampleRate > 192_000 { update { $0.errors.removeAll { $0.hasPrefix("Heavy stream") } } }
         ring.paused.store(true, ordering: .relaxed)                       // held until prefilled: no false underruns
         let renderer = Renderer(ring: ring, channels: fmt.channels, dsp: dsp, underruns: underruns, tap: analysisTap)
+        var seenUpscaler = upscaler.generation
         renderer.deckGain = deckGain
         analysisTap.sampleRate.store(Int(fmt.sampleRate), ordering: .relaxed)
         func applyDSP(_ d: DSPSettings) {
@@ -516,6 +526,7 @@ final class Player: @unchecked Sendable {
         defer { renderer.useDSP.store(false, ordering: .relaxed); sink.stop(); dsp.teardown() }
 
         // producer state
+        playoutGauge.attach(ring, rate: fmt.sampleRate)
         var src: FrameSource? = opened0.source
         var srcID = startID, tailID = startID
         var exhausted = false, endOfGroup = false, groupNext: UUID? = nil, prefilled = false
@@ -721,6 +732,17 @@ final class Player: @unchecked Sendable {
                 }
             }
         }
+            // AI enhancer switched on, or its model finished loading, while a lossy stream plays without it: rebuild that stream.
+            // (Switching it off needs no rebuild: the stage crossfades to its input and passes it through unchanged.)
+            let upGen = upscaler.generation
+            if upGen != seenUpscaler {
+                seenUpscaler = upGen
+                let (b, pos) = heard()
+                if !b.opened.neural, upscaler.wouldInsert(for: b.opened.raw, deckRate: cfg.deckRate) {
+                    return .continueAt(b.entryID, seconds: b.info.isLive ? 0 : Double(pos) / fmt.sampleRate)
+                }
+            }
+
         return .finished
     }
 }
