@@ -29,7 +29,10 @@ struct AureonApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) static weak var model: PlayerModel?
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    /// The app quits when its last window closes, but the launch animation's window is not the last window: if the app's own window is slow to appear (a cold first
+    /// launch) the splash must be able to finish and close without taking the app with it.
+    static func quitsWhenTheLastWindowCloses(appWindowAppeared: Bool) -> Bool { appWindowAppeared }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { Self.quitsWhenTheLastWindowCloses(appWindowAppeared: AppDelegate.model != nil) }
 
     /// Unsaved DSP settings are lost on quit: ask first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
