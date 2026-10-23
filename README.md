@@ -6,7 +6,7 @@
 
 [![Download Aureon 0.3.0](https://img.shields.io/badge/Download-Aureon%200.3.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
 
-![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-1c2340?style=flat-square&logo=apple&logoColor=white)
+![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%C2%B7%20Intel-macOS%2015%2B-1c2340?style=flat-square&logo=apple&logoColor=white)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](Package.swift)
 [![MIT](https://img.shields.io/badge/license-MIT-f0b45f?style=flat-square)](LICENSE)
 
@@ -22,8 +22,8 @@ stage is opt-in and truly bypassed when off, not merely set to neutral.
 > **Status: early (0.3).** What could not be verified without
 > special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
 >
-> **Platforms:** 0.3.0 is for **Apple Silicon Macs on macOS 15 or later**. The new design for Intel Macs and for Windows is
-> next. The app is not notarised yet, so the first launch needs right-click → **Open**.
+> **Platforms:** 0.3.0 runs on **Apple Silicon and Intel Macs, macOS 15 or later**. Windows is next. The app is not notarised
+> yet, so the first launch needs right-click → **Open**.
 
 <br/>
 
@@ -176,15 +176,15 @@ The complete list, with what each feature has been verified against, is in [Docs
 
 | | Status |
 |:--|:--|
-| **Apple Silicon Mac**, macOS 15 or later | Released: 0.3.0 |
-| **Intel Mac** | The new design is next |
-| **Windows** | The new design is planned |
+| **Apple Silicon Mac**, macOS 15 or later | Released: 0.3.0 (arm64 build) |
+| **Intel Mac**, macOS 15 or later | Released: 0.3.0 (universal build). Smart features that need an M-series chip are off; not yet tested on Intel hardware |
+| **Windows** | Planned |
 
 <br/>
 
 ## Install
 
-1. Download **Aureon-0.3.0.dmg** from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**. A `.pkg` installer is also provided.
+1. Download from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**: **Aureon-0.3.0.dmg** for Apple Silicon, or **Aureon-0.3.0-universal.dmg** for Intel Macs (it runs on both). Each has a matching `.pkg` installer.
 2. The app is not notarised yet. On first launch, right-click it and choose **Open**.
 3. Allow access to your music folders when macOS asks.
 
@@ -204,7 +204,9 @@ swift build -c release
 - **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it is not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
 - **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
-- **The new design is Apple Silicon only for now.** Intel Macs and Windows keep the earlier look until their builds follow.
+- **The Intel build has not been tested on real Intel hardware.** It has been run natively on Apple Silicon and under Rosetta only.
+- **On Intel Macs, the on-device language model and the audio enhancer are unavailable** (they need an M-series chip). Smart DJ and playlists use an API key instead.
+- **Windows is not available yet.**
 
 ### Not verified on real hardware or accounts
 
@@ -222,7 +224,7 @@ swift build -c release
 
 | | |
 |:--|:--|
-| 🍎 **Intel and universal build** | The new design for Intel Macs, shipped as one universal app. |
+| 🍎 **Intel hardware checks** | Run the universal build on real Intel Macs and tune the rate planner for older models. |
 | 🪟 **Windows** | A Windows 11 port built on the headless daemon. |
 | 🛠 **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
 | 🔌 **Device changes** | Handle an output unplugged during playback without interrupting the queue. |

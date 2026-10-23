@@ -14,7 +14,7 @@ Aureon still plays bit-perfect from file to DAC by default. Everything that chan
 always shows which state you are in.
 
 > [!NOTE]
-> **Platforms:** Apple Silicon Macs on macOS 15 or later. The new design for Intel Macs and Windows is next.
+> **Platforms:** Apple Silicon and Intel Macs on macOS 15 or later. Windows is next.
 
 ## What's new
 
@@ -61,20 +61,26 @@ always shows which state you are in.
 
 - Casting and multi-room streams can crash under heavy load: the live FLAC encoder has an intermittent index error. Not fixed yet.
 - The app is ad-hoc signed and not notarised. The first launch needs right-click → **Open**, and macOS may ask again for music-folder access after an update.
-- Speaker levelling and alignment have not been checked by ear on every speaker. Bluetooth speakers may need an Extra delay trim.
-- Intel Macs and Windows do not have the new design yet.
+- Speaker levelling and alignment have not been checked on every speaker. Bluetooth speakers may need an Extra delay trim.
+- The Intel build has not been tested on real Intel hardware (run natively on Apple Silicon and under Rosetta only).
+- On Intel Macs the on-device language model and the audio enhancer are unavailable; Smart DJ and playlists use an API key instead.
+- Windows is not available yet.
 
 The README lists what has not been verified on real hardware.
 
 ## Install
 
-Open **Aureon-0.3.0.dmg** and drag **Aureon** to **Applications**, or run **Aureon-0.3.0.pkg**. On first launch, right-click the app and choose **Open**. Requires an Apple Silicon Mac with macOS 15 or later.
+Open the disk image and drag **Aureon** to **Applications**, or run the matching `.pkg`. On first launch, right-click the app and choose **Open**. Requires macOS 15 or later.
 
 ## Downloads and checksums
 
+**Apple Silicon Macs:** `Aureon-0.3.0.dmg` or `.pkg`. **Intel Macs:** `Aureon-0.3.0-universal.dmg` or `.pkg` (also runs on Apple Silicon).
+
 ```
-SHA256 (Aureon-0.3.0.dmg)  2e21fdb9fc23ef93794aaf9382612df77532f970c8ff237b39cfb84a47764105
-SHA256 (Aureon-0.3.0.pkg)  f2cac81b800e4620030496de0b6fe6f716cc8e1ea157131da65c1a5a4a5ba9b1
+SHA256 (Aureon-0.3.0.dmg)            2e21fdb9fc23ef93794aaf9382612df77532f970c8ff237b39cfb84a47764105   22,578,312 bytes
+SHA256 (Aureon-0.3.0.pkg)            f2cac81b800e4620030496de0b6fe6f716cc8e1ea157131da65c1a5a4a5ba9b1   19,391,581 bytes
+SHA256 (Aureon-0.3.0-universal.dmg)  d836b80bdf885079e21da07f9912e8919cda82d47bca3fd99eb41b00705cb7bf   35,310,409 bytes
+SHA256 (Aureon-0.3.0-universal.pkg)  0cfe43d818ab781bad396f1e6d3ebf9f700c82d704229328ae46dfbb3d2c8357   30,700,011 bytes
 ```
 
 Earlier changes are in [RELEASE-NOTES-0.2.0.md](RELEASE-NOTES-0.2.0.md).
