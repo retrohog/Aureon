@@ -54,6 +54,20 @@ final class OutputDevice {
         return (u?.takeRetainedValue() as String?) ?? ""
     }
 
+    /// How late this output plays what it is given, in seconds: the device's own latency, its safety offset, its first stream's latency and one buffer, at the
+    /// device's rate. A built-in speaker is a few milliseconds, a USB DAC a few more, a Bluetooth speaker a hundred or two. nil when the rate is unknown.
+    var outputLatencySeconds: Double? {
+        let rate = currentRate
+        guard rate > 0 else { return nil }
+        let scope = kAudioObjectPropertyScopeOutput
+        let device = getValue(id, addr(kAudioDevicePropertyLatency, scope), default: UInt32(0)) ?? 0
+        let safety = getValue(id, addr(kAudioDevicePropertySafetyOffset, scope), default: UInt32(0)) ?? 0
+        let buffer = getValue(id, addr(kAudioDevicePropertyBufferFrameSize), default: UInt32(0)) ?? 0
+        var stream: UInt32 = 0
+        if let s = outputStreams.first { stream = getValue(s, addr(kAudioStreamPropertyLatency), default: UInt32(0)) ?? 0 }
+        return Double(device) / rate + Double(safety) / rate + Double(buffer) / rate + Double(stream) / rate
+    }
+
     var currentRate: Double { getValue(id, addr(kAudioDevicePropertyNominalSampleRate), default: Float64(0)) ?? 0 }
 
     /// Discrete rates the device can run its clock at.

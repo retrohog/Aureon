@@ -35,21 +35,21 @@ struct MIDIView: View {
                 }
                 MIDIActivityView(activity: midi.activity)
                 if !djMode { Note(text: "Deck and mixer controls act while the DJ console is open (top-right button). The parametric EQ and player controls always work.") }
-                if midi.droppedMessages > 0 { Note(text: "\(midi.droppedMessages) messages were dropped because the controller sent faster than they could be handled.", color: .orange) }
+                if midi.droppedMessages > 0 { Note(text: "\(midi.droppedMessages) messages were dropped because the controller sent faster than they could be handled.", color: Brand.caution) }
             }
         }
     }
 
     private func deviceRow(_ s: MIDISourceInfo) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Toggle(isOn: Binding(get: { midi.isSourceEnabled(s.id) }, set: { midi.setSource(s.id, enabled: $0) })) { Text(s.name) }
                 if !s.online { Badge(text: "Offline", color: .secondary) }
             }
             ForEach(MIDIPresets.suggestions(for: s.name)) { p in
                 HStack(spacing: 8) {
-                    Badge(text: "Preset available", color: .green)
-                    Text(p.name).font(.caption).foregroundStyle(.secondary)
+                    Badge(text: "Preset available", color: Brand.accentText)
+                    Text(p.name).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                     Spacer()
                     Button("Apply") { midi.apply(p) }.controlSize(.small)
                 }
@@ -64,14 +64,14 @@ struct MIDIView: View {
             ForEach(MIDIPresets.all) { p in
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(p.name).font(.system(size: 13.5, weight: .semibold))
-                        Text(p.summary).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                        Text(p.name).font(Typo.sans(13.5, .semibold))
+                        Text(p.summary).font(Typo.caption).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                     Button("Apply") { midi.apply(p) }
                 }
             }
-            if let n = midi.notice { Note(text: n, color: .green) }
+            if let n = midi.notice { Note(text: n, color: Brand.accentText) }
             Note(text: "Presets follow each maker's published MIDI map. If a control does nothing or moves the wrong way, use Learn below to reassign it, or Reverse direction in its ⋯ menu.")
         }
     }
@@ -83,12 +83,12 @@ struct MIDIView: View {
             SectionChips(items: MIDITargets.groups.map { GroupChip(id: $0) }, selection: $group.v, label: \.id)
             if let id = midi.learning, let t = MIDITargets.target(id) {
                 HStack(spacing: 8) {
-                    Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(.orange)
-                    Text("Move a control for “\(t.title)”…").font(.system(size: 13, weight: .medium))
+                    Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Brand.caution)
+                    Text("Move a control for “\(t.title)”…").font(Typo.sans(13, .medium))
                     Spacer()
                     Button("Cancel") { midi.cancelLearn() }.controlSize(.small)
                 }
-                .padding(10).background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.orange.opacity(0.14)))
+                .padding(12).background(RoundedRectangle(cornerRadius: Metrics.radius(8), style: .continuous).fill(Brand.caution.opacity(0.14)))
             }
             VStack(spacing: 0) {
                 let list = MIDITargets.targets(in: group.v.id)
@@ -110,19 +110,19 @@ struct MIDIView: View {
         let maps = midi.mappings.filter { $0.target == t.id }
         let learning = midi.learning == t.id
         return HStack(spacing: 8) {
-            Text(t.title).font(.system(size: 13)).frame(maxWidth: .infinity, alignment: .leading)
+            Text(t.title).font(Typo.sans(13)).frame(maxWidth: .infinity, alignment: .leading)
             if let first = maps.first {
                 if midi.waitingForPickup.contains(where: { id in maps.contains { $0.id == id } }) {
-                    Badge(text: "move to pick up", color: .orange)
+                    Badge(text: "move to pick up", color: Brand.caution)
                 }
-                Text(first.control.title + (maps.count > 1 ? "  +\(maps.count - 1)" : "")).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
+                Text(first.control.title + (maps.count > 1 ? "  +\(maps.count - 1)" : "")).font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary)
                 optionsMenu(first, target: t)
-                Button { midi.clear(target: t.id) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Remove this mapping")
+                Button { midi.clear(target: t.id) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Brand.inkSecondary).help("Remove this mapping")
             }
             Button(learning ? "Cancel" : (maps.isEmpty ? "Learn" : "Re-learn")) { learning ? midi.cancelLearn() : midi.beginLearn(t.id) }
                 .controlSize(.small)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 
     private func optionsMenu(_ map: MIDIMapping, target t: MIDITarget) -> some View {
@@ -152,8 +152,8 @@ struct MIDIActivityView: View {
     @ObservedObject var activity: MIDIActivity
     var body: some View {
         HStack(spacing: 8) {
-            Circle().fill(activity.last == nil ? Color.secondary.opacity(0.4) : Color.green).frame(width: 8, height: 8)
-            Text(activity.last?.summary ?? "Move a control on your device to see its message here").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+            Circle().fill(activity.last == nil ? Brand.inkSecondary.opacity(0.4) : Brand.accentText).frame(width: 8, height: 8)
+            Text(activity.last?.summary ?? "Move a control on your device to see its message here").font(Typo.mono(12)).foregroundStyle(Brand.inkSecondary)
         }
     }
 }

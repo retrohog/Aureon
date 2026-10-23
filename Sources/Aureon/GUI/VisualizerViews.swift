@@ -13,9 +13,9 @@ enum UIRate {
 }
 
 enum Heat {
-    /// Black → indigo → magenta → orange → yellow → white.
+    /// Black → umber → bronze → champagne → ivory: one hue, so the live picture is gold on the dark.
     static let lut: [UInt32] = {
-        let stops: [(Double, (Double, Double, Double))] = [(0, (0, 0, 0.02)), (0.22, (0.17, 0.05, 0.40)), (0.45, (0.55, 0.12, 0.42)), (0.68, (0.93, 0.40, 0.18)), (0.88, (0.99, 0.80, 0.25)), (1, (1, 1, 0.9))]
+        let stops: [(Double, (Double, Double, Double))] = [(0, (0.02, 0.02, 0.025)), (0.25, (0.14, 0.09, 0.05)), (0.5, (0.42, 0.28, 0.12)), (0.75, (0.79, 0.66, 0.43)), (1, (0.97, 0.94, 0.86))]
         return (0..<256).map { i in
             let t = Double(i) / 255
             var k = 0; while k < stops.count - 2 && t > stops[k + 1].0 { k += 1 }
@@ -80,18 +80,21 @@ struct SpectrumCanvas: View {
             for g in stride(from: -80, through: -10, by: 10) {                                    // dB grid
                 let y = size.height * (1 - CGFloat((Double(g) + 90) / 90))
                 var p = Path(); p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
-                ctx.stroke(p, with: .color(Brand.ink.opacity(0.07)), lineWidth: 0.5)
+                ctx.stroke(p, with: .color(Brand.ink.opacity(0.14)), lineWidth: Metrics.hairline)
             }
             for c in 0..<columns {
                 let v = (0..<per).map { bars[c * per + $0] }.max() ?? -120
                 let h = size.height * CGFloat(max(0, min(1, (Double(v) + 90) / 90)))
                 let rect = CGRect(x: CGFloat(c) * w + 0.5, y: size.height - h, width: max(1, w - 1), height: h)
-                let t = Double(c) / Double(columns)
-                ctx.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .linearGradient(Gradient(colors: [Color(hue: 0.60 - 0.55 * t, saturation: 0.8, brightness: 1), Color(hue: 0.60 - 0.55 * t, saturation: 0.9, brightness: 0.55)]),
+                ctx.fill(Path(roundedRect: rect, cornerRadius: Metrics.radius(1.5)), with: .linearGradient(Gradient(colors: [Brand.accent.opacity(0.95), Brand.accent2.opacity(0.45)]),
                                                                                                startPoint: CGPoint(x: 0, y: rect.minY), endPoint: CGPoint(x: 0, y: rect.maxY)))
             }
             for (hz, label) in [(50.0, "50"), (100, "100"), (500, "500"), (1000, "1k"), (5000, "5k"), (10000, "10k"), (20000, "20k")] {
-                ctx.draw(Text(label).font(.system(size: 9)).foregroundStyle(.secondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6))
+                ctx.draw(Text(label).font(Typo.mono(9)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6), anchor: hz >= 20000 ? .trailing : .center)
+            }
+            for g in [-60, -40, -20] {
+                let y = size.height * (1 - CGFloat((Double(g) + 90) / 90))
+                ctx.draw(Text("\(g)").font(Typo.mono(9)).foregroundStyle(Brand.inkTertiary), at: CGPoint(x: 12, y: y - 7))
             }
         }
     }
@@ -108,10 +111,11 @@ struct SpectrogramCanvas: View {
                 let y = size.height * (1 - CGFloat(logX(hz)))
                 var p = Path(); p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y))
                 ctx.stroke(p, with: .color(Brand.ink.opacity(0.12)), style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
-                ctx.draw(Text(label).font(.system(size: 9)).foregroundStyle(.white.opacity(0.7)), at: CGPoint(x: 14, y: y - 6))
+                ctx.draw(Text(label).font(Typo.mono(9)).foregroundStyle(Brand.ink.opacity(0.85)), at: CGPoint(x: 14, y: y - 6))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+        .overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
     }
 }
 
@@ -126,7 +130,7 @@ struct VUMeterView: View {
     var body: some View {
         Canvas { ctx, size in
             let face = CGRect(origin: .zero, size: size)
-            ctx.fill(Path(roundedRect: face, cornerRadius: 8), with: .linearGradient(Gradient(colors: [Color(red: 0.96, green: 0.90, blue: 0.72), Color(red: 0.88, green: 0.80, blue: 0.58)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
+            ctx.fill(Path(roundedRect: face, cornerRadius: Metrics.radius(8)), with: .linearGradient(Gradient(colors: [Color(red: 0.96, green: 0.90, blue: 0.72), Color(red: 0.88, green: 0.80, blue: 0.58)]), startPoint: .zero, endPoint: CGPoint(x: 0, y: size.height)))
             let pivot = CGPoint(x: size.width / 2, y: size.height * 1.12), radius = size.height * 0.98
             func point(_ f: Double, _ r: CGFloat) -> CGPoint {
                 let a = Angle.degrees(-50 + 100 * f).radians
@@ -143,10 +147,10 @@ struct VUMeterView: View {
             for (vu, text) in VUMeterView.marks {
                 let f = VUMeterView.fraction(vu)
                 var t = Path(); t.move(to: point(f, radius * 0.86)); t.addLine(to: point(f, radius * 0.80)); ctx.stroke(t, with: .color(vu > 0 ? Color(red: 0.8, green: 0.1, blue: 0.1) : ink), lineWidth: 1.4)
-                ctx.draw(Text(text).font(.system(size: 9, weight: .semibold)).foregroundStyle(vu > 0 ? Color(red: 0.8, green: 0.1, blue: 0.1) : ink), at: point(f, radius * 0.70))
+                ctx.draw(Text(text).font(Typo.sans(9, .semibold)).foregroundStyle(vu > 0 ? Color(red: 0.8, green: 0.1, blue: 0.1) : ink), at: point(f, radius * 0.70))
             }
-            ctx.draw(Text("VU").font(.system(size: 13, weight: .bold, design: .serif)).foregroundStyle(ink), at: CGPoint(x: size.width / 2, y: size.height * 0.80))
-            ctx.draw(Text(label).font(.system(size: 10, weight: .semibold)).foregroundStyle(ink.opacity(0.7)), at: CGPoint(x: 14, y: 12))
+            ctx.draw(Text("VU").font(Typo.serif(13, .bold)).foregroundStyle(ink), at: CGPoint(x: size.width / 2, y: size.height * 0.80))
+            ctx.draw(Text(label).font(Typo.sans(10, .semibold)).foregroundStyle(ink.opacity(0.7)), at: CGPoint(x: 14, y: 12))
             // needle
             let f = VUMeterView.fraction(Double(value))
             var needle = Path(); needle.move(to: point(f, radius * 0.18)); needle.addLine(to: point(f, radius * 0.88))
@@ -165,17 +169,17 @@ struct PeakBars: View {
             func bar(_ y: CGFloat, _ rms: Float, _ peak: Float, _ name: String) {
                 let h: CGFloat = 12, w = size.width - 34
                 func x(_ db: Float) -> CGFloat { 22 + w * CGFloat(max(0, min(1, (Double(db) + 60) / 60))) }
-                ctx.fill(Path(roundedRect: CGRect(x: 22, y: y, width: w, height: h), cornerRadius: 3), with: .color(Brand.ink.opacity(0.08)))
+                ctx.fill(Path(roundedRect: CGRect(x: 22, y: y, width: w, height: h), cornerRadius: Metrics.radius(3)), with: .color(Brand.ink.opacity(0.08)))
                 let fill = CGRect(x: 22, y: y, width: x(rms) - 22, height: h)
-                ctx.fill(Path(roundedRect: fill, cornerRadius: 3), with: .linearGradient(Gradient(colors: [.green, .green, .yellow, .red]), startPoint: CGPoint(x: 22, y: 0), endPoint: CGPoint(x: 22 + w, y: 0)))
+                ctx.fill(Path(roundedRect: fill, cornerRadius: Metrics.radius(3)), with: .linearGradient(Gradient(colors: [Brand.accent2, Brand.accent, Brand.caution, Color(red: 0.88, green: 0.34, blue: 0.30)]), startPoint: CGPoint(x: 22, y: 0), endPoint: CGPoint(x: 22 + w, y: 0)))
                 var pk = Path(); pk.move(to: CGPoint(x: x(peak), y: y - 1)); pk.addLine(to: CGPoint(x: x(peak), y: y + h + 1))
-                ctx.stroke(pk, with: .color(peak > -1 ? .red : .white), lineWidth: 2)
-                ctx.draw(Text(name).font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary), at: CGPoint(x: 9, y: y + h / 2))
+                ctx.stroke(pk, with: .color(peak > -1 ? Color(red: 0.88, green: 0.34, blue: 0.30) : Brand.ink), lineWidth: 2)
+                ctx.draw(Text(name).font(Typo.mono(10, .medium)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: 9, y: y + h / 2))
             }
             bar(4, meters.rmsL, meters.peakL, "L"); bar(24, meters.rmsR, meters.peakR, "R")
             for db in [-60, -40, -20, -10, -3, 0] {
                 let x = 22 + (size.width - 34) * CGFloat(Double(db + 60) / 60)
-                ctx.draw(Text("\(db)").font(.system(size: 8)).foregroundStyle(.secondary), at: CGPoint(x: x, y: 46))
+                ctx.draw(Text("\(db)").font(Typo.mono(8)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: x, y: 46))
             }
             let c = meters.clipped
             ctx.fill(Path(ellipseIn: CGRect(x: size.width - 10, y: 0, width: 8, height: 8)), with: .color(c ? .red : .red.opacity(0.18)))
@@ -190,20 +194,9 @@ struct VisualizerCard: View {
         Card(title: "Spectrum & meters", subtitle: "Computed on a separate thread from a copy of the audio: it cannot disturb playback") {
             Toggle("Show visualiser", isOn: $m.visualizerEnabled)
             if m.visualizerEnabled {
-                TimelineView(.animation(minimumInterval: UIRate.analyserInterval)) { _ in
-                    VStack(spacing: 12) {
-                        SpectrumCanvas(analysis: m.player.analysis).frame(height: 130)
-                        SpectrogramCanvas(analysis: m.player.analysis).frame(height: 150)
-                        let snap = m.player.analysis.snapshot()
-                        HStack(spacing: 12) {
-                            VUMeterView(value: snap.meters.vuL, label: "L").frame(height: 110)
-                            VUMeterView(value: snap.meters.vuR, label: "R").frame(height: 110)
-                        }
-                        PeakBars(meters: snap.meters).frame(height: 56)
-                    }
-                }
+                GeometryReader { g in AnalyserView(size: g.size) }.frame(height: 520)
                 HStack {
-                    Text("0 VU =").font(.caption).foregroundStyle(.secondary)
+                    Text("0 VU =").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                     Picker("", selection: Binding(get: { m.player.analysis.vuReferenceDBFS }, set: { m.player.analysis.vuReferenceDBFS = $0; m.objectWillChange.send() })) {
                         Text("−18 dBFS (EBU)").tag(Float(-18)); Text("−20 dBFS (SMPTE)").tag(Float(-20)); Text("−14 dBFS").tag(Float(-14))
                     }.labelsHidden().fixedSize()

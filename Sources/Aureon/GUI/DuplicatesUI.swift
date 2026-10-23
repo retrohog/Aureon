@@ -77,18 +77,18 @@ struct DuplicateBanner: View {
     var body: some View {
         if lib.duplicateBanner && !lib.duplicateGroups.isEmpty {
             HStack(spacing: 12) {
-                Image(systemName: "square.on.square.dashed").font(.system(size: 18)).foregroundStyle(Brand.accent)
+                Image(systemName: "square.on.square.dashed").font(Typo.sans(18)).foregroundStyle(Brand.accent)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(lib.duplicateGroups.count) possible duplicate\(lib.duplicateGroups.count == 1 ? "" : "s") found").font(.system(size: 13, weight: .semibold))
-                    Text("Same songs or albums in more than one copy. Review them and keep the best quality — nothing is removed without your say-so.").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+                    Text("\(lib.duplicateGroups.count) possible duplicate\(lib.duplicateGroups.count == 1 ? "" : "s") found").font(Typo.sans(13, .semibold))
+                    Text("Same songs or albums in more than one copy. Review them and keep the best quality — nothing is removed without your say-so.").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
-                PillButton(title: "Review", symbol: "checklist", filled: true) { lib.showDuplicates = true }
+                RuleButton(title: "Review", symbol: "checklist", filled: true) { lib.showDuplicates = true }
                 Button { withAnimation { lib.duplicateBanner = false } } label: { Image(systemName: "xmark") }.buttonStyle(IconButtonStyle()).help("Not now")
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent.opacity(0.12)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent.opacity(0.4), lineWidth: 0.8))
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).fill(Brand.accent.opacity(0.12)))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).strokeBorder(Brand.accent.opacity(0.4), lineWidth: 0.8))
             .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
@@ -109,13 +109,13 @@ struct DuplicateReviewSheet: View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Duplicates").font(.system(size: 20, weight: .semibold))
+                    Text("Duplicates").font(Typo.serif(20, .regular))
                     Text(groups.isEmpty ? "Nothing to review" : "\(groups.count) group\(groups.count == 1 ? "" : "s") · \(plan.count) file\(plan.count == 1 ? "" : "s") to remove · frees \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 }
                 Spacer()
                 Button { lib.showDuplicates = false; dismiss() } label: { Image(systemName: "xmark") }.buttonStyle(IconButtonStyle())
-            }.padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
+            }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 12)
             Divider()
             if groups.isEmpty {
                 EmptyExplainer(icon: "checkmark.seal", title: "No duplicates", text: message.v ?? "Every song and album in your library exists once. Aureon checks again whenever you add music.")
@@ -124,18 +124,18 @@ struct DuplicateReviewSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(groups) { g in groupCard(g) }
-                    }.padding(20)
+                    }.padding(24)
                 }
             }
             Divider()
-            HStack(spacing: 10) {
-                if let m = message.v, !groups.isEmpty { Text(m).font(.caption).foregroundStyle(.secondary) }
+            HStack(spacing: 12) {
+                if let m = message.v, !groups.isEmpty { Text(m).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
                 Spacer()
                 Button("Ignore these") { lib.ignoreDuplicates(groups); lib.showDuplicates = false; dismiss() }.disabled(groups.isEmpty).help("Never suggest these again")
                 Button("Close") { lib.showDuplicates = false; dismiss() }
                 Button { confirm(plan, bytes) } label: { Text("Move \(plan.count) file\(plan.count == 1 ? "" : "s") to Trash…") }
-                    .buttonStyle(.borderedProminent).tint(Brand.accent).disabled(plan.isEmpty)
-            }.padding(14)
+                    .buttonStyle(.solid).tint(Brand.accent).disabled(plan.isEmpty)
+            }.padding(16)
         }
         .frame(width: 760, height: 580)
     }
@@ -149,32 +149,32 @@ struct DuplicateReviewSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: g.kind == .album ? "square.stack" : "music.note").foregroundStyle(Brand.accent)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(g.title).font(.system(size: 13.5, weight: .semibold)).lineLimit(1)
-                    Text(g.artist + " · " + g.reason).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(g.title).font(Typo.sans(13.5, .semibold)).lineLimit(1)
+                    Text(g.artist + " · " + g.reason).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                 }
                 Spacer()
-                Toggle("Resolve", isOn: Binding(get: { !off }, set: { on in if on { skipped.v.remove(g.id) } else { skipped.v.insert(g.id) } })).toggleStyle(.switch).controlSize(.small).labelsHidden()
+                Toggle("Resolve", isOn: Binding(get: { !off }, set: { on in if on { skipped.v.remove(g.id) } else { skipped.v.insert(g.id) } })).toggleStyle(.rule).controlSize(.small).labelsHidden()
                     .help(off ? "This group is left alone" : "This group will be resolved")
             }
             ForEach(Array(g.items.enumerated()), id: \.element.id) { i, it in
                 let isKeep = i == k
-                HStack(spacing: 10) {
-                    Text(isKeep ? "KEEP" : "REMOVE").font(.system(size: 9.5, weight: .heavy, design: .monospaced)).tracking(0.8)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(Capsule().fill((isKeep ? Color.green : Color.red).opacity(off ? 0.08 : 0.2))).foregroundStyle(isKeep ? Color.green : Color.red)
+                HStack(spacing: 12) {
+                    Text(isKeep ? "KEEP" : "REMOVE").font(Typo.mono(9.5, .heavy)).tracking(0.8)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Slab().fill((isKeep ? Brand.accentText : Color.red).opacity(off ? 0.08 : 0.2))).foregroundStyle(isKeep ? Brand.accentText : Color.red)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(it.summary).font(.system(size: 12, weight: .medium))
-                        Text(shorten(it.track.path)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                        Text(it.summary).font(Typo.sans(12, .medium))
+                        Text(shorten(it.track.path)).font(Typo.mono(10.5)).foregroundStyle(Brand.inkTertiary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer()
-                    if isKeep && i == 0 { Text(g.keepReason).font(.system(size: 11)).foregroundStyle(.green.opacity(0.9)).lineLimit(1) }
-                    if !isKeep { Button("Keep this one instead") { keep.v[g.id] = i }.buttonStyle(.link).font(.system(size: 11)) }
+                    if isKeep && i == 0 { Text(g.keepReason).font(Typo.sans(11)).foregroundStyle(.green.opacity(0.9)).lineLimit(1) }
+                    if !isKeep { Button("Keep this one instead") { keep.v[g.id] = i }.buttonStyle(.link).font(Typo.sans(11)) }
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: it.track.path)]) } label: { Image(systemName: "magnifyingglass") }.buttonStyle(.plain).help("Show in Finder")
                 }
                 .opacity(off ? 0.45 : 1)
             }
         }
-        .padding(12).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Brand.ink.opacity(0.05)))
+        .padding(12).background(RoundedRectangle(cornerRadius: Metrics.radius(12), style: .continuous).fill(Brand.ink.opacity(0.05)))
     }
 
     private func shorten(_ p: String) -> String { p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }

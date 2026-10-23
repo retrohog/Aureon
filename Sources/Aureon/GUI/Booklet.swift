@@ -295,9 +295,9 @@ struct BookletToolbar: View {
     var openWindow: (() -> Void)?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Button { model.previous() } label: { Image(systemName: "chevron.left") }.disabled(!model.canGoBack).help("Previous page")
-            Text(model.pageLabel).font(Typo.readout).foregroundStyle(.secondary).monospacedDigit().frame(minWidth: 120)
+            Text(model.pageLabel).font(Typo.readout).foregroundStyle(Brand.inkSecondary).monospacedDigit().frame(minWidth: 120)
             Button { model.next() } label: { Image(systemName: "chevron.right") }.disabled(!model.canGoNext).help("Next page")
             jumpMenu
             Spacer(minLength: 8)
@@ -335,7 +335,7 @@ struct BookletToolbar: View {
                 }
             }
         } label: {
-            Label("Jump to", systemImage: "list.bullet").labelStyle(.titleAndIcon).font(.system(size: 12, weight: .medium))
+            Label("Jump to", systemImage: "list.bullet").labelStyle(.titleAndIcon).font(Typo.sans(12, .medium))
         }
         .menuStyle(.borderlessButton).fixedSize().disabled(model.document == nil)
     }
@@ -358,16 +358,16 @@ struct BookletTrackList: View {
         let chips = ForEach(items) { a in
             let t = a.trackIndex.flatMap { $0 < model.tracks.count ? model.tracks[$0] : nil }
             Button { model.go(to: a.page) } label: {
-                HStack(spacing: 6) {
-                    if let n = t?.number { Text("\(n)").font(Typo.readout).foregroundStyle(.secondary) }
-                    if t?.path != nil && t?.path == playing { Image(systemName: "speaker.wave.2.fill").font(.system(size: 9)).foregroundStyle(Brand.accent) }
-                    Text(a.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                HStack(spacing: 8) {
+                    if let n = t?.number { Text("\(n)").font(Typo.readout).foregroundStyle(Brand.inkSecondary) }
+                    if t?.path != nil && t?.path == playing { Image(systemName: "speaker.wave.2.fill").font(Typo.sans(9)).foregroundStyle(Brand.accent) }
+                    Text(a.title).font(Typo.sans(12, .medium)).lineLimit(1)
                     if vertical { Spacer(minLength: 4) }
-                    Text("p. \(a.page + 1)").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    Text("p. \(a.page + 1)").font(Typo.sans(10.5)).foregroundStyle(Brand.inkTertiary)
                 }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Capsule().fill(a.trackIndex == current ? Brand.accent.opacity(0.22) : Brand.ink.opacity(0.06)))
-                .contentShape(Capsule())
+                .padding(.horizontal, 12).padding(.vertical, 4)
+                .background(Slab().fill(a.trackIndex == current ? Brand.accent.opacity(0.22) : Brand.ink.opacity(0.06)))
+                .contentShape(Slab())
             }
             .buttonStyle(.plain)
             .help(a.source == .outline ? "From the booklet's table of contents" : "Found in the booklet's text")
@@ -375,7 +375,7 @@ struct BookletTrackList: View {
         if vertical {
             VStack(alignment: .leading, spacing: 4) { chips }
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 6, alignment: .leading)], alignment: .leading, spacing: 6) { chips }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 8, alignment: .leading)], alignment: .leading, spacing: 8) { chips }
         }
     }
 }
@@ -411,13 +411,13 @@ struct BookletSection: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: "book.pages").foregroundStyle(Brand.accent)
-            Text("Digital Booklet").kicker().foregroundStyle(.white.opacity(0.75))
-            if let u = b.url { Text(u.deletingPathExtension().lastPathComponent).font(.system(size: 12)).foregroundStyle(.white.opacity(0.45)).lineLimit(1) }
+            Text("Digital Booklet").kicker().foregroundStyle(Brand.inkSecondary)
+            if let u = b.url { Text(u.deletingPathExtension().lastPathComponent).font(Typo.sans(12)).foregroundStyle(Brand.inkTertiary).lineLimit(1) }
             Spacer()
             if expanded && !b.trackAnchors.isEmpty {
-                Button(showTracks ? "Hide Tracks" : "Show Tracks") { showTracks.toggle() }.buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Button(showTracks ? "Hide Tracks" : "Show Tracks") { showTracks.toggle() }.buttonStyle(.plain).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
             }
             Button { withAnimation(.smooth(duration: 0.25)) { expanded.toggle() } } label: {
                 Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 0 : -90))
@@ -428,13 +428,13 @@ struct BookletSection: View {
 
     @ViewBuilder private var stage: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.black.opacity(0.35))
+            RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).fill(Color.black.opacity(0.35))
             if let e = b.error {
-                Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(Brand.inkSecondary)
             } else if b.document == nil {
                 ProgressView().controlSize(.small)
             } else {
-                BookletPDFView(model: b, embedded: true).clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                BookletPDFView(model: b, embedded: true).clipShape(RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous))
             }
         }
         .frame(height: 440)
@@ -479,30 +479,30 @@ struct BookletWindowView: View {
                     .buttonStyle(IconButtonStyle()).help("Tracks")
                 BookletToolbar(model: model)
             }
-            .padding(.leading, 78).padding(.trailing, 14).padding(.vertical, 8)
+            .padding(.leading, 80).padding(.trailing, 16).padding(.vertical, 8)
             .background(Color.black.opacity(0.25))
             HStack(spacing: 0) {
                 if sidebar {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 16) {
                             if !model.trackAnchors.isEmpty {
-                                Text("Tracks").microLabel().foregroundStyle(.secondary)
+                                Text("Tracks").microLabel().foregroundStyle(Brand.inkSecondary)
                                 BookletTrackList(model: model, vertical: true)
                             }
                             if !model.chapters.isEmpty {
-                                Text("Contents").microLabel().foregroundStyle(.secondary)
+                                Text("Contents").microLabel().foregroundStyle(Brand.inkSecondary)
                                 ForEach(model.chapters) { a in
                                     Button { model.go(to: a.page) } label: {
-                                        HStack { Text(a.title).lineLimit(2); Spacer(); Text("p. \(a.page + 1)").foregroundStyle(.tertiary) }.font(.system(size: 12)).contentShape(Rectangle())
+                                        HStack { Text(a.title).lineLimit(2); Spacer(); Text("p. \(a.page + 1)").foregroundStyle(Brand.inkTertiary) }.font(Typo.sans(12)).contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
                                 }
                             }
                             if model.trackAnchors.isEmpty && model.chapters.isEmpty {
-                                Text(model.indexing ? "Reading the booklet…" : "This booklet names none of the album's tracks.").font(.system(size: 12)).foregroundStyle(.secondary)
+                                Text(model.indexing ? "Reading the booklet…" : "This booklet names none of the album's tracks.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                             }
                         }
-                        .padding(14)
+                        .padding(16)
                     }
                     .frame(width: 250)
                     .background(Color.black.opacity(0.18))
@@ -510,7 +510,7 @@ struct BookletWindowView: View {
                 }
                 ZStack {
                     if let e = model.error {
-                        Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
+                        Label(e, systemImage: "exclamationmark.triangle").foregroundStyle(Brand.inkSecondary)
                     } else if model.document == nil {
                         ProgressView()
                     } else {

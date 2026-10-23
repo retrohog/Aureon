@@ -16,11 +16,14 @@ final class ZoneModel: ObservableObject {
     @Published private(set) var aligning = false
     @Published private(set) var message: String?
     @Published var delays: [String: Double] = [:]           // milliseconds, per room
+    @Published var levels: [String: Double] = [:]           // decibels (0 or below), per room: evens out rooms that are louder than the others
     @Published var volume = 0.5
     @Published var sampleRate = 44_100
     @Published var bits = 24
 
     private var upnp: [UPnPDevice] = []
+    /// Volume changes go out one at a time and only the newest: dragging the slider never queues up requests or lets an old one land last.
+    private var volumeSender: CoalescingSender<Double>?
     weak var cast: CastModel?
     var onRouteChange: (() -> Void)?
 
@@ -65,6 +68,8 @@ final class ZoneModel: ObservableObject {
             }
         }
         active = zone
+        volumeSender = CoalescingSender<Double> { [weak zone] v in await zone?.setVolume(v) }
+        for r in chosen { zone.member(r.id)?.feed.level.reset(to: SmoothGain.linear(db: Self.clampLevel(levels[r.id] ?? 0))) }
         Task {
             do {
                 let failed = try await zone.start()
@@ -81,13 +86,23 @@ final class ZoneModel: ObservableObject {
 
     func stop() {
         guard let z = active else { return }
-        active = nil
+        active = nil; volumeSender = nil
         Task { await z.stop(); onRouteChange?() }
     }
 
     func setDelay(_ id: String, ms: Double) {
         delays[id] = ms
         active?.member(id)?.feed.delaySeconds = ms / 1000
+    }
+
+    nonisolated static let levelRange = -24.0...0.0
+    nonisolated static func clampLevel(_ db: Double) -> Double { db.isFinite ? min(max(db, levelRange.lowerBound), levelRange.upperBound) : 0 }
+
+    /// Trims one room (decibels, 0 or below). Digital, so it takes effect at once on every kind of room, and smooth: no step, no click.
+    func setLevel(_ id: String, db: Double) {
+        let v = Self.clampLevel(db)
+        levels[id] = v
+        active?.member(id)?.feed.level.setTarget(db: v)
     }
 
     func align() {
@@ -101,7 +116,7 @@ final class ZoneModel: ObservableObject {
         }
     }
 
-    func setVolume(_ v: Double) { volume = v; if let z = active { Task { await z.setVolume(v) } } }
+    func setVolume(_ v: Double) { volume = v; if active != nil { volumeSender?.submit(v) } }
 
     var sinkFactory: ((PlayerOptions) -> AudioSink?)? {
         guard let z = active, z.running else { return nil }
@@ -116,27 +131,32 @@ struct ZoneCard: View {
 
     var body: some View {
         Card(title: "Multi-room zone", subtitle: "Play the processed sound in several rooms at once: Sonos, DLNA / UPnP renderers and Chromecasts") {
-            HStack(spacing: 10) {
-                PillButton(title: zone.scanning ? "Searching…" : "Find speakers", symbol: "dot.radiowaves.left.and.right") { zone.scan() }.disabled(zone.scanning || zone.isActive)
+            HStack(spacing: 12) {
+                RuleButton(title: zone.scanning ? "Searching…" : "Find speakers", symbol: "dot.radiowaves.left.and.right") { zone.scan() }.disabled(zone.scanning || zone.isActive)
                 if zone.isActive {
-                    PillButton(title: zone.aligning ? "Measuring…" : "Align rooms", symbol: "arrow.left.and.right") { zone.align() }.disabled(zone.aligning)
-                    PillButton(title: "Stop zone", symbol: "stop.fill") { zone.stop() }
+                    RuleButton(title: zone.aligning ? "Measuring…" : "Align rooms", symbol: "arrow.left.and.right") { zone.align() }.disabled(zone.aligning)
+                    RuleButton(title: "Stop zone", symbol: "stop.fill") { zone.stop() }
                 } else {
-                    PillButton(title: zone.starting ? "Starting…" : "Start zone", symbol: "play.fill", filled: true) { zone.start() }.disabled(zone.selected.isEmpty || zone.starting)
+                    RuleButton(title: zone.starting ? "Starting…" : "Start zone", symbol: "play.fill", filled: true) { zone.start() }.disabled(zone.selected.isEmpty || zone.starting)
                 }
             }
             ForEach(zone.rooms) { r in
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Toggle("", isOn: Binding(get: { zone.selected.contains(r.id) }, set: { _ in zone.toggle(r.id) })).labelsHidden().disabled(zone.isActive)
-                        VStack(alignment: .leading, spacing: 0) { Text(r.name); Text("\(r.kind.rawValue) · \(r.detail)").font(.caption2).foregroundStyle(.tertiary) }
+                        VStack(alignment: .leading, spacing: 0) { Text(r.name); Text("\(r.kind.rawValue) · \(r.detail)").font(Typo.caption2).foregroundStyle(Brand.inkTertiary) }
                         Spacer()
                     }
                     if zone.isActive, zone.selected.contains(r.id) {
                         HStack {
-                            Text("Delay").font(.caption).foregroundStyle(.secondary).frame(width: 50, alignment: .leading)
+                            Text("Delay").font(Typo.caption).foregroundStyle(Brand.inkSecondary).frame(width: 50, alignment: .leading)
                             ValueSlider(value: Binding(get: { zone.delays[r.id] ?? 0 }, set: { zone.setDelay(r.id, ms: $0) }), in: 0...2000, step: 1)
-                            Text("\(Int(zone.delays[r.id] ?? 0)) ms").monospacedDigit().font(.caption).frame(width: 64, alignment: .trailing)
+                            Text("\(Int(zone.delays[r.id] ?? 0)) ms").monospacedDigit().font(Typo.caption).frame(width: 64, alignment: .trailing)
+                        }
+                        HStack {
+                            Text("Level").font(Typo.caption).foregroundStyle(Brand.inkSecondary).frame(width: 50, alignment: .leading)
+                            ValueSlider(value: Binding(get: { zone.levels[r.id] ?? 0 }, set: { zone.setLevel(r.id, db: $0) }), in: ZoneModel.levelRange, step: 0.5)
+                            Text(String(format: "%+.1f dB", zone.levels[r.id] ?? 0)).monospacedDigit().font(Typo.caption).frame(width: 64, alignment: .trailing)
                         }
                     }
                 }
@@ -152,8 +172,8 @@ struct ZoneCard: View {
                     Image(systemName: "speaker.wave.3.fill")
                 }
             }
-            if let m = zone.message { Note(text: m, color: .orange) }
-            Note(text: "Sonos players you tick are grouped (the first coordinates) and Sonos keeps them in sync itself. Other rooms each get their own stream with a sample-exact delay: “Align rooms” measures how far each lags (about ±20 ms where the speaker reports its position) and sets the delays; fine-tune by ear with the sliders. AirPlay 2 speakers cannot be zone members: macOS only lets its own output route drive them, so use the AirPlay button above for those. Clocks drift apart slowly; align again in long sessions.")
+            if let m = zone.message { Note(text: m, color: Brand.caution) }
+            Note(text: "Sonos players you tick are grouped (the first coordinates) and Sonos keeps them in sync itself. Other rooms each get their own stream with a sample-exact delay: “Align rooms” measures how far each lags (about ±20 ms where the speaker reports its position) and sets the delays; fine-tune by ear with the sliders. AirPlay 2 speakers cannot be zone members: macOS only lets its own output route drive them, so use the AirPlay button above for those. Clocks drift apart slowly; align again in long sessions. If one room is louder than the others, turn its Level down: it is applied here, smoothly, so it works for every kind of room and follows the volume slider.")
         }
         .onAppear { zone.cast = cast; if zone.rooms.isEmpty { zone.scan() } }
     }

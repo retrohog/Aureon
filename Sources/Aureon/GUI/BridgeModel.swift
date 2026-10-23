@@ -51,17 +51,17 @@ struct BridgeCard: View {
             Toggle("Share this library on the local network", isOn: $bridge.sharing)
             if bridge.sharing {
                 if let t = bridge.token {
-                    Text(t).font(.system(size: 22, weight: .semibold, design: .monospaced)).textSelection(.enabled)
+                    Text(t).font(Typo.mono(22, .semibold)).textSelection(.enabled)
                     Note(text: "Enter this code in the companion app within two minutes. It works once.")
-                    PillButton(title: "Cancel", symbol: "xmark") { bridge.cancelPairing() }
+                    RuleButton(title: "Cancel", symbol: "xmark") { bridge.cancelPairing() }
                 } else {
-                    PillButton(title: "Pair a device…", symbol: "iphone.badge.plus", filled: true) { bridge.startPairing() }
+                    RuleButton(title: "Pair a device…", symbol: "iphone.badge.plus", filled: true) { bridge.startPairing() }
                 }
                 ForEach(bridge.devices) { d in
-                    HStack { Image(systemName: "iphone"); Text(d.name); Spacer(); PillButton(title: "Remove", symbol: "trash") { bridge.remove(d) } }
+                    HStack { Image(systemName: "iphone"); Text(d.name); Spacer(); RuleButton(title: "Remove", symbol: "trash") { bridge.remove(d) } }
                 }
             }
-            if let m = bridge.message { Note(text: m, color: .orange) }
+            if let m = bridge.message { Note(text: m, color: Brand.caution) }
             Note(text: "Everything stays on your network: the link is encrypted with a key only paired devices have, nothing goes through a server, and tracks that live in the cloud or on a music server are not offered. Sharing runs at low priority and never touches the audio engine.")
         }
     }

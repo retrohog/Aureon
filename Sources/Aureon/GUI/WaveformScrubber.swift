@@ -65,39 +65,72 @@ enum ScrubMath {
 
 // MARK: - Drawing
 
-/// The static part of the waveform: mirrored bars, a dim outer peak and a solid inner RMS body. It depends only on the data, the size and
-/// the colours, never on the playhead, so it is drawn once and then only masked as the song plays.
+/// The static part of the waveform: fine upright bars, a dim outer peak and a solid inner RMS body. It depends only on the data, the size and
+/// the colours, never on the playhead, so it is drawn once and then only masked as the song plays. The played part is filled with the accent
+/// gradient (`gradient`), a single linear sweep across the width.
 struct WaveformArt: View, Equatable {
     let overview: WaveformOverview?
     let pitch: CGFloat            // distance between bar centres
     let bar: CGFloat              // bar width
     let peakColor: Color
     let bodyColor: Color
-    var glow: Color? = nil
+    var gradient: [Color]? = nil
 
     var body: some View {
         Canvas { ctx, size in
             let mid = size.height / 2
             let n = ScrubMath.columns(width: Double(size.width), pitch: Double(pitch))
+            func shading(_ base: Color, _ alpha: Double) -> GraphicsContext.Shading {
+                if let gradient { return .linearGradient(Gradient(colors: gradient.map { $0.opacity(alpha) }), startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)) }
+                return .color(base)
+            }
             if let o = overview, !o.isEmpty {
                 let cols = o.columns(n)
                 var outer = Path(), inner = Path()
                 for (i, c) in cols.enumerated() {
                     let x = CGFloat(i) * pitch + (pitch - bar) / 2
-                    let ph = max(1.2, CGFloat(c.peak) * (size.height - 1)), rh = max(1.2, CGFloat(c.rms) * (size.height - 1))
-                    outer.addRoundedRect(in: CGRect(x: x, y: mid - ph / 2, width: bar, height: ph), cornerSize: CGSize(width: bar / 2, height: bar / 2))
-                    inner.addRoundedRect(in: CGRect(x: x, y: mid - rh / 2, width: bar, height: rh), cornerSize: CGSize(width: bar / 2, height: bar / 2))
+                    let ph = max(1, CGFloat(c.peak) * (size.height - 1)), rh = max(1, CGFloat(c.rms) * (size.height - 1))
+                    outer.addRect(CGRect(x: x, y: mid - ph / 2, width: bar, height: ph))
+                    inner.addRect(CGRect(x: x, y: mid - rh / 2, width: bar, height: rh))
                 }
-                if let glow { ctx.addFilter(.shadow(color: glow, radius: 3.5)) }
-                ctx.fill(outer, with: .color(peakColor))
-                ctx.fill(inner, with: .color(bodyColor))
+                ctx.fill(outer, with: shading(peakColor, 0.45))
+                ctx.fill(inner, with: shading(bodyColor, 1))
             } else {
                 // no overview (radio, DSD, cloud, still measuring): a row of fine dots, like an idle level meter
                 var dots = Path()
-                for i in 0..<n { dots.addEllipse(in: CGRect(x: CGFloat(i) * pitch + (pitch - 1.6) / 2, y: mid - 0.8, width: 1.6, height: 1.6)) }
-                if let glow { ctx.addFilter(.shadow(color: glow, radius: 2)) }
-                ctx.fill(dots, with: .color(bodyColor))
+                for i in 0..<n { dots.addRect(CGRect(x: CGFloat(i) * pitch + (pitch - 1) / 2, y: mid - 0.5, width: 1, height: 1)) }
+                ctx.fill(dots, with: shading(bodyColor, 1))
             }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// The waveform as one fine line: the outline of the loudness above and below a quiet centre, two one-point strokes, nothing filled.
+struct WaveformLineArt: View, Equatable {
+    let overview: WaveformOverview?
+    let color: Color
+    var gradient: [Color]? = nil
+
+    var body: some View {
+        Canvas { ctx, size in
+            let mid = size.height / 2
+            let n = max(2, Int(size.width / 2))
+            var top = Path(), bottom = Path()
+            if let o = overview, !o.isEmpty {
+                for (i, c) in o.columns(n).enumerated() {
+                    let x = CGFloat(i) / CGFloat(n - 1) * size.width
+                    let a = max(0.5, CGFloat(c.rms * 0.5 + c.peak * 0.5) * (size.height / 2 - 1))
+                    if i == 0 { top.move(to: CGPoint(x: x, y: mid - a)); bottom.move(to: CGPoint(x: x, y: mid + a)) }
+                    else { top.addLine(to: CGPoint(x: x, y: mid - a)); bottom.addLine(to: CGPoint(x: x, y: mid + a)) }
+                }
+            } else {
+                top.move(to: CGPoint(x: 0, y: mid)); top.addLine(to: CGPoint(x: size.width, y: mid))
+            }
+            let shading: GraphicsContext.Shading = gradient.map { .linearGradient(Gradient(colors: $0), startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)) } ?? .color(color)
+            let stroke = StrokeStyle(lineWidth: 1, lineJoin: .round)
+            ctx.stroke(top, with: shading, style: stroke)
+            ctx.stroke(bottom, with: shading, style: stroke)
         }
         .accessibilityHidden(true)
     }
@@ -109,7 +142,7 @@ struct WaveformArt: View, Equatable {
 /// position updates, hovering shows the time under the pointer, dragging scrubs, and scrolling over it seeks (a trackpad gesture that starts on
 /// it, or the mouse wheel with ⌥). Any other scrolling is passed on to the page, through `ScrollRouter`.
 struct WaveformScrubber: View {
-    enum Style { case bar, stage }
+    enum Style { case bar, stage, line }
 
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var progress: ProgressModel
@@ -120,10 +153,11 @@ struct WaveformScrubber: View {
     @StateObject private var hoverX = Box<CGFloat?>(nil)
     @StateObject private var dragging = Box(false)
     @StateObject private var commit = Box<DispatchWorkItem?>(nil)
+    @StateObject private var pulse = Box(SeekPulse())
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var pitch: CGFloat { style == .bar ? 3 : 4 }
-    private var barWidth: CGFloat { style == .bar ? 1.8 : 2.4 }
+    private var barWidth: CGFloat { style == .bar ? 1 : 1.5 }
 
     var body: some View {
         let item = m.focusItem
@@ -133,32 +167,44 @@ struct WaveformScrubber: View {
         let dur = max(progress.duration, 0.001)
         let f = CGFloat(ScrubMath.fraction(position: m.scrub ?? progress.position, duration: dur))
         let ov = store.overview(path)
+        let wc = WaveformColors.current
 
         GeometryReader { g in
             let w = g.size.width, h = g.size.height
             ZStack(alignment: .leading) {
-                WaveformArt(overview: ov, pitch: pitch, bar: barWidth, peakColor: .white.opacity(0.16), bodyColor: .white.opacity(style == .bar ? 0.34 : 0.4))
-                    .equatable()
-                WaveformArt(overview: ov, pitch: pitch, bar: barWidth, peakColor: tint.opacity(0.45), bodyColor: tint, glow: tint.opacity(0.55))
-                    .equatable()
-                    .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
-                    .opacity(enabled || live ? 1 : 0.35)
+                if style == .line {
+                    WaveformLineArt(overview: ov, color: wc.unplayed.color).equatable()
+                    WaveformLineArt(overview: ov, color: wc.played.color, gradient: [wc.played.color, wc.played2.color]).equatable()
+                        .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
+                        .opacity(enabled || live ? 1 : 0.35)
+                } else {
+                    WaveformArt(overview: ov, pitch: pitch, bar: barWidth, peakColor: wc.unplayed.color.opacity(0.4), bodyColor: wc.unplayed.color)
+                        .equatable()
+                    WaveformArt(overview: ov, pitch: pitch, bar: barWidth, peakColor: wc.played.color, bodyColor: wc.played.color, gradient: [wc.played.color, wc.played2.color])
+                        .equatable()
+                        .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
+                        .opacity(enabled || live ? 1 : 0.35)
+                }
+                if pulse.v.count > 0 { SeekPulseMark(x: pulse.v.x, height: h + (style == .line ? 8 : 4)).id(pulse.v.count) }
                 if let x = hoverX.v, enabled, !dragging.v {
-                    Rectangle().fill(.white.opacity(0.55)).frame(width: 1, height: h).offset(x: min(max(0, x), w) - 0.5).allowsHitTesting(false)
+                    Rectangle().fill(Brand.ink.opacity(0.4)).frame(width: Metrics.hairline, height: h).offset(x: min(max(0, x), w) - 0.25).allowsHitTesting(false)
                 }
                 if enabled {
-                    Capsule().fill(.white).frame(width: style == .bar ? 2 : 2.5, height: h + (style == .bar ? 2 : 6))
-                        .shadow(color: tint.opacity(0.9), radius: 4).shadow(color: .black.opacity(0.4), radius: 1)
-                        .offset(x: w * f - 1)
-                        .allowsHitTesting(false)
+                    if style == .line {
+                        Circle().fill(Brand.accent).frame(width: 6, height: 6).offset(x: w * f - 3).allowsHitTesting(false)
+                    } else {
+                        Rectangle().fill(Brand.accent).frame(width: 1, height: h + (style == .bar ? 4 : 8))
+                            .offset(x: w * f - 0.5, y: 0)
+                            .allowsHitTesting(false)
+                    }
                 }
                 if let x = hoverX.v, enabled {
                     let t = dragging.v ? (m.scrub ?? progress.position) : ScrubMath.time(x: Double(x), width: Double(w), duration: dur)
-                    Text(clock(t)).font(.system(size: 10.5, weight: .semibold, design: .monospaced)).monospacedDigit()
-                        .padding(.horizontal, 6).padding(.vertical, 2.5)
-                        .background(Capsule().fill(.black.opacity(0.78))).overlay(Capsule().strokeBorder(.white.opacity(0.14), lineWidth: 0.6))
-                        .foregroundStyle(.white).fixedSize()
-                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: style == .bar ? -(h / 2 + 12) : -(h / 2 + 16))
+                    Text(clock(t)).font(Typo.mono(10, .regular))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Rectangle().fill(Brand.canvas)).overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+                        .foregroundStyle(Brand.ink).fixedSize()
+                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: style == .bar ? -(h / 2 + 16) : -(h / 2 + 20))
                         .allowsHitTesting(false).transition(.opacity)
                 }
             }
@@ -174,9 +220,9 @@ struct WaveformScrubber: View {
                 dragging.v = true
                 hoverX.v = d.location.x
                 m.scrub = ScrubMath.time(x: Double(d.location.x), width: Double(w), duration: dur)
-            }.onEnded { _ in
+            }.onEnded { d in
                 dragging.v = false
-                if let t = m.scrub { if enabled { m.player.send(.seekTo(t)) }; m.scrub = nil }
+                if let t = m.scrub { if enabled { m.player.send(.seekTo(t)); pulse.v.fire(at: min(max(0, d.location.x), w)) }; m.scrub = nil }
             })
             .scrollAdjustable(hovering: hoverX.v != nil && enabled) { notches in
                 // seek after the gesture settles, not on every event of a trackpad swipe
@@ -188,6 +234,7 @@ struct WaveformScrubber: View {
                     MainActor.assumeIsolated {
                         guard let model, let t = model.scrub else { return }
                         model.player.send(.seekTo(t)); model.scrub = nil
+                        pulse.v.fire(at: w * CGFloat(ScrubMath.fraction(position: t, duration: dur)))
                     }
                 }
                 commit.v = work
@@ -195,7 +242,7 @@ struct WaveformScrubber: View {
                 return true
             }
         }
-        .frame(height: style == .bar ? 16 : 46)
+        .frame(height: style == .bar ? 16 : (style == .line ? 40 : 46))
         .onAppear { prefetch() }
         .onChange(of: path) { _, _ in prefetch() }
         .accessibilityElement()

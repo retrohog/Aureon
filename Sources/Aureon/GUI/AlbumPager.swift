@@ -107,11 +107,11 @@ final class AlbumPager: ObservableObject {
 /// What a cell shows until its page has arrived: the card's shape, so nothing shifts when the real one replaces it.
 struct AlbumCardPlaceholder: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.06)).aspectRatio(1, contentMode: .fit)
+        VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.ink.opacity(0.06)).aspectRatio(1, contentMode: .fit)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Album title").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                Text("Artist · 2000").font(.system(size: 11.5)).lineLimit(1)
+                Text("Album title").font(Typo.sans(12.5, .semibold)).lineLimit(1)
+                Text("Artist · 2000").font(Typo.sans(11.5)).lineLimit(1)
             }.redacted(reason: .placeholder)
         }
     }
@@ -132,13 +132,13 @@ struct PagedAlbums: View {
                     ForEach(0..<pager.total, id: \.self) { i in
                         Group {
                             if let a = pager.peek(i) { AlbumListRow(album: a) { open(a) } }
-                            else { RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(0.04)).frame(height: 40).padding(.vertical, 5).padding(.horizontal, 9) }
+                            else { RoundedRectangle(cornerRadius: Metrics.radius(9), style: .continuous).fill(Brand.ink.opacity(0.04)).frame(height: 40).padding(.vertical, 4).padding(.horizontal, 8) }
                         }
                         .onAppear { pager.ensure(i) }
                     }
                 }
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: minimum + 60), spacing: 18, alignment: .top)], alignment: .leading, spacing: 22) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: minimum + 80), spacing: 40, alignment: .top)], alignment: .leading, spacing: 48) {
                     ForEach(0..<pager.total, id: \.self) { i in
                         Group {
                             if let a = pager.peek(i) { AlbumCard(album: a) { open(a) } } else { AlbumCardPlaceholder() }
@@ -148,7 +148,7 @@ struct PagedAlbums: View {
                 }
             }
         }
-        .overlay { if pager.total == 0 && pager.revision > 0 { Text("No albums").foregroundStyle(.secondary).padding(.top, 60) } }
+        .overlay { if pager.total == 0 && pager.revision > 0 { Text("No albums").foregroundStyle(Brand.inkSecondary).padding(.top, 64) } }
         .onAppear { pager.configure(query) }
         .onChange(of: query) { _, q in pager.configure(q) }
     }

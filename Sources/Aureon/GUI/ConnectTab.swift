@@ -4,7 +4,7 @@ import AppKit
 struct ConnectTab: View {
     @EnvironmentObject var m: PlayerModel
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             DiscordCard(social: m.social)
             ScrobbleCard(social: m.social)
             IdentifyCard(social: m.social)
@@ -23,9 +23,9 @@ struct SecretRow: View {
     var body: some View {
         HStack {
             Text(title).frame(width: 130, alignment: .leading)
-            SecureField(isSet ? "saved in the Keychain — type to replace" : "paste here", text: $draft.v).textFieldStyle(.roundedBorder)
+            SecureField(isSet ? "saved in the Keychain — type to replace" : "paste here", text: $draft.v).textFieldStyle(.plain).ruleField()
             Button("Save") { save(draft.v.trimmingCharacters(in: .whitespacesAndNewlines)); draft.v = "" }.disabled(draft.v.isEmpty)
-            if isSet { Image(systemName: "checkmark.circle.fill").foregroundStyle(.green) }
+            if isSet { Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.accentText) }
         }
     }
 }
@@ -37,10 +37,10 @@ struct DiscordCard: View {
             Toggle("Show on Discord", isOn: $social.settings.discordEnabled)
             HStack {
                 Text("Application ID").frame(width: 130, alignment: .leading)
-                TextField("from discord.com/developers/applications", text: $social.settings.discordClientID).textFieldStyle(.roundedBorder)
+                TextField("from discord.com/developers/applications", text: $social.settings.discordClientID).textFieldStyle(.plain).ruleField()
             }
             Note(text: "Create a free application there and paste its ID. Album art appears when the track was identified (Deep Dive); otherwise upload an image named “aureon” to the application's Rich Presence assets.")
-            HStack { Circle().fill(social.discordStatus.hasPrefix("Showing") || social.discordStatus == "Connected" ? Color.green : Color.gray).frame(width: 8, height: 8); Text(social.discordStatus).font(.caption).foregroundStyle(.secondary) }
+            HStack { Circle().fill(social.discordStatus.hasPrefix("Showing") || social.discordStatus == "Connected" ? Brand.accentText : Color.gray).frame(width: 8, height: 8); Text(social.discordStatus).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
         }
     }
 }
@@ -55,9 +55,9 @@ struct ScrobbleCard: View {
                 SecretRow(title: "Shared secret", isSet: !social.lastfmSecret.isEmpty) { social.lastfmSecret = $0 }
                 HStack {
                     Button("Sign in with Last.fm…") { social.beginLastFM() }
-                    if social.lastfmWaitingToken != nil { Button("Finish sign-in") { social.finishLastFM() }.buttonStyle(.borderedProminent) }
+                    if social.lastfmWaitingToken != nil { Button("Finish sign-in") { social.finishLastFM() }.buttonStyle(.solid) }
                     Button("Sign out") { social.signOutLastFM() }.disabled(!social.lastfmStatus.hasPrefix("Signed in"))
-                    Text(social.lastfmStatus).font(.caption).foregroundStyle(.secondary)
+                    Text(social.lastfmStatus).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
                 Note(text: "Register an API account at last.fm/api/account/create (it is free) and paste the key and secret. Your password is never entered in Aureon.")
             }
@@ -67,17 +67,17 @@ struct ScrobbleCard: View {
                 SecretRow(title: "User token", isSet: !social.listenbrainzToken.isEmpty) { social.listenbrainzToken = $0 }
                 HStack {
                     Button("Check token") { social.validateListenBrainz() }
-                    Text(social.listenbrainzStatus).font(.caption).foregroundStyle(.secondary)
+                    Text(social.listenbrainzStatus).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
                 Note(text: "Your token is on listenbrainz.org/settings.")
             }
             Divider()
             HStack {
-                Text(social.pending == 0 ? "No plays waiting to be sent" : "\(social.pending) play\(social.pending == 1 ? "" : "s") waiting to be sent").font(.caption)
+                Text(social.pending == 0 ? "No plays waiting to be sent" : "\(social.pending) play\(social.pending == 1 ? "" : "s") waiting to be sent").font(Typo.caption)
                 Spacer()
                 Button("Send now") { social.flush() }.disabled(social.pending == 0)
             }
-            if let msg = social.message { Note(text: msg, color: .orange) }
+            if let msg = social.message { Note(text: msg, color: Brand.caution) }
         }
     }
 }
@@ -89,15 +89,15 @@ struct IdentifyCard: View {
         Card(title: "Identifying untagged files", subtitle: "AcoustID fingerprinting finds the MusicBrainz recording, for the Deep Dive") {
             HStack {
                 Text("AcoustID key").frame(width: 130, alignment: .leading)
-                TextField("application key from acoustid.org/new-application", text: $social.settings.acoustIDKey).textFieldStyle(.roundedBorder)
+                TextField("application key from acoustid.org/new-application", text: $social.settings.acoustIDKey).textFieldStyle(.plain).ruleField()
             }
             HStack {
                 Text("fpcalc").frame(width: 130, alignment: .leading)
-                TextField("automatic", text: $social.settings.fpcalcPath).textFieldStyle(.roundedBorder)
+                TextField("automatic", text: $social.settings.fpcalcPath).textFieldStyle(.plain).ruleField()
             }
-            HStack(spacing: 6) {
-                Image(systemName: found != nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(found != nil ? Color.green : Color.orange)
-                Text(found.map { "Chromaprint found at \($0)" } ?? "Chromaprint (fpcalc) is not installed — run: brew install chromaprint").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Image(systemName: found != nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill").foregroundStyle(found != nil ? Brand.accentText : Brand.caution)
+                Text(found.map { "Chromaprint found at \($0)" } ?? "Chromaprint (fpcalc) is not installed — run: brew install chromaprint").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
             }
             Note(text: "Files tagged by MusicBrainz Picard need neither: they are identified from their tags.")
         }
@@ -114,14 +114,14 @@ struct RemoteCard: View {
             Toggle("Allow remote control on this network", isOn: $social.settings.remoteEnabled)
             HStack {
                 Text("Name").frame(width: 130, alignment: .leading)
-                TextField(remote.hostName, text: $social.settings.remoteName).textFieldStyle(.roundedBorder)
-                Text("Port").font(.caption).foregroundStyle(.secondary)
-                TextField("auto", value: $social.settings.remotePort, format: .number.grouping(.never)).textFieldStyle(.roundedBorder).frame(width: 70)
+                TextField(remote.hostName, text: $social.settings.remoteName).textFieldStyle(.plain).ruleField()
+                Text("Port").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                TextField("auto", value: $social.settings.remotePort, format: .number.grouping(.never)).textFieldStyle(.plain).ruleField().frame(width: 70)
             }
             if remote.running {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Circle().fill(.green).frame(width: 8, height: 8)
-                    Text("Listening on port \(String(remote.port)) · Bonjour “\(RemoteProtocol.bonjourType)” · \(remote.clients) connected").font(.caption).foregroundStyle(.secondary)
+                    Text("Listening on port \(String(remote.port)) · Bonjour “\(RemoteProtocol.bonjourType)” · \(remote.clients) connected").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
                 HStack {
                     Text("Pairing token").frame(width: 130, alignment: .leading)
@@ -129,7 +129,7 @@ struct RemoteCard: View {
                     Button(reveal.v ? "Hide" : "Show") { reveal.v.toggle() }.buttonStyle(.link)
                     Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(remote.token, forType: .string) }
                 }
-                Note(text: "Apps prove they know the token without sending it. The connection itself is not encrypted: use it on a trusted network. Remote apps may only add files from your library folders.", color: .orange)
+                Note(text: "Apps prove they know the token without sending it. The connection itself is not encrypted: use it on a trusted network. Remote apps may only add files from your library folders.", color: Brand.caution)
             } else if let e = remote.error { Note(text: e, color: .red) }
             else { Note(text: "Off. For a Mac without a screen, run “Aureon daemon” instead — the same server without the window.") }
         }

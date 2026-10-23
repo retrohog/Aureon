@@ -16,39 +16,53 @@ struct PageScaffold<Trailing: View, Content: View>: View {
     var subtitle: String? = nil
     var back: (() -> Void)? = nil
     var backTitle = "Back"
+    /// A hairline under the title; off for pages whose first section brings its own.
+    var ruled = true
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Content
 
+    @Environment(\.chromeInset) private var inset
+    @EnvironmentObject private var chrome: ChromeState
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(height: WindowChrome.band - 14)
+            VStack(alignment: .leading, spacing: 24) {
+                if title.isEmpty { HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(height: 40) }
                 if let back {
-                    Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(.system(size: 12, weight: .semibold)) }
-                        .buttonStyle(.plain).foregroundStyle(Brand.cyan)
+                    Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(Typo.sans(11, .regular)).tracking(1.2).textCase(.uppercase) }
+                        .buttonStyle(.plain).foregroundStyle(Brand.accentText)
                 }
                 if !title.isEmpty {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(title).font(.system(size: 26, weight: .semibold)).tracking(-0.4).lineLimit(1)
-                        if let subtitle { Text(subtitle).microLabel().foregroundStyle(.secondary).lineLimit(1) }
-                        Spacer(minLength: 0)
+                    // the title is set large, with air above it, a small tracked label over it and a hairline under it
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack(alignment: .lastTextBaseline, spacing: 24) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                if let subtitle { Text(subtitle).microLabel().foregroundStyle(Brand.inkTertiary).lineLimit(1) }
+                                Text(title).font(Typo.title(40)).tracking(-0.8).lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                            trailing.padding(.bottom, 6)
+                        }
+                        if ruled { Rule() }
                     }
+                    .padding(.top, 8)
                 }
                 content
             }
-            .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 110)
+            .padding(.horizontal, 40).padding(.top, 8).padding(.bottom, PlayerBar.reserved + 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .underChrome(chrome, inset: inset)
     }
 }
 
 extension PageScaffold where Trailing == EmptyView {
-    init(title: String, subtitle: String? = nil, back: (() -> Void)? = nil, backTitle: String = "Back", @ViewBuilder content: () -> Content) {
-        self.init(title: title, subtitle: subtitle, back: back, backTitle: backTitle, trailing: { EmptyView() }, content: content)
+    init(title: String, subtitle: String? = nil, back: (() -> Void)? = nil, backTitle: String = "Back", ruled: Bool = true, @ViewBuilder content: () -> Content) {
+        self.init(title: title, subtitle: subtitle, back: back, backTitle: backTitle, ruled: ruled, trailing: { EmptyView() }, content: content)
     }
 }
 
-struct PillButton: View {
+struct RuleButton: View {
     let title: String
     var symbol: String?
     var filled = false
@@ -56,17 +70,18 @@ struct PillButton: View {
     @StateObject private var hover = Box(false)
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 11, weight: .bold)) }
-                Text(title).font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 8) {
+                if let symbol { Image(systemName: symbol).font(Typo.sans(11, .light)) }
+                Text(title).font(Typo.sans(12, .medium)).tracking(0.4)
             }
-            .padding(.horizontal, 14).padding(.vertical, 7)
-            .foregroundStyle(filled ? Color.white : Color.primary)
-            .background(Capsule().fill(filled ? AnyShapeStyle(Brand.accent) : AnyShapeStyle(Brand.ink.opacity(hover.v ? 0.16 : 0.09))))
-            .overlay(Capsule().strokeBorder(Brand.ink.opacity(filled ? 0 : 0.1), lineWidth: 0.8))
-            .brightness(filled && hover.v ? 0.06 : 0)
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .foregroundStyle(filled ? Brand.onAccent : Brand.ink)
+            .background(Rectangle().fill(filled ? Brand.accent : Brand.ink.opacity(hover.v ? 0.06 : 0)))
+            .overlay(Rectangle().strokeBorder(filled ? Color.clear : (hover.v ? Brand.coachline : Brand.ink.opacity(0.28)), lineWidth: Metrics.hairline))
+            .brightness(filled && hover.v ? 0.05 : 0)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(.easeOut(duration: 0.12), value: hover.v)
+        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
     }
 }
 
@@ -78,26 +93,26 @@ struct ToolbarMenu<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         Menu { content } label: {
-            HStack(spacing: 5) { Image(systemName: icon).font(.system(size: 11, weight: .medium)); Text(label).font(.system(size: 12, weight: .medium)) }
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Capsule().fill(active ? AnyShapeStyle(Brand.accent.opacity(0.25)) : AnyShapeStyle(Brand.ink.opacity(0.07))))
-                .foregroundStyle(active ? Brand.accent : Color.primary)
+            HStack(spacing: 4) { Image(systemName: icon).font(Typo.sans(11, .medium)); Text(label).font(Typo.sans(12, .medium)) }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .overlay(Rectangle().strokeBorder(active ? Brand.coachline : Brand.ink.opacity(0.2), lineWidth: Metrics.hairline))
+                .foregroundStyle(active ? Brand.accentText : Brand.ink)
         }
         .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
     }
 }
 
-struct SearchPill: View {
+struct SearchField: View {
     let prompt: String
     @Binding var text: String
     var width: CGFloat = 150
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
-            TextField(prompt, text: $text).textFieldStyle(.plain).font(.system(size: 12)).frame(width: width)
-            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary) }.buttonStyle(.plain) }
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
+            TextField(prompt, text: $text).textFieldStyle(.plain).font(Typo.sans(12)).frame(width: width)
+            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary) }.buttonStyle(.plain) }
         }
-        .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(Brand.ink.opacity(0.07)))
+        .padding(.horizontal, 8).padding(.vertical, 8).overlay(alignment: .bottom) { Rule() }
     }
 }
 
@@ -122,8 +137,8 @@ struct LibraryPage: View {
     // MARK: toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 7) {
-            SearchPill(prompt: "Filter", text: $lib.search, width: 110)
+        HStack(spacing: 8) {
+            SearchField(prompt: "Filter", text: $lib.search, width: 110)
             let sorts = ViewOptions.available(for: tab)
             ToolbarMenu(label: opts.sort.label, icon: opts.ascending ? "arrow.up" : "arrow.down") {
                 Picker("Sort by", selection: Binding(get: { opts.sort }, set: { v in update { $0.sort = v } })) { ForEach(sorts) { Text($0.label).tag($0) } }.pickerStyle(.inline)
@@ -138,9 +153,9 @@ struct LibraryPage: View {
             }
             if tab == .albums || tab == .artists {
                 HStack(spacing: 0) {
-                    Button { update { $0.list = false } } label: { Image(systemName: "square.grid.2x2") }.foregroundStyle(opts.list ? Color.secondary : Brand.cyan)
-                    Button { update { $0.list = true } } label: { Image(systemName: "list.bullet") }.foregroundStyle(opts.list ? Brand.cyan : Color.secondary)
-                }.buttonStyle(IconButtonStyle()).padding(2).background(Capsule().fill(Brand.ink.opacity(0.08)))
+                    Button { update { $0.list = false } } label: { Image(systemName: "square.grid.2x2") }.foregroundStyle(opts.list ? Brand.inkSecondary : Brand.cyan)
+                    Button { update { $0.list = true } } label: { Image(systemName: "list.bullet") }.foregroundStyle(opts.list ? Brand.cyan : Brand.inkSecondary)
+                }.buttonStyle(IconButtonStyle()).overlay(Rectangle().strokeBorder(Brand.ink.opacity(0.2), lineWidth: Metrics.hairline))
                 if !opts.list {
                     ValueSlider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
                 }
@@ -163,14 +178,14 @@ struct LibraryPage: View {
 
     private var empty: some View {
         PageScaffold(title: tab.rawValue) {
-            VStack(spacing: 14) {
-                Image(systemName: "books.vertical").font(.system(size: 42, weight: .ultraLight)).foregroundStyle(.secondary)
-                Text("Your library is empty").font(.title3.weight(.semibold))
+            VStack(spacing: 16) {
+                Image(systemName: "books.vertical").font(Typo.sans(42, .ultraLight)).foregroundStyle(Brand.inkSecondary)
+                Text("Your library is empty").font(Typo.t3.weight(.semibold))
                 Text("Add a folder of FLAC, ALAC, WAV or AIFF files. Aureon reads multiple artists per track and classical tags — composer, conductor, ensemble, soloists, work, movement and opus. Audio files are never modified.")
-                    .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420).font(.callout)
-                PillButton(title: "Add Music Folder…", symbol: "folder.badge.plus", filled: true) { chooseFolder() }
+                    .multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).frame(maxWidth: 420).font(Typo.callout)
+                RuleButton(title: "Add Music Folder…", symbol: "folder.badge.plus", filled: true) { chooseFolder() }
             }
-            .frame(maxWidth: .infinity).padding(.top, 70)
+            .frame(maxWidth: .infinity).padding(.top, 72)
         }
     }
 
@@ -181,7 +196,7 @@ struct LibraryPage: View {
             DuplicateBanner(lib: lib)
             switch tab {
             case .albums:
-                PagedAlbums(pager: lib.pager, query: AlbumQuery(opts, search: lib.search), list: opts.list, minimum: 100 + CGFloat(opts.size) * 100, open: { lib.selectedID = $0.id })
+                PagedAlbums(pager: lib.pager, query: AlbumQuery(opts, search: lib.search), list: opts.list, minimum: 168 + CGFloat(opts.size) * 120, open: { lib.selectedID = $0.id })
             case .songs: SongList(tracks: lib.orderedSongs(opts), numbered: false, letters: opts.letters && opts.sort == .title, sortHeader: true)
             case .artists: ArtistsView(rows: LibraryOrdering.rows(lib.rows, opts), opts: opts, open: { lib.selectedID = $0 })
             default: rowList
@@ -220,7 +235,7 @@ struct LibraryPage: View {
             EmptyExplainer(icon: "person.3", title: "No ensembles yet",
                            text: "Ensembles lists orchestras, choirs and quartets from the ENSEMBLE or ORCHESTRA tags — and names that clearly are groups, like “Berliner Philharmoniker”. Add classical albums with those tags to see them here.")
         default:
-            Text("Nothing here").foregroundStyle(.secondary).padding(.top, 30)
+            Text("Nothing here").foregroundStyle(Brand.inkSecondary).padding(.top, 32)
         }
     }
 
@@ -242,13 +257,13 @@ struct LibraryPage: View {
         case .composer(let works, let tracks):
             let name = lib.rows.first { $0.id == lib.selectedID }?.title ?? "Composer"
             PageScaffold(title: name, subtitle: "\(works.count) work\(works.count == 1 ? "" : "s") · \(tracks.count) songs", back: back, backTitle: tab.rawValue, trailing: { if !tracks.isEmpty { trackActions(tracks) } }) {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     if !works.isEmpty {
-                        Text("Works").font(.system(size: 17, weight: .semibold))
+                        Text("Works").font(Typo.serif(17, .regular))
                         worksView(works)
                     }
                     if !tracks.isEmpty {
-                        Text(works.isEmpty ? "Songs" : "All songs").font(.system(size: 17, weight: .semibold))
+                        Text(works.isEmpty ? "Songs" : "All songs").font(Typo.serif(17, .regular))
                         SongList(tracks: tracks)
                     }
                     if works.isEmpty && tracks.isEmpty {
@@ -262,15 +277,15 @@ struct LibraryPage: View {
             PageScaffold(title: w.title, subtitle: [w.composerName, w.catalog, w.key].compactMap { $0 }.joined(separator: " · "), back: back,
                          backTitle: lib.canGoBack ? "Works" : tab.rawValue) { recordingsView(groups) }
         default:
-            PageScaffold(title: tab.rawValue, back: back, backTitle: tab.rawValue) { ProgressView().frame(maxWidth: .infinity).padding(.top, 60) }
+            PageScaffold(title: tab.rawValue, back: back, backTitle: tab.rawValue) { ProgressView().frame(maxWidth: .infinity).padding(.top, 64) }
         }
     }
 
     private func trackActions(_ tracks: [TrackDTO]) -> some View {
-        HStack(spacing: 6) {
-            PillButton(title: "Play", symbol: "play.fill", filled: true) { lib.onReplace?(tracks) }
-            PillButton(title: "Shuffle", symbol: "shuffle") { lib.onReplace?(tracks.shuffled()) }
-            PillButton(title: "Add", symbol: "text.badge.plus") { lib.onAdd?(tracks, false) }
+        HStack(spacing: 8) {
+            RuleButton(title: "Play", symbol: "play.fill", filled: true) { lib.onReplace?(tracks) }
+            RuleButton(title: "Shuffle", symbol: "shuffle") { lib.onReplace?(tracks.shuffled()) }
+            RuleButton(title: "Add", symbol: "text.badge.plus") { lib.onAdd?(tracks, false) }
         }
     }
 
@@ -289,19 +304,19 @@ struct LibraryPage: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(g.releaseTitle + (g.year.map { " (\($0))" } ?? "")).font(.system(size: 14, weight: .semibold))
+                            Text(g.releaseTitle + (g.year.map { " (\($0))" } ?? "")).font(Typo.sans(14, .semibold))
                             performerLines(g)
                         }
                         Spacer()
-                        PillButton(title: "Play", symbol: "play.fill", filled: true) { lib.onReplace?(g.tracks) }
-                        PillButton(title: "Add", symbol: "text.badge.plus") { lib.onAdd?(g.tracks, false) }
+                        RuleButton(title: "Play", symbol: "play.fill", filled: true) { lib.onReplace?(g.tracks) }
+                        RuleButton(title: "Add", symbol: "text.badge.plus") { lib.onAdd?(g.tracks, false) }
                     }
                     ForEach(g.tracks) { t in
                         HStack(spacing: 8) {
-                            Text(t.movementNumber.map { roman($0) } ?? "").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).frame(width: 30, alignment: .trailing)
-                            Text(t.movementTitle ?? t.title).font(.system(size: 13)).lineLimit(1)
+                            Text(t.movementNumber.map { roman($0) } ?? "").font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary).frame(width: 30, alignment: .trailing)
+                            Text(t.movementTitle ?? t.title).font(Typo.sans(13)).lineLimit(1)
                             Spacer()
-                            Text(fmtDuration(t.duration)).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
+                            Text(fmtDuration(t.duration)).font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary)
                         }
                         .padding(.vertical, 3).padding(.horizontal, 4).contentShape(Rectangle()).onTapGesture { lib.onReplace?([t]) }
                     }
@@ -314,9 +329,9 @@ struct LibraryPage: View {
     @ViewBuilder private func performerLines(_ g: RecordingGroupDTO) -> some View {
         let cond = g.performers.filter { $0.role == "conductor" }.map(\.name), ens = g.performers.filter { $0.role == "ensemble" }.map(\.name)
         let solo = g.performers.filter { $0.role == "soloist" || $0.role == "performer" }.map { c in c.instrument.map { i in "\(c.name) (\(i))" } ?? c.name }
-        if !cond.isEmpty { Text("Conductor: " + cond.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
-        if !ens.isEmpty { Text("Ensemble: " + ens.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
-        if !solo.isEmpty { Text("Soloists: " + solo.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
+        if !cond.isEmpty { Text("Conductor: " + cond.joined(separator: ", ")).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
+        if !ens.isEmpty { Text("Ensemble: " + ens.joined(separator: ", ")).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
+        if !solo.isEmpty { Text("Soloists: " + solo.joined(separator: ", ")).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
     }
 
     private func roman(_ n: Int) -> String {
@@ -335,7 +350,7 @@ struct LibraryPage: View {
 
 struct LetterHeader: View {
     let letter: String
-    var body: some View { Text(letter).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundStyle(Brand.cyan.opacity(0.9)).padding(.top, 12).padding(.bottom, 3).padding(.leading, 10).frame(maxWidth: .infinity, alignment: .leading) }
+    var body: some View { Text(letter).font(Typo.serif(20, .regular)).foregroundStyle(Brand.accentText).padding(.top, 24).padding(.bottom, 8).padding(.leading, 8).frame(maxWidth: .infinity, alignment: .leading) }
 }
 
 /// A list row with an avatar, title, subtitle and a count.
@@ -350,18 +365,18 @@ struct RowButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 11) {
+            HStack(spacing: 12) {
                 Avatar(name: title, image: image, size: 34)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                    if !subtitle.isEmpty { Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1) }
+                    Text(title).font(Typo.sans(13, .medium)).lineLimit(1)
+                    if !subtitle.isEmpty { Text(subtitle).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1) }
                 }
                 Spacer()
-                Text("\(count)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.tertiary)
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                Text("\(count)").font(Typo.mono(11.5)).foregroundStyle(Brand.inkTertiary)
+                Image(systemName: "chevron.right").font(Typo.sans(10, .semibold)).foregroundStyle(Brand.inkTertiary)
             }
-            .padding(.horizontal, 9).padding(.vertical, 5).contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.07 : 0)))
+            .padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
+            .background(Rectangle().fill(Brand.ink.opacity(hover.v ? 0.05 : 0))).overlay(alignment: .bottom) { Rule(strength: 0.5) }
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(.easeOut(duration: 0.1), value: hover.v)
     }
@@ -378,20 +393,19 @@ struct Avatar: View {
     var body: some View {
         let d = size.rounded()
         ZStack {
-            if shadow { Circle().fill(.black.opacity(0.4)).frame(width: d - 6, height: d - 6).blur(radius: 6).offset(y: 4) }
             Group {
                 if let image {
                     Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill).frame(width: d, height: d)
                 } else {
                     let p = ArtPalette.fallback(seed: name)
                     ZStack {
-                        Circle().fill(LinearGradient(colors: [p.grid[0].color, p.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Text(initials).font(.system(size: d * 0.38, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.92))
+                        Circle().fill(p.grid[4].mixed(with: RGB(0.05, 0.05, 0.06), 0.45).color)
+                        Text(initials).font(Typo.sans(d * 0.38, .semibold)).foregroundStyle(.white.opacity(0.92))
                     }.frame(width: d, height: d)
                 }
             }
             .mask(Circle())
-            .overlay(Circle().strokeBorder(Brand.ink.opacity(0.14), lineWidth: 0.8))
+            .overlay(Circle().strokeBorder(Brand.ink.opacity(0.18), lineWidth: Metrics.hairline))
         }
         .frame(width: d + (shadow ? 16 : 0), height: d + (shadow ? 16 : 0))
     }
@@ -415,10 +429,10 @@ struct ArtistsView: View {
     /// Portraits form one continuous grid; the A–Z headers belong to the list view.
     private var grid: some View {
         let cell = (84 + CGFloat(opts.size) * 70).rounded()
-        let cols = [GridItem(.adaptive(minimum: cell + 16, maximum: cell + 16), spacing: 10, alignment: .top)]
+        let cols = [GridItem(.adaptive(minimum: cell + 16, maximum: cell + 16), spacing: 12, alignment: .top)]
         return VStack(alignment: .leading, spacing: 4) {
-            LazyVGrid(columns: cols, alignment: .leading, spacing: 20) { ForEach(rows) { ArtistCard(row: $0, size: cell, open: open) } }
-            if rows.isEmpty { Text("No artists").foregroundStyle(.secondary).padding(.top, 40) }
+            LazyVGrid(columns: cols, alignment: .leading, spacing: 24) { ForEach(rows) { ArtistCard(row: $0, size: cell, open: open) } }
+            if rows.isEmpty { Text("No artists").foregroundStyle(Brand.inkSecondary).padding(.top, 40) }
         }
     }
 
@@ -449,13 +463,11 @@ struct ArtistCard: View {
     var body: some View {
         VStack(spacing: 8) {
             Avatar(name: row.title, image: art.info[row.id]?.image, size: size, shadow: true)
-                .background { Circle().fill(ArtPalette.fallback(seed: row.title).accent.color.opacity(hover.v ? 0.55 : 0)).blur(radius: 22).padding(14).offset(y: 4) }
-                .overlay { if hover.v { Circle().strokeBorder(Brand.gradient, lineWidth: 1.6).padding(8) } }
-                .scaleEffect(hover.v ? 1.07 : 1)
-                .animation(.spring(response: 0.32, dampingFraction: 0.7), value: hover.v)
+                .overlay { Circle().strokeBorder(Brand.coachline, lineWidth: Metrics.hairline).padding(4).opacity(hover.v ? 1 : 0) }
+                .animation(Motion.glide, value: hover.v)
             VStack(spacing: 1) {
-                Text(row.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                Text("\(row.count) songs").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text(row.title).font(Typo.sans(12.5, .semibold)).lineLimit(1)
+                Text("\(row.count) songs").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
             }
         }
         .frame(width: size.rounded() + 16)
@@ -477,27 +489,27 @@ struct ArtistDetail: View {
 
     var body: some View {
         PageScaffold(title: "", back: back, backTitle: "Artists") {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
+                HStack(spacing: 24) {
                     Avatar(name: name, image: art.info[id]?.image, size: 132, shadow: true)
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("ARTIST").microLabel().foregroundStyle(Brand.cyan)
-                        Text(name).font(.system(size: 32, weight: .bold)).tracking(-0.6).lineLimit(2)
-                        Text("\(albums.count) album\(albums.count == 1 ? "" : "s") · \(tracks.count) songs").font(.system(size: 12.5)).foregroundStyle(.secondary)
-                        HStack(spacing: 6) {
-                            PillButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
-                            PillButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
-                            PillButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
-                            PillButton(title: "Credits", symbol: "person.text.rectangle") { m.library.openPerson(id) }
+                        Text(name).font(Typo.serif(32, .regular)).tracking(-0.6).lineLimit(2)
+                        Text("\(albums.count) album\(albums.count == 1 ? "" : "s") · \(tracks.count) songs").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary)
+                        HStack(spacing: 8) {
+                            RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
+                            RuleButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
+                            RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
+                            RuleButton(title: "Credits", symbol: "person.text.rectangle") { m.library.openPerson(id) }
                         }.padding(.top, 8)
                     }
                     Spacer(minLength: 0)
                 }
                 if !albums.isEmpty {
-                    Text("Albums").font(.system(size: 17, weight: .semibold))
+                    Text("Albums").font(Typo.serif(17, .regular))
                     AlbumGrid(albums: albums, open: { a in m.tab = .albums; m.library.selectedID = a.id }, minimum: 130)
                 }
-                Text("Songs").font(.system(size: 17, weight: .semibold))
+                Text("Songs").font(Typo.serif(17, .regular))
                 SongList(tracks: tracks)
             }
         }
@@ -513,10 +525,10 @@ struct AlbumGrid: View {
     var minimum: CGFloat = 150
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: minimum + 60), spacing: 18, alignment: .top)], alignment: .leading, spacing: 22) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum, maximum: minimum + 60), spacing: 16, alignment: .top)], alignment: .leading, spacing: 24) {
             ForEach(albums) { a in AlbumCard(album: a) { open(a) } }
         }
-        .overlay { if albums.isEmpty { Text("No albums").foregroundStyle(.secondary).padding(.top, 60) } }
+        .overlay { if albums.isEmpty { Text("No albums").foregroundStyle(Brand.inkSecondary).padding(.top, 64) } }
     }
 }
 
@@ -542,22 +554,22 @@ struct AlbumListRow: View {
         HStack(spacing: 12) {
             CoverView(image: art.info[album.id]?.image, palette: ArtPalette.fallback(seed: album.title), corner: 6).frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 1) {
-                Text(album.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Text(album.artistNames.first ?? "").font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Text(album.title).font(Typo.sans(13, .medium)).lineLimit(1)
+                Text(album.artistNames.first ?? "").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
             }
             Spacer()
             if album.isHiRes { HDMark() }
-            Text([album.genre, album.year.map(String.init)].compactMap { $0 }.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(.tertiary)
-            Text("\(album.trackCount)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.tertiary).frame(width: 28, alignment: .trailing)
+            Text([album.genre, album.year.map(String.init)].compactMap { $0 }.joined(separator: " · ")).font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary)
+            Text("\(album.trackCount)").font(Typo.mono(11.5)).foregroundStyle(Brand.inkTertiary).frame(width: 28, alignment: .trailing)
         }
-        .padding(.horizontal, 9).padding(.vertical, 5).contentShape(Rectangle())
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.07 : 0)))
+        .padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
+        .background(Rectangle().fill(Brand.ink.opacity(hover.v ? 0.05 : 0))).overlay(alignment: .bottom) { Rule(strength: 0.5) }
         .onHover { hover.v = $0 }.onTapGesture(perform: open).onAppear { art.load(album) }
     }
 }
 
 struct HDMark: View {
-    var body: some View { Text("HD").font(.system(size: 8.5, weight: .heavy)).tracking(0.5).padding(.horizontal, 4).padding(.vertical, 1).overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.secondary, lineWidth: 0.8)).foregroundStyle(.secondary) }
+    var body: some View { QualityBadge(mark: QualityMark(kind: .hiRes, title: "HI-RES", spec: ""), size: .tiny) }
 }
 
 struct AlbumCard: View {
@@ -569,20 +581,20 @@ struct AlbumCard: View {
 
     var body: some View {
         let info = art.info[album.id]
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 12) {
             ZStack(alignment: .bottomLeading) {
-                CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 10, symbol: "music.note")
-                    .hoverLift(hover.v, radius: 10, glow: ArtPalette.fallback(seed: album.title).accent.color)
+                CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 0, symbol: "music.note")
+                    .hoverLift(hover.v, radius: 0)
                 if hover.v {
-                    Button { play() } label: { Image(systemName: "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white).frame(width: 34, height: 34)
-                        .background(Circle().fill(Brand.accent)) }
-                        .buttonStyle(.plain).padding(8).transition(.scale(scale: 0.6).combined(with: .opacity))
+                    Button { play() } label: { Image(systemName: "play.fill").font(Typo.sans(12, .regular)).foregroundStyle(Brand.onAccent).frame(width: 40, height: 40)
+                        .background(Rectangle().fill(Brand.accent)) }
+                        .buttonStyle(.plain).padding(12).transition(.opacity)
                 }
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(album.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                HStack(spacing: 6) {
-                    Text(([album.artistNames.first].compactMap { $0 } + [album.year.map(String.init)].compactMap { $0 }).joined(separator: " · ")).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Text(album.title).font(Typo.serif(15, .regular)).tracking(-0.1).lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(([album.artistNames.first].compactMap { $0 } + [album.year.map(String.init)].compactMap { $0 }).joined(separator: " · ")).font(Typo.sans(11)).tracking(0.3).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                     Spacer(minLength: 0)
                     if album.isHiRes || info?.hd == true { HDMark() }
                 }
@@ -611,26 +623,25 @@ struct AlbumDetail: View {
     var body: some View {
         let info = art.info[album.id]
         PageScaffold(title: "", back: back, backTitle: "Albums") {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 HStack(alignment: .bottom, spacing: 24) {
                     CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 14).frame(width: 200, height: 200)
-                        .shadow(color: .black.opacity(0.45), radius: 20, y: 10)
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("ALBUM").microLabel().foregroundStyle(Brand.cyan)
-                        Text(album.title).font(.system(size: 28, weight: .bold)).tracking(-0.5).lineLimit(3)
-                        Text(album.artistNames.prefix(3).joined(separator: ", ")).font(.system(size: 17, weight: .medium)).foregroundStyle(Brand.accent).lineLimit(2)
-                        Text(meta).microLabel().foregroundStyle(.secondary).padding(.top, 2)
+                        Text(album.title).font(Typo.serif(28, .regular)).tracking(-0.5).lineLimit(3)
+                        Text(album.artistNames.prefix(3).joined(separator: ", ")).font(Typo.sans(17, .medium)).foregroundStyle(Brand.accent).lineLimit(2)
+                        Text(meta).microLabel().foregroundStyle(Brand.inkSecondary).padding(.top, 2)
                         if let best = tracks.first(where: { isHiRes($0) }) ?? tracks.first {
-                            HStack(spacing: 6) {
+                            HStack(spacing: 8) {
                                 if isHiRes(best) { HiResMark(compact: true) }
                                 HWBadge(text: trackQuality(best).uppercased(), tone: isHiRes(best) ? .amber : .green, compact: true)
                             }.padding(.top, 4)
                         }
-                        HStack(spacing: 6) {
-                            PillButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
-                            PillButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
-                            PillButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
-                        }.padding(.top, 10)
+                        HStack(spacing: 8) {
+                            RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
+                            RuleButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
+                            RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
+                        }.padding(.top, 12)
                     }
                     Spacer(minLength: 0)
                 }
@@ -684,7 +695,7 @@ struct SongList: View {
                 } else {
                     ForEach(Array(tracks.enumerated()), id: \.element.id) { i, t in row(t, shown: i, at: i, playingPath: nowPath) }
                 }
-                if tracks.isEmpty { Text("No songs").foregroundStyle(.secondary).padding(.top, 40) }
+                if tracks.isEmpty { Text("No songs").foregroundStyle(Brand.inkSecondary).padding(.top, 40) }
             }
         }
     }
@@ -708,9 +719,9 @@ struct SongList: View {
             } label: {
                 HStack(spacing: 3) {
                     Text(title).microLabel()
-                    if o.sort == key { Image(systemName: o.ascending ? "chevron.up" : "chevron.down").font(.system(size: 8, weight: .bold)) }
+                    if o.sort == key { Image(systemName: o.ascending ? "chevron.up" : "chevron.down").font(Typo.sans(8, .bold)) }
                 }
-                .foregroundStyle(o.sort == key ? Brand.cyan : Color.secondary)
+                .foregroundStyle(o.sort == key ? Brand.cyan : Brand.inkSecondary)
                 .frame(maxWidth: width == nil ? .infinity : width, alignment: trailing ? .trailing : .leading)
             }.buttonStyle(.plain)
         }
@@ -720,11 +731,11 @@ struct SongList: View {
             col("Artist", .artist)
             col("Album", .album)
             Color.clear.frame(width: 24, height: 1)
-            col("Quality", .quality, width: 120, trailing: true)
+            col("Quality", .quality, width: 150, trailing: true)
             col("Time", .duration, width: 46, trailing: true)
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Rectangle().fill(Brand.ink.opacity(0.08)).frame(height: 0.8) }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Rule() }
     }
 }
 
@@ -743,34 +754,36 @@ struct SongRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                if hover.v && !playing { Image(systemName: "play.fill").font(.system(size: 11)).foregroundStyle(.primary).transition(.scale.combined(with: .opacity)) }
+                if hover.v && !playing { Image(systemName: "play.fill").font(Typo.sans(11)).foregroundStyle(.primary).transition(.scale.combined(with: .opacity)) }
                 else if playing { EqualizerBars(active: m.status.state == .playing, color: Brand.accent).frame(width: 12, height: 10) }
-                else { Text(numbered ? "\(track.trackNumber ?? index)" : "").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary) }
+                else { Text(numbered ? "\(track.trackNumber ?? index)" : "").font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary) }
             }
-            .frame(width: 26).scaleEffect(flash.v > 0.01 ? 1 + 0.35 * flash.v : 1)
-            Text(track.title).font(.system(size: 12.5, weight: playing ? .semibold : .regular)).foregroundStyle(playing ? Brand.accent : .primary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 26)
+            Text(track.title).font(Typo.sans(12.5, playing ? .semibold : .regular)).foregroundStyle(playing ? Brand.accent : .primary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             if showArtist && !numbered {
-                Text(track.artistLine).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                Text(track.releaseTitle ?? "").font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.artistLine).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.releaseTitle ?? "").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             } else if showArtist {
-                Text(track.artistLine).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.artistLine).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             HeartButton(path: track.path, size: 12, alwaysVisible: false).opacity(hover.v || playing ? 1 : 0.0001).overlay { }.frame(width: 24)
-            HStack(spacing: 5) {
-                if isHiRes(track) { HDMark() }
-                Text(trackQuality(track)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary)
-            }.frame(width: 120, alignment: .trailing)
-            Text(fmtDuration(track.duration)).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).frame(width: 46, alignment: .trailing)
+            HStack(spacing: 8) {
+                // Hi-Res and Lossless carry the small plate; other formats keep their plain line
+                if QualityMark.make(track: track) != nil { TinyQualityMark(track: track) }
+                else { Text(trackQuality(track)).font(Typo.mono(10.5)).foregroundStyle(Brand.inkTertiary).lineLimit(1) }
+            }.frame(width: 150, alignment: .trailing)
+            Text(fmtDuration(track.duration)).font(Typo.mono(12)).foregroundStyle(Brand.inkSecondary).frame(width: 46, alignment: .trailing)
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.08 : (index % 2 == 0 ? 0.022 : 0)))
-                if playing { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.accent.opacity(0.10)) }
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.accent.opacity(0.34 * flash.v))
+                Rectangle().fill(Brand.ink.opacity(hover.v ? 0.05 : 0))
+                if playing { Rectangle().fill(Brand.accent.opacity(0.07)) }
+                Rectangle().fill(Brand.accent.opacity(0.22 * flash.v))
             }
         }
-        .overlay(alignment: .leading) { if playing { Capsule().fill(Brand.accent).frame(width: 3, height: 16).padding(.leading, 2).transition(.scale(scale: 0.2).combined(with: .opacity)) } }
+        .overlay(alignment: .bottom) { Rule(strength: 0.5) }
+        .overlay(alignment: .leading) { if playing { Rectangle().fill(Brand.gradientVertical).frame(width: 2).transition(.opacity) } }
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
         .onTapGesture {
@@ -778,7 +791,7 @@ struct SongRow: View {
             DispatchQueue.main.async { withAnimation(.easeOut(duration: 0.75)) { flash.v = 0 } }
             onPlay()
         }
-        .animation(.smooth(duration: 0.2), value: playing)
+        .animation(Motion.glide, value: playing)
     }
 }
 
@@ -791,9 +804,9 @@ struct SearchPage: View {
         let r = m.library.searchResults
         PageScaffold(title: "Search", subtitle: m.searchText.isEmpty ? nil : "“\(m.searchText)”") {
             if m.searchText.isEmpty {
-                Text("Search your library for songs, albums, artists, composers and works.").foregroundStyle(.secondary).padding(.top, 20)
+                Text("Search your library for songs, albums, artists, composers and works.").foregroundStyle(Brand.inkSecondary).padding(.top, 24)
             } else if let r, r.tracks.isEmpty && r.releases.isEmpty && r.works.isEmpty && r.parties.isEmpty {
-                Text("No results").foregroundStyle(.secondary).padding(.top, 20)
+                Text("No results").foregroundStyle(Brand.inkSecondary).padding(.top, 24)
                 SemanticMatchesSection().padding(.top, 12)
             } else if let r {
                 VStack(alignment: .leading, spacing: 24) {
@@ -809,11 +822,11 @@ struct SearchPage: View {
                         section("Works") { LazyVStack(spacing: 1) { ForEach(r.works) { w in RowButton(title: w.title, subtitle: [w.composerName, w.catalog].compactMap { $0 }.joined(separator: " · "), count: w.trackCount, symbol: "book") { m.searchText = ""; m.tab = .works; m.library.selectedID = w.id } } } }
                     }
                 }
-            } else { ProgressView().padding(.top, 30) }
+            } else { ProgressView().padding(.top, 32) }
         }
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 8) { Text(title).font(.system(size: 17, weight: .semibold)); content() }
+        VStack(alignment: .leading, spacing: 8) { Text(title).font(Typo.serif(17, .regular)); content() }
     }
 }

@@ -9,21 +9,20 @@ struct HardwareUITests {
     // MARK: LEDs
 
     func ledLegendsKeepContrast() {
-        // every lit legend, and the bar's title and time text, against the brightest the display window can ever get
-        let worst = [HWPanel.worstCaseDisplay, HWPanel.worstCaseDisplayAlone]
-        for bg in worst {
+        for theme in Theme.all {
+            // every format legend on the player bar, fitted to this theme's bar surface
             for t in LEDLamp.Tone.allCases {
-                let c = WCAG.contrast(t.rgb, bg)
-                expect(c >= 4.5, "LED \(t) has \(String(format: "%.2f", c)):1 on \(bg)")
+                let c = WCAG.contrast(t.rgb(on: theme.sidebarRGB), theme.sidebarRGB)
+                expect(c >= 4.5, "LED \(t) has \(String(format: "%.2f", c)):1 on the bar of \(theme.id)")
             }
-            expect(WCAG.contrast(HWPanel.readout, bg) >= 7, "the title is AAA on the display")
-            expect(WCAG.contrast(HWPanel.readoutDim, bg) >= 4.5, "the artist line and total time stay AA")
-        }
-        // the plated badges of Now Playing and the DJ console, on a white page under the plate's lightest edge
-        let plate = WCAG.over(RGB(0, 0, 0), alpha: HWBadge.Tone.plateAlpha, RGB(1, 1, 1))
-        for t in HWBadge.Tone.allCases {
-            let c = WCAG.contrast(t.rgb, plate)
-            expect(c >= 4.5, "badge \(t) has \(String(format: "%.2f", c)):1")
+            // the readout tags of Now Playing, on the lightest (or darkest) the page can get under a backdrop
+            for t in HWBadge.Tone.allCases {
+                let c = WCAG.contrast(WCAG.fit(t.rgb, against: theme.backdropLimitRGB, minimum: 4.5), theme.backdropLimitRGB)
+                expect(c >= 4.5, "badge \(t) has \(String(format: "%.2f", c)):1 in \(theme.id)")
+            }
+            // the bar's own text: title in the ink (AAA), artist line and total time in the secondary step (AAA too)
+            expect(WCAG.contrast(theme.inkRGB, theme.sidebarRGB) >= 7, "the title is AAA on the bar of \(theme.id)")
+            expect(WCAG.contrast(theme.inkSecondaryRGB, theme.sidebarRGB) >= 4.5, "the artist line stays AA on the bar of \(theme.id)")
         }
         // the formula itself, on known values
         expect(abs(WCAG.contrast(RGB(1, 1, 1), RGB(0, 0, 0)) - 21) < 0.001 && abs(WCAG.contrast(RGB(0.5, 0.5, 0.5), RGB(0.5, 0.5, 0.5)) - 1) < 1e-9)
@@ -225,7 +224,7 @@ struct HardwareUITests {
 }
 
 /// Stands in for the app model in the stage tests.
-@MainActor private final class StageTestHost: StageHost {
+@MainActor final class StageTestHost: StageHost {
     var tab: Tab = .albums
     var djMode = false
 }

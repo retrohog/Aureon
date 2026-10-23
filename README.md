@@ -4,14 +4,14 @@
 
 <br/>
 
-[![Download Aureon 0.2.0](https://img.shields.io/badge/Download-Aureon%200.2.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
+[![Download Aureon 0.3.0](https://img.shields.io/badge/Download-Aureon%200.3.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-1c2340?style=flat-square&logo=apple&logoColor=white)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](Package.swift)
-[![Self-tests](https://img.shields.io/badge/self--tests-570%20passing-2f7d4f?style=flat-square)](Docs/ARCHITECTURE.md)
+[![Self-tests](https://img.shields.io/badge/self--tests-650%2B%20passing-2f7d4f?style=flat-square)](Docs/ARCHITECTURE.md)
 [![MIT](https://img.shields.io/badge/license-MIT-f0b45f?style=flat-square)](LICENSE)
 
-<img src="assets/screenshots/now-playing.jpg" alt="Aureon's Now Playing page with the live signal path" width="100%" />
+<img src="Docs/images/now-playing.png" alt="Aureon's Now Playing page" width="100%" />
 
 </div>
 
@@ -20,12 +20,12 @@ sample rate and bit depth into 32-bit integers, a lock-free ring buffer feeds th
 shows exactly what is in the chain. Processing is there when you want it (upsampling, EQ, crossfeed, room correction,
 DSD) but every stage is opt-in and truly bypassed when off, not merely set to neutral.
 
-> **Status: early (0.2).** The engine and every service are covered by automated self-tests. What could not be verified
+> **Status: early (0.3).** The engine and every service are covered by automated self-tests. What could not be verified
 > without special hardware, accounts or signing is listed under [Limitations](#limitations). Read it before relying on
 > those parts.
 >
-> **Download:** the 0.2.0 build is for Apple Silicon Macs. A build for Intel-based Macs will be released soon. The app is
-> not notarised yet, so the first launch needs right-click → **Open**.
+> **Download:** the 0.3.0 build is for **Apple Silicon Macs running macOS 15 or later**. The new design for Intel-based Macs
+> and for Windows is coming. The app is not notarised yet, so the first launch needs right-click → **Open**.
 
 <br/>
 
@@ -35,7 +35,7 @@ DSD) but every stage is opt-in and truly bypassed when off, not merely set to ne
 |:--|:--|:--|
 | 🎯 **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth. Gapless. Exclusive mode and automatic rate switching. | 🔊 **Opt-in sound shaping**<br/>Sinc upsampling with four filters, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction, dither. | 🧭 **Always honest**<br/>The signal path turns orange at the first stage that changes a sample. You always know. |
 | 🎚 **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue, MIDI controllers. | 📚 **Serious library**<br/>Classical-aware tags, credits graph, folders, tag editor, duplicates finder, query search. | 📡 **Play anywhere**<br/>Radio, podcasts, S3-style buckets, Navidrome, Lyrion, Chromecast, Sonos, DLNA, AirPlay. |
-| 🧠 **Optional Intelligence**<br/>On-device playlists, search and DJ sets. One master switch turns all of it off. | 🎨 **Eight themes, light and dark**<br/>Including *Album*, which takes its colours from the cover that is playing. | 🧪 **Tested without hardware**<br/>Self-tests play real files through the real player and check the delivered samples. |
+| 🧠 **Optional Intelligence**<br/>On-device playlists, search and DJ sets. One master switch turns all of it off. | 🎨 **A new design, light and dark**<br/>Obsidian and Ivory, an *Album* backdrop that takes its colours from the cover, and glass accents. | 🧪 **Tested without hardware**<br/>Self-tests play real files through the real player and check the delivered samples. |
 
 <br/>
 
@@ -43,12 +43,24 @@ DSD) but every stage is opt-in and truly bypassed when off, not merely set to ne
 
 <table>
 <tr>
-<td width="50%"><img src="assets/screenshots/home.jpg" alt="Home page with recently added and Hi-Res albums" /><br/><sub><b>Home.</b> Recently added, Hi-Res albums, Radio and Podcasts.</sub></td>
-<td width="50%"><img src="assets/screenshots/audio.jpg" alt="Audio settings: output, hog mode, cast and AirPlay" /><br/><sub><b>Audio.</b> Output device, exclusive mode, rate following, cast and multi-room.</sub></td>
+<td width="50%"><img src="Docs/images/focus.png" alt="Focus mode: the cover as large as the window allows" /><br/><sub><b>Focus mode.</b> Press F: only the cover, the names, progress and transport.</sub></td>
+<td width="50%"><img src="Docs/images/lyrics-panel.png" alt="Now Playing with the lyrics panel" /><br/><sub><b>Lyrics</b> beside the cover, with a timing offset.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screenshots/dj-console.jpg" alt="Two-deck DJ console" /><br/><sub><b>DJ console.</b> Two decks, mixer, effects and an analysed library browser.</sub></td>
-<td width="50%"><img src="assets/screenshots/themes.jpg" alt="Theme picker with eight colour themes" /><br/><sub><b>Themes.</b> Eight themes, each in light and dark.</sub></td>
+<td width="50%"><img src="Docs/images/signal-path.png" alt="The signal path panel" /><br/><sub><b>Signal path.</b> Source, output and every stage, with a bit-perfect switch.</sub></td>
+<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums, with the quality of each at a glance.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="Docs/images/atelier-sound.png" alt="Atelier, Sound, Output tab" /><br/><sub><b>Atelier → Sound.</b> Five tabs, OFF | ON switches, and a bit-perfect strip on top.</sub></td>
+<td width="50%"><img src="Docs/images/quick-panel.png" alt="The quick control panel" /><br/><sub><b>Quick controls</b> (⌥⌘D): switch the output and the settings you reach for most.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="Docs/images/rooms-speaker-setup.png" alt="Rooms with the speaker set-up" /><br/><sub><b>Rooms.</b> Several outputs, each with a job, a level and a delay.</sub></td>
+<td width="50%"><img src="Docs/images/ivory-theme.png" alt="Ivory, the light theme" /><br/><sub><b>Ivory.</b> The light twin of the default theme.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="Docs/images/quality-badges.png" alt="Songs with Hi-Res plates" /><br/><sub><b>Quality plates.</b> Hi-Res and Lossless at a glance, in the lists and beside the title.</sub></td>
+<td width="50%"><img src="Docs/images/launch-animation.png" alt="The launch animation" /><br/><sub><b>Launch animation.</b> The ring closes round the planet, a star leaves it, the name follows.</sub></td>
 </tr>
 </table>
 
@@ -101,7 +113,7 @@ nothing, takes no locks and sends no Swift or Objective-C messages. See [Docs/AR
 |:--|:--|
 | **DJ console** | Two decks on one mixer clock: waveforms, BPM and key (Camelot) detection, pitch and pitch bend, SYNC and beat sync, quantize, hot cues, loops, rolls, a 3-band EQ with kills, sweep filter, echo / reverb / flanger / gate, crossfader curves, headphone cue and a WAV mix recorder. |
 | **MIDI controllers** | CoreMIDI input with MIDI Learn, 14-bit and relative encoders, soft takeover and presets for the Pioneer DDJ-400 and Korg nanoKONTROL2. |
-| **Intelligence** | One master switch for every AI feature, with a switch per feature. Natural-language playlists, semantic search, Smart DJ sets, Smart Shuffle and a DJ remixer, all on device. Optionally bring your own API key (text only, never audio). Experimental: a neural enhancer for lossy streams and on-device lyrics. |
+| **Intelligence** | One master switch for every smart feature, with a switch per feature. Natural-language playlists, semantic search, Smart DJ sets, Smart Shuffle and a DJ remixer, all on device. Optionally bring your own API key (text only, never audio). Experimental: a neural enhancer for lossy streams and on-device lyrics. |
 
 ### Sources and outputs
 
@@ -109,6 +121,7 @@ nothing, takes no locks and sends no Swift or Objective-C messages. See [Docs/AR
 |:--|:--|
 | **Radio and podcasts** | Free stations worldwide (including lossless FLAC streams), upscaled to the DAC's best rate if you like. Podcast directory and RSS. |
 | **Cloud and servers** | Your own Backblaze B2, S3, R2, Wasabi or MinIO bucket, Navidrome / Subsonic, and Lyrion Music Server. |
+| **Speaker set-up** | Several outputs at once, each with a job (stereo, left, right, centre, ambience, bass), a distance, a level and a delay. Levels follow the volume in each device's own decibel steps, and outputs are time-aligned from their reported latency. |
 | **Cast and rooms** | The processed output sent as lossless FLAC to Chromecast and Nest speakers, multi-room zones across Sonos, DLNA and Chromecast, and the system AirPlay picker. |
 | **Rip and convert** | Secure CD ripping with AccurateRip and MusicBrainz; batch transcoding to AAC, Apple Lossless or FLAC. |
 | **Scrobbling and presence** | Last.fm, ListenBrainz and Discord Rich Presence, with an offline retry queue. Secrets live in the Keychain. |
@@ -137,11 +150,11 @@ The complete list, with what each feature has been verified against, is in [Docs
 An honest list of what is **not verified** or **not built**.
 
 <details open>
-<summary><b>Known issue in 0.2.0</b></summary>
+<summary><b>Known issues in 0.3.0</b></summary>
 
-- **Closing Now Playing with the chevron can leave part of the window unresponsive.** The chevron is at the top left of the
-  Now Playing page; afterwards parts of the window, including the sidebar, may stop reacting to clicks. No workaround yet.
-  It is the first thing we will fix in 0.2.1.
+- **Speaker levelling and output alignment are verified by tests, not by ear on every kind of speaker.** The balance is a good
+  starting point; use each output's **Level** and **Extra delay** to finish it. Bluetooth speakers add jitter that can need a
+  small delay trim.
 
 </details>
 
@@ -165,7 +178,7 @@ Planned for upcoming releases:
 
 | | |
 |:--|:--|
-| 🍎 **Intel build** | A build for Intel-based Macs. |
+| 🍎 **Intel and Windows** | The new design for Intel-based Macs and for Windows. |
 | ✅ **Notarised releases** | A signed, notarised app so the first launch needs no right-click. |
 | 🔀 **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 | 🎚 **DJ extras** | Keylock, scratching, MIDI output and LED feedback for controllers. |

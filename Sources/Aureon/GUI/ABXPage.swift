@@ -358,10 +358,10 @@ struct ABXPage: View {
 
     var body: some View {
         PageScaffold(title: "ABX Test", subtitle: "Blind comparison", trailing: {
-            if x.canResumePlayer { PillButton(title: "Resume Player", symbol: "play.fill") { x.resumePlayer() } }
+            if x.canResumePlayer { RuleButton(title: "Resume Player", symbol: "play.fill") { x.resumePlayer() } }
         }) {
             Note(text: "Load two files, for example two masterings of one album or a lossless file and its MP3. Aureon matches their loudness to the quieter one, lines them up to the sample and switches between them with a 10 ms crossfade, so only the sound differs.")
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .top, spacing: 16) {
                 ABXFileCard(slot: .a)
                 Button { x.swapSides() } label: { Image(systemName: "arrow.left.arrow.right") }
                     .buttonStyle(IconButtonStyle()).disabled(!x.bothLoaded || x.inTest).help("Swap A and B").padding(.top, 40)
@@ -379,13 +379,13 @@ struct ABXPage: View {
     @ViewBuilder private var status: some View {
         switch x.phase {
         case .analysing:
-            HStack(spacing: 10) { ProgressView().controlSize(.small); Text("Measuring loudness and finding the offset between the files…").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+            HStack(spacing: 12) { ProgressView().controlSize(.small); Text("Measuring loudness and finding the offset between the files…").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary) }
         case .failed(let e):
-            Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.system(size: 12.5))
+            Label(e, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Brand.caution).font(Typo.sans(12.5))
         default:
             EmptyView()
         }
-        if let msg = x.message { Label(msg, systemImage: "info.circle").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+        if let msg = x.message { Label(msg, systemImage: "info.circle").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary) }
     }
 }
 
@@ -397,17 +397,17 @@ struct ABXFileCard: View {
     var body: some View {
         let side = slot == .a ? x.a : x.b
         let gain = slot == .a ? x.gainsDB.a : x.gainsDB.b
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text(slot.label).font(.system(size: 22, weight: .bold, design: .rounded)).foregroundStyle(Brand.accent)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Text(slot.label).font(Typo.serif(22, .regular)).foregroundStyle(Brand.accent)
                     .frame(width: 38, height: 38).background(Circle().fill(Brand.accent.opacity(0.14)))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(side.url == nil ? "No file" : side.name).font(.system(size: 14, weight: .semibold)).lineLimit(2)
+                    Text(side.url == nil ? "No file" : side.name).font(Typo.sans(14, .semibold)).lineLimit(2)
                     if let i = side.info {
                         Text("\(i.codec) · \(i.sourceBits)-bit · \(formatRate(i.sampleRate)) · \(i.channels == 1 ? "mono" : "\(i.channels) ch") · \(clock(i.duration))")
-                            .font(Typo.readout).foregroundStyle(.secondary).lineLimit(1)
+                            .font(Typo.readout).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                     } else if let u = side.url {
-                        Text(u.deletingLastPathComponent().lastPathComponent).font(Typo.readout).foregroundStyle(.secondary).lineLimit(1)
+                        Text(u.deletingLastPathComponent().lastPathComponent).font(Typo.readout).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -422,7 +422,7 @@ struct ABXFileCard: View {
                 if let c = side.conversion { Note(text: "Played \(c).") }
             }
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .panel(radius: 16, fill: targeted ? 0.1 : 0.045, glow: targeted ? Brand.accent : nil)
         .dropDestination(for: URL.self) { urls, _ in
@@ -437,10 +437,10 @@ struct ABXPlayerPanel: View {
     @ObservedObject private var x = ABXModel.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Button { x.togglePlay() } label: {
-                    Image(systemName: x.playing ? "pause.fill" : "play.fill").font(.system(size: 20)).frame(width: 46, height: 46)
+                    Image(systemName: x.playing ? "pause.fill" : "play.fill").font(Typo.sans(20)).frame(width: 46, height: 46)
                         .background(Circle().fill(Brand.accent)).foregroundStyle(.white)
                 }
                 .buttonStyle(.plain).help(x.playing ? "Pause" : "Play")
@@ -449,9 +449,9 @@ struct ABXPlayerPanel: View {
                 choiceButton(.b, "B", key: "b")
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 3) {
-                    Toggle("Match loudness", isOn: $x.matchLoudness).toggleStyle(.switch).controlSize(.small)
+                    Toggle("Match loudness", isOn: $x.matchLoudness).toggleStyle(.rule).controlSize(.small)
                     if x.matchLoudness, let la = x.matchedLUFS.a, let lb = x.matchedLUFS.b {
-                        Text(String(format: "Both at %.2f LUFS (difference %.2f LU)", min(la, lb), abs(la - lb))).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(String(format: "Both at %.2f LUFS (difference %.2f LU)", min(la, lb), abs(la - lb))).font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
                     }
                 }
             }
@@ -460,11 +460,11 @@ struct ABXPlayerPanel: View {
                 Button("Loop In") { x.setLoopStart() }.help("Start the loop at the playhead")
                 Button("Loop Out") { x.setLoopEnd() }.help("End the loop at the playhead")
                 if let l = x.loop {
-                    Text("\(clock(l.lowerBound)) – \(clock(l.upperBound))").font(Typo.readout).foregroundStyle(.secondary)
+                    Text("\(clock(l.lowerBound)) – \(clock(l.upperBound))").font(Typo.readout).foregroundStyle(Brand.inkSecondary)
                     Button("Clear Loop") { x.clearLoop() }
                 }
                 Spacer()
-                Text(x.offsetDescription).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Text(x.offsetDescription).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
                 Menu {
                     Button("B 1 ms earlier") { x.nudge(by: -Int(x.rate / 1000)) }
                     Button("B 1 sample earlier") { x.nudge(by: -1) }
@@ -478,7 +478,7 @@ struct ABXPlayerPanel: View {
             }
             .controlSize(.small)
             if let al = x.alignment, al.confidence < ABXAlign.minimumConfidence {
-                Note(text: String(format: "The files could not be lined up automatically (match %.0f%%). If they are the same recording, adjust the offset by ear.", al.confidence * 100), color: .orange)
+                Note(text: String(format: "The files could not be lined up automatically (match %.0f%%). If they are the same recording, adjust the offset by ear.", al.confidence * 100), color: Brand.caution)
             }
             Note(text: "Output at \(formatRate(x.rate)), 10 ms crossfade on every switch. Keys: A, B\(x.inTest ? ", X" : "").")
         }
@@ -489,9 +489,9 @@ struct ABXPlayerPanel: View {
     private func choiceButton(_ c: ABXModel.Choice, _ label: String, key: KeyEquivalent) -> some View {
         let on = x.choice == c
         return Button { x.select(c) } label: {
-            Text(label).font(.system(size: 18, weight: .bold, design: .rounded)).frame(width: 64, height: 46)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Brand.accent.opacity(0.28) : Brand.ink.opacity(0.07)))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Brand.accent : Brand.ink.opacity(0.12), lineWidth: on ? 1.5 : 0.8))
+            Text(label).font(Typo.serif(18, .regular)).frame(width: 64, height: 46)
+                .background(RoundedRectangle(cornerRadius: Metrics.radius(12), style: .continuous).fill(on ? Brand.accent.opacity(0.28) : Brand.ink.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.radius(12), style: .continuous).strokeBorder(on ? Brand.accent : Brand.ink.opacity(0.12), lineWidth: on ? 1.5 : 0.8))
         }
         .buttonStyle(.plain).keyboardShortcut(key, modifiers: []).help("Listen to \(label)")
     }
@@ -510,7 +510,7 @@ struct ABXScrubber: View {
             .background {
                 if let l = x.loop {
                     GeometryReader { g in
-                        Capsule().fill(Brand.accent.opacity(0.25))
+                        Slab().fill(Brand.accent.opacity(0.25))
                             .frame(width: max(2, g.size.width * (l.upperBound - l.lowerBound) / dur), height: 10)
                             .offset(x: g.size.width * l.lowerBound / dur, y: (g.size.height - 10) / 2)
                     }
@@ -520,7 +520,7 @@ struct ABXScrubber: View {
             HStack {
                 Text(clock(pos)); Spacer(); Text("-" + clock(max(0, dur - pos)))
             }
-            .font(.system(size: 11, weight: .medium, design: .monospaced)).monospacedDigit().foregroundStyle(.secondary)
+            .font(Typo.mono(11, .medium)).monospacedDigit().foregroundStyle(Brand.inkSecondary)
         }
     }
 }
@@ -530,7 +530,7 @@ struct ABXTestPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Blind test").font(.system(size: 17, weight: .semibold))
+            Text("Blind test").font(Typo.serif(17, .regular))
             if let s = x.session {
                 if s.finished { results(s) } else { running(s) }
             } else {
@@ -543,14 +543,14 @@ struct ABXTestPanel: View {
     }
 
     private var setup: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Note(text: "Each trial plays X, which is A or B at random. Listen to A, B and X as often as you like, then say which one X is. Neither you nor the screen knows the answer until the end.")
             HStack(spacing: 12) {
                 Stepper("\(x.trialCount) trials", value: $x.trialCount, in: ABXSession.trialRange)
                     .fixedSize()
-                Text("\(ABXStats.needed(trials: x.trialCount)) right answers prove a difference (p < 0.05)").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text("\(ABXStats.needed(trials: x.trialCount)) right answers prove a difference (p < 0.05)").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 Spacer()
-                PillButton(title: "Start Test", symbol: "eye.slash", filled: true) { x.startTest() }
+                RuleButton(title: "Start Test", symbol: "eye.slash", filled: true) { x.startTest() }
             }
         }
     }
@@ -558,20 +558,20 @@ struct ABXTestPanel: View {
     private func running(_ s: ABXSession) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Trial \(s.index + 1) of \(s.total)").font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                Text("Trial \(s.index + 1) of \(s.total)").font(Typo.sans(14, .semibold)).monospacedDigit()
                 Spacer()
                 Button("Stop Test") { x.stopTest() }.controlSize(.small)
             }
             HStack(spacing: 4) {
                 ForEach(0..<s.total, id: \.self) { i in
-                    Capsule().fill(i < s.index ? Brand.ink.opacity(0.5) : (i == s.index ? Brand.accent : Brand.ink.opacity(0.12))).frame(height: 5)
+                    Slab().fill(i < s.index ? Brand.ink.opacity(0.5) : (i == s.index ? Brand.accent : Brand.ink.opacity(0.12))).frame(height: 5)
                 }
             }
             HStack(spacing: 12) {
-                PillButton(title: "X is A", symbol: "a.square", filled: true) { x.answer(.a) }
-                PillButton(title: "X is B", symbol: "b.square", filled: true) { x.answer(.b) }
+                RuleButton(title: "X is A", symbol: "a.square", filled: true) { x.answer(.a) }
+                RuleButton(title: "X is B", symbol: "b.square", filled: true) { x.answer(.b) }
                 Spacer()
-                Text("No feedback until the end, so earlier answers cannot steer later ones.").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Text("No feedback until the end, so earlier answers cannot steer later ones.").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
             }
         }
     }
@@ -579,38 +579,38 @@ struct ABXTestPanel: View {
     private func results(_ s: ABXSession) -> some View {
         let ci = s.interval
         return VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 18) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(s.correct) / \(s.answered)").font(.system(size: 30, weight: .semibold, design: .rounded)).monospacedDigit()
-                    Text("correct").microLabel().foregroundStyle(.secondary)
+                    Text("\(s.correct) / \(s.answered)").font(Typo.serif(30, .regular)).monospacedDigit()
+                    Text("correct").microLabel().foregroundStyle(Brand.inkSecondary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(ABXSession.format(s.pValue)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                    Text(ABXSession.format(s.pValue)).font(Typo.serif(22, .regular)).monospacedDigit()
                         .foregroundStyle(s.pValue < 0.05 ? Brand.accent : Color.primary)
-                    Text("p-value").microLabel().foregroundStyle(.secondary)
+                    Text("p-value").microLabel().foregroundStyle(Brand.inkSecondary)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(format: "%.0f – %.0f %%", ci.low * 100, ci.high * 100)).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
-                    Text("95 % interval, hit rate").microLabel().foregroundStyle(.secondary)
+                    Text(String(format: "%.0f – %.0f %%", ci.low * 100, ci.high * 100)).font(Typo.serif(22, .regular)).monospacedDigit()
+                    Text("95 % interval, hit rate").microLabel().foregroundStyle(Brand.inkSecondary)
                 }
                 Spacer()
             }
             Note(text: s.verdict)
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(s.trials.enumerated()), id: \.offset) { i, t in
-                    HStack(spacing: 10) {
-                        Text("\(i + 1)").frame(width: 24, alignment: .trailing).foregroundStyle(.secondary)
-                        Image(systemName: t.correct == true ? "checkmark.circle.fill" : "xmark.circle").foregroundStyle(t.correct == true ? Color.green : Color.orange)
+                    HStack(spacing: 12) {
+                        Text("\(i + 1)").frame(width: 24, alignment: .trailing).foregroundStyle(Brand.inkSecondary)
+                        Image(systemName: t.correct == true ? "checkmark.circle.fill" : "xmark.circle").foregroundStyle(t.correct == true ? Brand.accentText : Brand.caution)
                         Text("X was \(t.x.label), you said \(t.answer?.label ?? "–")")
                         Spacer()
-                        Text("\(t.switches) switches · \(Int(t.seconds.rounded())) s").foregroundStyle(.secondary)
+                        Text("\(t.switches) switches · \(Int(t.seconds.rounded())) s").foregroundStyle(Brand.inkSecondary)
                     }
-                    .font(.system(size: 12)).monospacedDigit()
+                    .font(Typo.sans(12)).monospacedDigit()
                 }
             }
             HStack {
-                PillButton(title: "Copy Results", symbol: "doc.on.doc") { x.copyResults() }
-                PillButton(title: "New Test", symbol: "arrow.counterclockwise") { x.startTest() }
+                RuleButton(title: "Copy Results", symbol: "doc.on.doc") { x.copyResults() }
+                RuleButton(title: "New Test", symbol: "arrow.counterclockwise") { x.startTest() }
             }
         }
     }

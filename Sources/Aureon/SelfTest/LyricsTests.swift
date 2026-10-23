@@ -149,11 +149,11 @@ struct LyricsTests {
         let cur = LyricsCursor()
         var changes = 0
         let sub = cur.$active.dropFirst().sink { _ in changes += 1 }
-        for p in stride(from: 0.0, to: 9.9, by: 0.033) { cur.update(position: p, playing: true, lyrics: l) }
+        for p in stride(from: 0.0, to: 9.9, by: 0.033) { cur.update(position: p, playing: true, lyrics: l, offset: 0, latency: 0) }
         expect(changes == 1 && cur.active == 0, "thirty updates a second, one change: \(changes)")
-        cur.update(position: 12, playing: true, lyrics: l)
+        cur.update(position: 12, playing: true, lyrics: l, offset: 0, latency: 0)
         expect(cur.active == 1 && cur.isPlaying, "next line")
-        cur.update(position: 12, playing: false, lyrics: l)
+        cur.update(position: 12, playing: false, lyrics: l, offset: 0, latency: 0)
         expect(!cur.isPlaying, "paused")
         sub.cancel()
     }
@@ -1015,7 +1015,8 @@ extension LyricsTests {
         lyricsKeepAlive.append(m)
         m.add(urls: [item.url])
         m.tab = .player
-        let view = ContentView().environmentObject(m).frame(width: 1100, height: 900).preferredColorScheme(.dark)
+        let stage = StageModel(); lyricsKeepAlive.append(stage)
+        let view = ContentView(stage: stage).environmentObject(m).frame(width: 1100, height: 900).preferredColorScheme(.dark)
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(x: 0, y: 0, width: 1100, height: 900)
         let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
@@ -1027,9 +1028,14 @@ extension LyricsTests {
             shared.isOnlineAllowed = online; shared.isGenerationAllowed = gen; shared.show(nil)
             ud.set(savedShow, forKey: "aureon.lyrics.show")
         }
+        // lyrics are not shown, and not looked up, until the lyrics button is on
+        wait(1.5) { shared.phase != .idle }
+        expect(stage.panel == nil && shared.phase == .idle, "no lyrics until asked for: \(shared.phase)")
+        stage.panel = .lyrics
         wait(10) { shared.phase == .ready }
         expect(m.focusItem?.path == item.path, "the song is in focus")
-        expect(shared.phase == .ready && shared.lyrics?.synced == true, "Now Playing started the lookup by itself: \(shared.phase)")
+        expect(shared.phase == .ready && shared.lyrics?.synced == true, "opening the lyrics panel started the lookup: \(shared.phase)")
+        stage.panel = nil
     }
 
     /// Queries are percent-encoded, so spaces, "+", "&" and accents reach the service as typed.

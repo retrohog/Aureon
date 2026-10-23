@@ -189,7 +189,12 @@ final class RemixPolicy {
     func train(_ x: [Float], target: [Float], rate: Float, mask: [Float]? = nil) {
         let acts = layerOutputs(x)
         let L = Self.sizes.count - 1
-        var delta = (0..<target.count).map { k -> Float in (acts[L][k] - target[k]) * acts[L][k] * (1 - acts[L][k]) * (mask?[k] ?? 1) }
+        var delta = [Float](repeating: 0, count: target.count)
+        for k in 0..<target.count {
+            let a = acts[L][k]
+            let m: Float = mask?[k] ?? 1
+            delta[k] = (a - target[k]) * a * (1 - a) * m
+        }
         for l in stride(from: L - 1, through: 0, by: -1) {
             let i = Self.sizes[l], o = Self.sizes[l + 1]
             var prev = [Float](repeating: 0, count: i)

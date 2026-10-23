@@ -40,13 +40,13 @@ struct EnhancerStatusLine: View {
             if let s = EnhancerStatusBoard.shared.snapshot() {
                 HStack(spacing: 8) {
                     Circle().fill(color(s)).frame(width: 7, height: 7)
-                    Text(text(s)).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(text(s)).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(2)
                     if s.windowsNeural + s.windowsFallback > 0 {
-                        Text("\(s.windowsNeural) neural · \(s.windowsFallback) classic").font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+                        Text("\(s.windowsNeural) neural · \(s.windowsFallback) classic").font(Typo.mono(11)).foregroundStyle(Brand.inkTertiary)
                     }
                 }
             } else {
-                Text("Starting the enhancer…").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Text("Starting the enhancer…").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
             }
         }
     }

@@ -4,7 +4,7 @@ struct DiagnosticsTab: View {
     @EnvironmentObject var m: PlayerModel
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             SystemCard(sys: m.system)
             Card(title: "Freeze recorder", subtitle: "If the interface ever stops responding for about half a second, Aureon saves what it was doing") {
                 let n = StallMonitor.shared.files.count
@@ -19,7 +19,7 @@ struct DiagnosticsTab: View {
                 Stepper("Timing test: \(String(format: "%.0f", m.diagSeconds)) s of silence", value: $m.diagSeconds, in: 0...30, step: 1)
                 HStack {
                     Button { m.runDiagnostics() } label: { Label(m.diagRunning ? "Running…" : "Run diagnostics", systemImage: "stethoscope") }
-                        .disabled(m.diagRunning).buttonStyle(.borderedProminent)
+                        .disabled(m.diagRunning).buttonStyle(.solid)
                     Button { m.exportDiagnostics() } label: { Label("Export JSON", systemImage: "square.and.arrow.up") }
                         .disabled(m.diagSteps.isEmpty || m.diagRunning)
                     if m.diagRunning { ProgressView().controlSize(.small) }
@@ -31,14 +31,14 @@ struct DiagnosticsTab: View {
                         HStack(alignment: .top, spacing: 8) {
                             Text(s.symbol).foregroundStyle(color(s.status)).frame(width: 16)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(s.title).font(.callout.weight(.medium))
-                                Text(s.detail).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                Text(s.title).font(Typo.callout.weight(.medium))
+                                Text(s.detail).font(Typo.caption).foregroundStyle(Brand.inkSecondary).textSelection(.enabled)
                             }
                             Spacer()
                         }
                     }
                     let f = m.diagSteps.filter { $0.status == .fail }.count, w = m.diagSteps.filter { $0.status == .warn }.count
-                    if !m.diagRunning { Divider(); Text("\(f) failure(s), \(w) warning(s)").font(.callout.weight(.semibold)).foregroundStyle(f > 0 ? .red : (w > 0 ? .orange : .green)) }
+                    if !m.diagRunning { Divider(); Text("\(f) failure(s), \(w) warning(s)").font(Typo.callout.weight(.semibold)).foregroundStyle(f > 0 ? .red : (w > 0 ? .orange : .green)) }
                 }
             }
         }

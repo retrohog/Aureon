@@ -39,7 +39,7 @@ struct ScrollGate {
 @MainActor
 final class ScrollRouter {
     static let shared = ScrollRouter()
-    private var current: (id: UUID, handler: (Double) -> Bool, view: () -> NSView?)?
+    private var current: (id: UUID, handler: (Double) -> Bool, view: () -> NSView?, plainWheel: Bool)?
     private var monitor: Any?
 
     func install() {
@@ -50,8 +50,14 @@ final class ScrollRouter {
     }
 
     /// Called by a control when the pointer enters (handler) or leaves (nil) it. `handler` returns whether it used the movement.
-    func hover(_ id: UUID, _ handler: ((Double) -> Bool)?, view: @escaping () -> NSView? = { nil }) {
-        if let handler { current = (id, handler, view) } else if current?.id == id { current = nil }
+    func hover(_ id: UUID, _ handler: ((Double) -> Bool)?, view: @escaping () -> NSView? = { nil }, plainWheel: Bool = false) {
+        if let handler { current = (id, handler, view, plainWheel) } else if current?.id == id { current = nil }
+    }
+
+    /// Whether the control under the pointer takes a plain mouse wheel (no ⌥): the volume does.
+    private func plainWheelUnderPointer(_ e: NSEvent) -> Bool {
+        guard let c = current, c.plainWheel, let v = c.view(), v.window === e.window, v.window != nil else { return false }
+        return v.bounds.contains(v.convert(e.locationInWindow, from: nil))
     }
 
     /// The registered control counts only while the pointer really is over it (hover state goes stale when a page scrolls under a still pointer).
@@ -69,7 +75,7 @@ final class ScrollRouter {
         let begins = e.phase.contains(.began) || e.phase.contains(.mayBegin)
         let over = begins || !phased ? (sliderUnderPointer(e) != nil || currentUnderPointer(e)(0)) : false
         let action = gate.decide(now: e.timestamp, phased: phased, begins: begins, momentumEnded: e.momentumPhase.contains(.ended) || e.phase.contains(.cancelled),
-                                 option: e.modifierFlags.contains(.option), overControl: over)
+                                 option: e.modifierFlags.contains(.option) || plainWheelUnderPointer(e), overControl: over)
         switch action {
         case .adjust:
             if notches != 0, adjustUnderPointer(e, notches) { return nil }
@@ -119,11 +125,12 @@ final class ScrollRouter {
 
 extension View {
     /// While the pointer is over this view, scrolling adjusts it: `apply` gets the number of wheel clicks (positive = up) and returns whether it used them.
-    func scrollAdjustable(hovering: Bool, apply: @escaping (Double) -> Bool) -> some View { modifier(ScrollAdjustable(hovering: hovering, apply: apply)) }
+    func scrollAdjustable(hovering: Bool, plainWheel: Bool = false, apply: @escaping (Double) -> Bool) -> some View { modifier(ScrollAdjustable(hovering: hovering, plainWheel: plainWheel, apply: apply)) }
 }
 
 private struct ScrollAdjustable: ViewModifier {
     let hovering: Bool
+    var plainWheel = false
     let apply: (Double) -> Bool
     @StateObject private var id = Box(UUID())
     @StateObject private var anchor = ViewAnchor()
@@ -131,7 +138,7 @@ private struct ScrollAdjustable: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(AnchorView(anchor: anchor))
-            .onChange(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil, view: { [weak anchor] in anchor?.view }) }
+            .onChange(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil, view: { [weak anchor] in anchor?.view }, plainWheel: plainWheel) }
             .onDisappear { ScrollRouter.shared.hover(id.v, nil) }
     }
 }

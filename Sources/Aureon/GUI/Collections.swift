@@ -38,7 +38,7 @@ final class CollectionsModel: ObservableObject {
     func toggleLike(path: String) {
         guard let store else { return }
         let now = !liked.contains(path)
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { if now { liked.insert(path) } else { liked.remove(path) } }      // the heart answers at once
+        withAnimation(Motion.glide) { if now { liked.insert(path) } else { liked.remove(path) } }      // the heart answers at once
         Task.detached(priority: .userInitiated) { store.setLiked(paths: [path], liked: now); await MainActor.run { self.refresh() } }
     }
 
@@ -93,9 +93,9 @@ struct HeartButton: View {
     var body: some View {
         let on = path.map { c.isLiked($0) } ?? false
         Button { if let path { c.toggleLike(path: path) } } label: {
-            Image(systemName: on ? "heart.fill" : "heart").font(.system(size: size, weight: .medium))
+            Image(systemName: on ? "heart.fill" : "heart").font(Typo.sans(size, .light))
                 .foregroundStyle(on ? AnyShapeStyle(Brand.accent) : AnyShapeStyle((ink ?? Brand.ink).opacity(hover.v ? 0.95 : 0.7)))
-                .scaleEffect(on ? 1.08 : 1).symbolEffect(.bounce, value: on)
+                
                 .frame(width: size + 10, height: size + 10).contentShape(Rectangle())
                 .opacity(on || alwaysVisible || hover.v ? 1 : 0)
         }
@@ -156,9 +156,9 @@ struct LikedPage: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 6) {
-            PillButton(title: "Play", symbol: "play.fill", filled: true) { m.play(tracks: c.likedTracks, at: 0) }
-            PillButton(title: "Shuffle", symbol: "shuffle") { m.play(tracks: c.likedTracks.shuffled(), at: 0) }
+        HStack(spacing: 8) {
+            RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.play(tracks: c.likedTracks, at: 0) }
+            RuleButton(title: "Shuffle", symbol: "shuffle") { m.play(tracks: c.likedTracks.shuffled(), at: 0) }
         }
     }
 }
@@ -175,15 +175,15 @@ struct PlaylistsPage: View {
 
     private var list: some View {
         PageScaffold(title: "Playlists", subtitle: "\(c.playlists.count)", trailing: {
-            PillButton(title: "Describe a Playlist", symbol: "text.badge.plus") { describe.v = true }
-            PillButton(title: "New Playlist", symbol: "plus", filled: true) { newPlaylist() }
+            RuleButton(title: "Describe a Playlist", symbol: "text.badge.plus") { describe.v = true }
+            RuleButton(title: "New Playlist", symbol: "plus", filled: true) { newPlaylist() }
         }) {
             if c.playlists.isEmpty {
                 EmptyExplainer(icon: "music.note.list", title: "Make your first playlist",
                                text: "Playlists are lists of songs you choose and order. Create one here, or right-click any song and choose Add to Playlist.",
                                action: ("New Playlist", { newPlaylist() }))
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 18, alignment: .top)], alignment: .leading, spacing: 22) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 210), spacing: 16, alignment: .top)], alignment: .leading, spacing: 24) {
                     ForEach(c.playlists) { p in PlaylistCard(playlist: p) }
                 }
             }
@@ -207,16 +207,16 @@ struct PlaylistCard: View {
 
     var body: some View {
         let pal = ArtPalette.fallback(seed: playlist.name)
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(LinearGradient(colors: [pal.grid[0].color, pal.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: "music.note.list").font(.system(size: 34, weight: .light)).foregroundStyle(.white.opacity(0.85))
+                RoundedRectangle(cornerRadius: Metrics.radius(12), style: .continuous).fill(LinearGradient(colors: [pal.grid[0].color, pal.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: "music.note.list").font(Typo.sans(34, .light)).foregroundStyle(Brand.inkSecondary)
             }
             .aspectRatio(1, contentMode: .fit)
             .hoverLift(hover.v, radius: 12, glow: pal.accent.color)
             VStack(alignment: .leading, spacing: 1) {
-                Text(playlist.name).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                Text("\(playlist.trackCount) song\(playlist.trackCount == 1 ? "" : "s")").font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Text(playlist.name).font(Typo.sans(12.5, .semibold)).lineLimit(1)
+                Text("\(playlist.trackCount) song\(playlist.trackCount == 1 ? "" : "s")").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
             }
         }
         .contentShape(Rectangle())
@@ -240,23 +240,23 @@ struct PlaylistDetail: View {
         let tracks = c.selectedTracks
         let pal = ArtPalette.fallback(seed: playlist.name)
         PageScaffold(title: "", back: { c.selected = nil }, backTitle: "Playlists") {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 HStack(alignment: .bottom, spacing: 24) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous).fill(LinearGradient(colors: [pal.grid[0].color, pal.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Image(systemName: "music.note.list").font(.system(size: 54, weight: .light)).foregroundStyle(.white.opacity(0.85))
-                    }.frame(width: 190, height: 190).shadow(color: .black.opacity(0.4), radius: 18, y: 9)
-                    VStack(alignment: .leading, spacing: 5) {
+                        RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).fill(LinearGradient(colors: [pal.grid[0].color, pal.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Image(systemName: "music.note.list").font(Typo.sans(54, .light)).foregroundStyle(Brand.inkSecondary)
+                    }.frame(width: 190, height: 190)
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("PLAYLIST").microLabel().foregroundStyle(Brand.cyan)
-                        Text(playlist.name).font(.system(size: 28, weight: .bold)).tracking(-0.5).lineLimit(2)
-                        Text("\(tracks.count) song\(tracks.count == 1 ? "" : "s")" + (tracks.isEmpty ? "" : " · \(Int((tracks.reduce(0) { $0 + $1.duration } / 60).rounded())) minutes")).microLabel().foregroundStyle(.secondary)
-                        HStack(spacing: 6) {
-                            PillButton(title: "Play", symbol: "play.fill", filled: true) { m.play(tracks: tracks, at: 0) }
-                            PillButton(title: "Shuffle", symbol: "shuffle") { m.play(tracks: tracks.shuffled(), at: 0) }
-                            PillButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
-                            PillButton(title: "Rename", symbol: "pencil") { if let n = promptForText(title: "Rename Playlist", initial: playlist.name, confirm: "Rename") { c.rename(playlist.id, to: n) } }
-                            PillButton(title: "Delete", symbol: "trash") { confirmDelete() }
-                        }.padding(.top, 10)
+                        Text(playlist.name).font(Typo.serif(28, .regular)).tracking(-0.5).lineLimit(2)
+                        Text("\(tracks.count) song\(tracks.count == 1 ? "" : "s")" + (tracks.isEmpty ? "" : " · \(Int((tracks.reduce(0) { $0 + $1.duration } / 60).rounded())) minutes")).microLabel().foregroundStyle(Brand.inkSecondary)
+                        HStack(spacing: 8) {
+                            RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.play(tracks: tracks, at: 0) }
+                            RuleButton(title: "Shuffle", symbol: "shuffle") { m.play(tracks: tracks.shuffled(), at: 0) }
+                            RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
+                            RuleButton(title: "Rename", symbol: "pencil") { if let n = promptForText(title: "Rename Playlist", initial: playlist.name, confirm: "Rename") { c.rename(playlist.id, to: n) } }
+                            RuleButton(title: "Delete", symbol: "trash") { confirmDelete() }
+                        }.padding(.top, 12)
                     }
                     Spacer(minLength: 0)
                 }
@@ -285,27 +285,23 @@ struct EmptyExplainer: View {
     var action: (String, () -> Void)? = nil
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: icon).font(.system(size: 40, weight: .ultraLight)).foregroundStyle(.secondary)
-            Text(title).font(.title3.weight(.semibold))
-            Text(text).multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 440).font(.callout)
-            if let action { PillButton(title: action.0, symbol: "plus", filled: true, action: action.1).padding(.top, 4) }
+            Image(systemName: icon).font(Typo.sans(40, .ultraLight)).foregroundStyle(Brand.inkSecondary)
+            Text(title).font(Typo.t3.weight(.semibold))
+            Text(text).multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).frame(maxWidth: 440).font(Typo.callout)
+            if let action { RuleButton(title: action.0, symbol: "plus", filled: true, action: action.1).padding(.top, 4) }
         }
-        .frame(maxWidth: .infinity).padding(.top, 60)
+        .frame(maxWidth: .infinity).padding(.top, 64)
     }
 }
 
 // MARK: - Hover effect
 
 extension View {
-    /// A soft lift for covers and portraits: grows a little and shines with a glow in `glow`'s colour while hovered.
-    func hoverLift(_ on: Bool, radius: CGFloat = 12, glow: Color = Brand.accent, scale: CGFloat = 1.045) -> some View {
+    /// Hover feedback for covers and portraits: a champagne hairline just outside the picture. Nothing grows or glows.
+    func hoverLift(_ on: Bool, radius: CGFloat = 12, glow: Color = Brand.accent, scale: CGFloat = 1) -> some View {
         self
-            .background {
-                RoundedRectangle(cornerRadius: radius, style: .continuous).fill(glow.opacity(on ? 0.55 : 0)).blur(radius: on ? 20 : 6).padding(on ? -2 : 6).offset(y: on ? 6 : 2)
-            }
-            .shadow(color: .black.opacity(on ? 0.5 : 0.28), radius: on ? 14 : 7, y: on ? 8 : 3)
-            .scaleEffect(on ? scale : 1)
-            .animation(.spring(response: 0.32, dampingFraction: 0.72), value: on)
+            .overlay(RoundedRectangle(cornerRadius: min(Metrics.radius(radius), 3), style: .continuous).strokeBorder(Brand.coachline, lineWidth: Metrics.hairline).padding(-3).opacity(on ? 1 : 0))
+            .animation(Motion.touch, value: on)
     }
 }
 
@@ -335,7 +331,7 @@ struct AddToPlaylistButton: View {
                 Text("This song is not in your library")
             }
         } label: {
-            Image(systemName: added.v != nil ? "checkmark" : "text.badge.plus").font(.system(size: size, weight: .medium))
+            Image(systemName: added.v != nil ? "checkmark" : "text.badge.plus").font(Typo.sans(size, .medium))
                 .foregroundStyle(added.v != nil ? AnyShapeStyle(Brand.accent) : AnyShapeStyle((ink ?? Brand.ink).opacity(0.7)))
                 .frame(width: size + 10, height: size + 10).contentShape(Rectangle())
         }

@@ -330,11 +330,22 @@ final class MemorySecretStore: SecretStore, @unchecked Sendable {
     func set(_ value: String?, for account: String) { l.lock(); d[account] = value; l.unlock() }
 }
 
-/// The macOS Keychain (generic passwords under the service "org.aureon.player", or another service when given).
+/// The macOS Keychain (generic passwords under a service named after the app's bundle identifier, or another service when given).
+///
+/// Keychain items are guarded by the identity of the app that made them: another build asking for them gets the system's "wants to use your
+/// confidential information" prompt, which wants the login password. So each build keeps its own items: a preview or development build never
+/// asks for the release app's. Snapshot renders and `AUREON_NO_KEYCHAIN=1` never touch the Keychain at all (secrets stay in memory).
 final class KeychainSecretStore: SecretStore, @unchecked Sendable {
     private let service: String
-    init(service: String = "org.aureon.player") { self.service = service }
+    private let memory: MemorySecretStore?
+    init(service: String? = nil) {
+        let env = ProcessInfo.processInfo.environment
+        let skip = service == nil && (env["AUREON_NO_KEYCHAIN"] != nil || env["AUREON_SNAPSHOT"] != nil)
+        self.memory = skip ? MemorySecretStore() : nil
+        self.service = service ?? Bundle.main.bundleIdentifier ?? "org.aureon.player.dev"
+    }
     func get(_ account: String) -> String? {
+        if let memory { return memory.get(account) }
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
                                 kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var r: CFTypeRef?
@@ -342,6 +353,7 @@ final class KeychainSecretStore: SecretStore, @unchecked Sendable {
         return String(data: d, encoding: .utf8)
     }
     func set(_ value: String?, for account: String) {
+        if let memory { memory.set(value, for: account); return }
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(base as CFDictionary)
         guard let value, !value.isEmpty else { return }

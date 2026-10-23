@@ -293,7 +293,7 @@ struct TagEditorView: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -303,11 +303,11 @@ struct TagEditorView: View {
                         field(.album)
                         field(.albumArtist)
                         field(.composer)
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             field(.year, width: 110)
                             field(.genre, hint: "Hierarchy with /, e.g. Classical/Beethoven")
                         }
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             field(.trackNumber, width: 80)
                             field(.trackTotal, width: 80)
                             field(.discNumber, width: 80)
@@ -318,16 +318,16 @@ struct TagEditorView: View {
                         }
                     }
                     section("ReplayGain") {
-                        HStack(spacing: 10) { field(.rgTrackGain); field(.rgTrackPeak) }
-                        HStack(spacing: 10) { field(.rgAlbumGain); field(.rgAlbumPeak) }
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) { field(.rgTrackGain); field(.rgTrackPeak) }
+                        HStack(spacing: 12) { field(.rgAlbumGain); field(.rgAlbumPeak) }
+                        HStack(spacing: 12) {
                             Button { model.measureReplayGain() } label: { Label("Measure loudness", systemImage: "waveform.badge.magnifyingglass") }.disabled(model.measuring)
                             Button("Remove ReplayGain") { model.clearReplayGain() }
                             if model.measuring { ProgressView(value: model.measureProgress).frame(width: 120) }
                             Spacer()
                         }.controlSize(.small)
                         Text("EBU R128 measurement, ReplayGain 2.0 reference −18 LUFS. The album gain treats the selected files as one album.")
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
                     }
                     section("Files") {
                         VStack(spacing: 2) {
@@ -339,28 +339,28 @@ struct TagEditorView: View {
             }
             footer
         }
-        .padding(.horizontal, 20).padding(.top, 34).padding(.bottom, 16)
+        .padding(.horizontal, 24).padding(.top, 32).padding(.bottom, 16)
         .frame(minWidth: 520, minHeight: 520)
         .background(Brand.canvas)
         .foregroundStyle(Brand.ink)
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("Edit Tags").font(.system(size: 22, weight: .semibold))
-            Text("\(model.files.count) file\(model.files.count == 1 ? "" : "s")").microLabel().foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Edit Tags").font(Typo.serif(22, .regular))
+            Text("\(model.files.count) file\(model.files.count == 1 ? "" : "s")").microLabel().foregroundStyle(Brand.inkSecondary)
             Spacer()
             let formats = Set(model.files.map(\.format)).sorted().joined(separator: " · ")
-            Text(formats).microLabel().foregroundStyle(.secondary)
+            Text(formats).microLabel().foregroundStyle(Brand.inkSecondary)
         }
     }
 
     private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(title).kicker().foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).kicker().foregroundStyle(Brand.inkSecondary)
             content()
         }
-        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .glassPanel(radius: 12)
     }
 
@@ -369,15 +369,15 @@ struct TagEditorView: View {
         let prompt = model.mixed.contains(f) ? (model.isPerFile(f) ? "Set per file" : "Multiple values") : (hint ?? "")
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
-                Text(f.label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                Text(f.label).font(Typo.sans(11, .medium)).foregroundStyle(Brand.inkSecondary)
                 if changed {
                     Circle().fill(Brand.accent).frame(width: 5, height: 5)
-                    Button { model.revert(f) } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 9, weight: .semibold)) }
-                        .buttonStyle(.plain).foregroundStyle(.secondary).help("Undo this change")
+                    Button { model.revert(f) } label: { Image(systemName: "arrow.uturn.backward").font(Typo.sans(9, .semibold)) }
+                        .buttonStyle(.plain).foregroundStyle(Brand.inkSecondary).help("Undo this change")
                 }
             }
             TextField(prompt, text: model.binding(f))
-                .textFieldStyle(.roundedBorder).font(.system(size: 12.5))
+                .textFieldStyle(.plain).ruleField().font(Typo.sans(12.5))
                 .disabled(model.saving)
         }
         .frame(width: width)
@@ -387,13 +387,13 @@ struct TagEditorView: View {
     private func fileRow(_ f: TagEditorModel.FileState) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon(f)).foregroundStyle(color(f)).frame(width: 16)
-            Text(f.name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+            Text(f.name).font(Typo.sans(12)).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 6)
-            if !f.editable { Text("not editable").font(.system(size: 10.5)).foregroundStyle(.tertiary) }
-            else if let rg = model.perFile[f.path]?[.rgTrackGain] { Text(rg).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary) }
-            if let n = model.perFile[f.path]?[.trackNumber] { Text("#\(n)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.secondary) }
-            Text(f.status.label).font(.system(size: 10.5)).foregroundStyle(color(f)).lineLimit(1)
-            Text(f.format).font(.system(size: 9.5, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
+            if !f.editable { Text("not editable").font(Typo.sans(10.5)).foregroundStyle(Brand.inkTertiary) }
+            else if let rg = model.perFile[f.path]?[.rgTrackGain] { Text(rg).font(Typo.mono(10.5)).foregroundStyle(Brand.inkSecondary) }
+            if let n = model.perFile[f.path]?[.trackNumber] { Text("#\(n)").font(Typo.mono(10.5)).foregroundStyle(Brand.inkSecondary) }
+            Text(f.status.label).font(Typo.sans(10.5)).foregroundStyle(color(f)).lineLimit(1)
+            Text(f.format).font(Typo.mono(9.5, .semibold)).foregroundStyle(Brand.inkSecondary)
         }
         .padding(.vertical, 3)
         .help(f.path)
@@ -411,17 +411,17 @@ struct TagEditorView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let msg = model.message { Text(msg).font(.system(size: 12)).foregroundStyle(.secondary) }
-            HStack(spacing: 10) {
+            if let msg = model.message { Text(msg).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) }
+            HStack(spacing: 12) {
                 Toggle(isOn: $model.writeBack) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Write to the files").font(.system(size: 12.5, weight: .medium))
+                        Text("Write to the files").font(Typo.sans(12.5, .medium))
                         Text(model.writeBack ? "Atomic: a new copy is written and swapped in. Files in use wait until playback lets go."
                                              : "Only the library changes; the files stay exactly as they are.")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            .font(Typo.sans(10.5)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .toggleStyle(.switch).disabled(model.saving)
+                .toggleStyle(.rule).disabled(model.saving)
                 Spacer()
                 Button(model.saving ? "Close" : "Cancel") { close() }.keyboardShortcut(.cancelAction)
                 Button(model.saving ? "Saving…" : "Save") { model.save() }

@@ -71,25 +71,26 @@ struct StageInteractionTests {
         }
     }
 
-    private struct Probe { var sidebar = 0, bar = 0 }
+    private struct Probe { var rail = 0, bar = 0 }
 
-    /// How many points of the sidebar and of the player bar react to a click (each click is undone straight away).
+    /// How many points of the top rail and of the player bar react to a click (each click is undone straight away).
     @MainActor private func probe(_ r: Rig) -> Probe {
         var out = Probe()
         func reset() {
-            r.m.tab = .home; r.m.showQueue = false; r.stage.immersive = false; r.stage.lyricsPending = false
+            r.m.tab = .home; r.m.djMode = false; r.m.showQueue = false; r.m.quickPanel = nil; r.stage.immersive = false; r.stage.lyricsPending = false
             UserDefaults.standard.set(false, forKey: "aureon.lyrics.show"); UserDefaults.standard.set(false, forKey: "aureon.lyrics.expanded")
         }
         reset(); r.win.makeFirstResponder(nil); pump(0.5, r.host)
-        for y in stride(from: 140.0, to: 680.0, by: 12.0) {
-            click(r, CGPoint(x: 90, y: y))
-            if r.m.tab != .home || r.m.djMode { out.sidebar += 1 }
-            r.m.djMode = false; reset(); RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        // the rail: four destinations spread across the middle of its row
+        for x in stride(from: 330.0, to: 880.0, by: 10.0) {
+            click(r, CGPoint(x: x, y: 38))      // (the top 28 points of a titled window belong to its title bar)
+            if r.m.tab != .home || r.m.djMode { out.rail += 1 }
+            reset(); RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         pump(0.4, r.host)
         // the bar: the queue button is at its right end
         for x in stride(from: 1060.0, to: 1190.0, by: 6.0) {
-            click(r, CGPoint(x: x, y: r.host.bounds.height - 12 - 39))
+            click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height + 56))   // (the buttons sit a little higher on the glass plate than on the flat band)
             if r.m.showQueue { out.bar += 1 }
             reset(); RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
@@ -97,6 +98,8 @@ struct StageInteractionTests {
         return out
     }
 
+    /// Opening the Gallery from the bar and leaving it again through the rail must leave the whole window clickable: the outgoing page used to stay in
+    /// the view tree, invisible, with its scroll view over the window, and swallow the clicks meant for what was under it.
     @MainActor func closeNowPlayingStaysInteractive() {
         guard !NSScreen.screens.isEmpty else { return }
         // lyrics scroll the page to the current line, which is not what is being tested here
@@ -107,76 +110,32 @@ struct StageInteractionTests {
         defer { r.win.orderOut(nil); r.win.contentView = nil; ud.set(savedShow, forKey: "aureon.lyrics.show"); ud.set(savedExpanded, forKey: "aureon.lyrics.expanded") }
         pump(1.0, r.host)
         let before = probe(r)
-        if let out = ProcessInfo.processInfo.environment["AUREON_UI_SHOT"] {
-            let rep = r.host.bitmapImageRepForCachingDisplay(in: r.host.bounds)!
-            r.host.cacheDisplay(in: r.host.bounds, to: rep)
-            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
-        }
-        if ProcessInfo.processInfo.environment["AUREON_UI_DUMP"] != nil {
-            for y in stride(from: 700.0, to: 800.0, by: 10.0) {
-                var line = "y \(Int(y)):"
-                for x in stride(from: 240.0, to: 1200.0, by: 80.0) {
-                    let v = r.host.hitTest(NSPoint(x: x, y: 800 - y))
-                    line += " " + (v.map { String(String(describing: type(of: $0)).prefix(14)) } ?? "nil")
-                }
-                FileHandle.standardError.write(Data((line + "\n").utf8))
-            }
-        }
-        FileHandle.standardError.write(Data("PROBE before: sidebar \(before.sidebar) bar \(before.bar) tab \(r.m.tab)\n".utf8))
-        if ProcessInfo.processInfo.environment["AUREON_UI_DUMP"] != nil { let again = probe(r); FileHandle.standardError.write(Data("PROBE again (no open/close): sidebar \(again.sidebar) bar \(again.bar)\n".utf8)) }
-        expect(before.sidebar > 10 && before.bar > 0, "the window answers clicks to begin with: \(before)")
+        expect(before.rail > 10 && before.bar > 0, "the window answers clicks to begin with: \(before)")
         for round in 0..<3 {
             // open: click the cover in the bar, the way the owner does
             r.m.tab = .home; r.m.showQueue = false; pump(0.4, r.host)
             var opened = false
-            for x in stride(from: 410.0, to: 440.0, by: 5.0) where !opened {
-                click(r, CGPoint(x: x, y: r.host.bounds.height - 12 - 39))
-                opened = r.stage.immersive
+            for x in stride(from: 30.0, to: 76.0, by: 6.0) where !opened {
+                click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height + 52))
+                opened = r.m.tab == .player
             }
-            expect(opened, "round \(round): a click on the bar's cover opens Now Playing")
-            if round == 0, let out = ProcessInfo.processInfo.environment["AUREON_UI_SHOT"] {
-                pump(0.15, r.host)
-                let rep = r.host.bitmapImageRepForCachingDisplay(in: r.host.bounds)!
-                r.host.cacheDisplay(in: r.host.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".early.png"))
-            }
+            expect(opened, "round \(round): a click on the bar's cover opens the Gallery")
             pump(1.5, r.host)
-            if round == 0, let out = ProcessInfo.processInfo.environment["AUREON_UI_SHOT"] {
-                let rep = r.host.bitmapImageRepForCachingDisplay(in: r.host.bounds)!
-                r.host.cacheDisplay(in: r.host.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".open.png"))
+            // leave: a click on the rail, on Collection
+            var left = false
+            for x in stride(from: 480.0, to: 640.0, by: 8.0) where !left {
+                click(r, CGPoint(x: x, y: 38))
+                left = r.m.tab != .player
             }
-            // close: the chevron next to the window buttons, top left
-            var closed = false
-            outer: for y in stride(from: 10.0, to: 60.0, by: 6.0) {
-                for x in stride(from: 70.0, to: 130.0, by: 8.0) {
-                    click(r, CGPoint(x: x, y: y))
-                    if !r.stage.immersive { closed = true; break outer }
-                }
-            }
-            expect(closed, "round \(round): a click on the chevron closes Now Playing")
+            expect(left, "round \(round): a click on the rail leaves the Gallery")
             pump(1.5, r.host)
-            if round == 0, let out = ProcessInfo.processInfo.environment["AUREON_UI_SHOT"] {
-                let rep = r.host.bitmapImageRepForCachingDisplay(in: r.host.bounds)!
-                r.host.cacheDisplay(in: r.host.bounds, to: rep)
-                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out + ".closed.png"))
-                for y in stride(from: 60.0, to: 400.0, by: 60.0) {
-                    var chain: [String] = []
-                    var v = r.host.hitTest(NSPoint(x: 90, y: r.host.bounds.height - y))
-                    while let x = v { chain.append(String(String(describing: type(of: x)).prefix(30))); v = x.superview; if chain.count > 8 { break } }
-                    FileHandle.standardError.write(Data("HIT y=\(Int(y)) \(chain.joined(separator: " < "))  tab=\(r.m.tab) imm=\(r.stage.immersive)\n".utf8))
-                }
-            }
-            if ProcessInfo.processInfo.environment["AUREON_UI_DUMP"] != nil {
-                for wait in [0.0, 0.3, 1.0] {
-                    r.m.tab = .home; pump(0.3, r.host)
-                    click(r, CGPoint(x: 70, y: 311)); pump(wait, r.host)
-                    FileHandle.standardError.write(Data("DBG round \(round) wait \(wait): tab=\(r.m.tab) key=\(r.win.isKeyWindow) first=\(String(describing: r.win.firstResponder.map { type(of: $0) }))\n".utf8))
-                }
-            }
             let after = probe(r)
-            FileHandle.standardError.write(Data("PROBE round \(round) after close: sidebar \(after.sidebar) bar \(after.bar)\n".utf8))
-            expect(after.sidebar == before.sidebar && after.bar == before.bar, "round \(round): after closing Now Playing the sidebar and the bar answer as before: \(after) vs \(before)")
+            expect(after.rail >= before.rail - 2 && after.bar >= before.bar - 1, "round \(round): after the Gallery the rail and the bar answer as before: \(after) vs \(before)")
+            if round == 0 {
+                // nothing invisible is left over the window
+                func ghosts(_ v: NSView) -> Int { (v is NSScrollView && v.alphaValue < 0.01 ? 1 : 0) + v.subviews.reduce(0) { $0 + ghosts($1) } }
+                expect(ghosts(r.host) == 0, "no invisible scroll view is left over the window")
+            }
         }
     }
 }

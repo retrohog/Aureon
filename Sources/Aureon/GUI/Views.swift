@@ -6,38 +6,37 @@ import AppKit
 /// View-local state without the @State macro (its compiler plugin ships only with full Xcode).
 final class Box<T>: ObservableObject { @Published var v: T; init(_ v: T) { self.v = v } }
 
+/// A section of a page: a hairline above, a serif heading with its explanation beneath, then the controls. No fill, no frame: the rule is the
+/// only structure, and the space around it does the rest.
 struct Card<Content: View>: View {
     let title: String
     var subtitle: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 11) {
-                Capsule().fill(Brand.gradient).frame(width: 4, height: subtitle == nil ? 20 : 38).padding(.top, 1)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 17, weight: .semibold)).tracking(-0.2)
-                    if let subtitle, !subtitle.isEmpty { Text(subtitle).font(.system(size: 13)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-                }
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(Typo.serif(24, .regular)).tracking(-0.3)
+                if let subtitle, !subtitle.isEmpty { Text(subtitle).font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true) }
             }
-            VStack(alignment: .leading, spacing: 11) { content }.font(.system(size: 13.5))
+            VStack(alignment: .leading, spacing: 16) { content }.font(Typo.sans(13))
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.ink.opacity(0.06)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.ink.opacity(0.07), lineWidth: 0.8))
+        .padding(.top, 24).padding(.bottom, 16).frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .top) { Rule() }
     }
 }
 
+/// A small status tag: tracked capitals in a hairline frame, tinted by `color`.
 struct Badge: View {
     let text: String; let color: Color
     var body: some View {
-        Text(text).font(.caption.weight(.semibold)).padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.22))).foregroundStyle(color)
+        Text(text).font(Typo.sans(10, .medium)).tracking(1.2).textCase(.uppercase).padding(.horizontal, 8).padding(.vertical, 4)
+            .overlay(Slab().strokeBorder(color.opacity(0.7), lineWidth: Metrics.hairline)).foregroundStyle(color)
     }
 }
 
 struct Note: View {
     let text: String; var color: Color = .secondary
-    var body: some View { Text(text).font(.system(size: 12.5)).foregroundStyle(color).fixedSize(horizontal: false, vertical: true).lineSpacing(1.5) }
+    var body: some View { Text(text).font(Typo.sans(12.5)).foregroundStyle(color).fixedSize(horizontal: false, vertical: true).lineSpacing(1.5) }
 }
 
 func formatRate(_ hz: Double) -> String { hz.truncatingRemainder(dividingBy: 1000) == 0 ? "\(Int(hz / 1000)) kHz" : String(format: "%.1f kHz", hz / 1000) }
@@ -56,15 +55,17 @@ struct OutputCard: View {
             Toggle("Invert polarity (not bit-transparent)", isOn: $m.settings.polarityInverted)
             Divider()
             if m.hasVolume {
-                HStack {
-                    Image(systemName: "speaker.fill")
-                    FluidSlider(value: Binding(get: { Double(m.volume) }, set: { m.setVolume(Float($0)) }), tint: m.volume > 0.85 ? .orange : .white.opacity(0.9), restingHeight: 4, enabled: true,
-                                bubble: { "\(Int($0 * 100))%" }, safe: true)
-                    Image(systemName: "speaker.wave.3.fill")
-                    Text("\(Int(m.volume * 100))%").monospacedDigit().frame(width: 40, alignment: .trailing)
+                // the volume: a wide line, a mark you can see, and the number
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Volume").microLabel().foregroundStyle(Brand.inkTertiary)
+                        Spacer()
+                        Text("\(Int((Double(m.volume) * 100).rounded()))%").font(Typo.mono(20, .light)).foregroundStyle(m.volume > 0.85 ? Brand.caution : Brand.ink)
+                    }
+                    VolumeControl(width: nil, readout: false)
+                    Note(text: m.volume > 0.85 ? "High device volume: check your amplifier before playing." : "Drag the mark, scroll over the line, or use the arrow keys; double-click for half. It is applied by the device itself, so the samples stay untouched.",
+                         color: m.volume > 0.85 ? Brand.caution : Brand.inkSecondary)
                 }
-                Note(text: m.volume > 0.85 ? "High device volume: check your amplifier before playing." : "Grab the knob to change the volume; a click elsewhere only nudges it. It is applied by the device itself, so the samples stay untouched.",
-                     color: m.volume > 0.85 ? .orange : .secondary)
             } else {
                 Note(text: "This device does not report a volume Aureon can read or set. Use your DAC, amplifier or the system volume: samples are never scaled here.")
             }
@@ -77,7 +78,8 @@ struct OutputCard: View {
 }
 
 
-/// A row of buttons of which one is chosen. Made of plain buttons rather than the system's segmented control, which did not react to clicks inside this window.
+/// A row of buttons of which one is chosen, as a hairline-framed strip. The chosen one is set in the ink with a champagne line under it; the rest are
+/// quiet. Made of plain buttons rather than the system's segmented control, which did not react to clicks inside this window.
 struct SegmentedChoice<T: Hashable>: View {
     @Binding var selection: T
     let items: [T]
@@ -87,25 +89,25 @@ struct SegmentedChoice<T: Hashable>: View {
     var singleLine = false
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(items, id: \.self) { it in
                 let on = it == selection
                 Button { selection = it } label: {
                     HStack(spacing: 4) {
-                        if let icon { Image(systemName: icon(it)).font(.system(size: 11)) }
-                        Text(label(it)).font(.system(size: 12, weight: on ? .semibold : .regular)).lineLimit(singleLine ? 1 : 2).minimumScaleFactor(singleLine ? 0.7 : 1).multilineTextAlignment(.center)
+                        if let icon { Image(systemName: icon(it)).font(Typo.sans(11, .light)) }
+                        Text(label(it)).font(Typo.sans(12, on ? .medium : .regular)).tracking(0.3).lineLimit(singleLine ? 1 : 2).minimumScaleFactor(singleLine ? 0.7 : 1).multilineTextAlignment(.center)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 26).padding(.horizontal, 6)
-                    .foregroundStyle(on ? Color.white : Color.primary.opacity(0.85))
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(on ? Brand.accent : Color.clear))
+                    .frame(maxWidth: .infinity, minHeight: 32).padding(.horizontal, 8)
+                    .foregroundStyle(on ? Brand.ink : Brand.inkSecondary)
+                    .background(Rectangle().fill(Brand.ink.opacity(on ? 0.06 : 0)))
+                    .overlay(alignment: .bottom) { Rectangle().fill(Brand.gradient).frame(height: 1).opacity(on ? 1 : 0) }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .padding(2)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(0.09)))
-        .animation(.easeOut(duration: 0.12), value: selection)
+        .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
+        .animation(Motion.touch, value: selection)
     }
 }

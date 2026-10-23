@@ -5,39 +5,40 @@ struct AudioTab: View {
     @StateObject private var confirm = Box(false)
 
     var body: some View {
-        VStack(spacing: 18) {
-            Card(title: "Playback pipeline", subtitle: "Dual path: with everything below off, audio goes untouched from the file to the DAC") {
-                HStack(spacing: 6) {
-                    let stages = pipelineStages
-                    ForEach(Array(stages.enumerated()), id: \.offset) { i, s in
-                        Badge(text: s.0, color: s.1)
-                        if i < stages.count - 1 { Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary) }
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            SoundVerdictStrip()
+            TabSwitcher(tag: m.soundSection) { section in
+                Masonry(columns: 2, spacing: 40) {
+                    ForEach(section.groups) { card($0) }
                 }
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            OutputCard()
-            SpeakerSetupCard()
-            CastCard()
-            ZoneCard()
-            radioCard
-            visualiserCard
-            HeadphoneCard(hp: m.headphones)
-            DitherCard()
-            RoomCard()
-            upsampling
-            dsd
-            dsdOutput
-            memory
-            replayGain
-            TransitionsCard()
-            multichannel
-            extreme
         }
         .confirmationDialog("Enable DoP?", isPresented: $confirm.v, titleVisibility: .visible) {
             Button("My DAC supports DoP — enable", role: .destructive) { m.settings.dsd.mode = .dop }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("DoP sends DSD data inside a PCM stream. A DAC that does not understand DoP will play it as very loud noise. Lower the volume first.")
+        }
+    }
+
+    /// The settings of one group.
+    @ViewBuilder private func card(_ g: SoundGroup) -> some View {
+        switch g {
+        case .output: OutputCard()
+        case .multichannel: multichannel
+        case .extremeResolution: extreme
+        case .upsampling: upsampling
+        case .dsdFiles: dsd
+        case .pcmToDSD: dsdOutput
+        case .dither: DitherCard()
+        case .levelling: replayGain
+        case .headphones: HeadphoneCard(hp: m.headphones)
+        case .room: RoomCard()
+        case .transitions: TransitionsCard()
+        case .memory: memory
+        case .radio: radioCard
+        case .visualiser: visualiserCard
         }
     }
 
@@ -57,29 +58,12 @@ struct AudioTab: View {
         Card(title: "Visualiser", subtitle: "Spectrum, spectrogram and VU meters on the Player tab. Computed from a copy of the audio on its own thread") {
             Toggle("Show the analyser", isOn: $m.visualizerEnabled)
             HStack {
-                Text("0 VU =").font(.caption).foregroundStyle(.secondary)
+                Text("0 VU =").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 Picker("", selection: Binding(get: { m.player.analysis.vuReferenceDBFS }, set: { m.player.analysis.vuReferenceDBFS = $0; m.objectWillChange.send() })) {
                     Text("−18 dBFS (EBU)").tag(Float(-18)); Text("−20 dBFS (SMPTE)").tag(Float(-20)); Text("−14 dBFS").tag(Float(-14))
                 }.labelsHidden().fixedSize()
             }
         }
-    }
-
-    private var pipelineStages: [(String, Color)] {
-        let st = m.settings
-        var out: [(String, Color)] = [("Decode", .blue)]
-        if st.ram.enabled { out.append(("RAM", .blue)) }
-        if st.upsampling.mode != .off || st.dsdOutput.enabled { out.append(("Resample", .orange)) }
-        if st.dsdOutput.enabled { out.append(("DSD", .orange)) }
-        if st.replayGain.mode != .off { out.append(("Gain", .orange)) }
-        if st.transition.mode != .off { out.append((st.transition.mode == .smart ? "Smart fade" : "Crossfade", .orange)) }
-        out.append(("Ring", .blue))
-        if st.rt.convolution.enabled { out.append(("Room", .orange)) }
-        if st.rt.crossfeed.enabled { out.append(("Crossfeed", .orange)) }
-        if st.rt.headphoneEQ.enabled { out.append(("AutoEQ", .orange)) }
-        out.append(st.dsp.enabled ? ("DSP", .orange) : ("Direct", .green))
-        out.append(("DAC", .blue))
-        return out
     }
 
     private var upsampling: some View {
@@ -120,7 +104,7 @@ struct AudioTab: View {
                 Note(text: m.settings.dsdOutput.modulator.summary)
                 filterControls
                 if let line = m.status.pipeline.first(where: { $0.hasPrefix("PCM → D") }) { Note(text: "Now: " + line) }
-                Note(text: "The DSD rate used is the highest, up to the one above, that the DAC accepts as DoP (DSD512 needs a 1,411.2 kHz DoP rate) and this Mac can make in real time. Full scale is set at half the one-bit range, the level DSD itself uses for 0 dB. Room correction, crossfeed, headphone correction, the equalizer and dither come before the DAC and cannot be applied to a DoP stream.", color: .orange)
+                Note(text: "The DSD rate used is the highest, up to the one above, that the DAC accepts as DoP (DSD512 needs a 1,411.2 kHz DoP rate) and this Mac can make in real time. Full scale is set at half the one-bit range, the level DSD itself uses for 0 dB. Room correction, crossfeed, headphone correction, the equalizer and dither come before the DAC and cannot be applied to a DoP stream.", color: Brand.caution)
             }
         }
     }
@@ -139,7 +123,7 @@ struct AudioTab: View {
                 }
                 Note(text: "DSD's nominal 0 dB sits 6 dB below PCM full scale; add gain here if it sounds low.")
             } else {
-                Note(text: "DSD bits are passed untouched (16 per PCM sample, alternating 0x05/0xFA markers that continue across tracks). Upsampling, ReplayGain, polarity and DSP are bypassed. Needs a device rate of 176.4 kHz or higher; otherwise Aureon converts to PCM.", color: .orange)
+                Note(text: "DSD bits are passed untouched (16 per PCM sample, alternating 0x05/0xFA markers that continue across tracks). Upsampling, ReplayGain, polarity and DSP are bypassed. Needs a device rate of 176.4 kHz or higher; otherwise Aureon converts to PCM.", color: Brand.caution)
             }
         }
     }
@@ -150,7 +134,7 @@ struct AudioTab: View {
             if m.settings.ram.enabled {
                 Stepper("Budget: \(m.settings.ram.budgetMB) MB", value: $m.settings.ram.budgetMB, in: 256...16_384, step: 256)
                 let used = m.status.ramBytes
-                ProgressView(value: min(1, Double(used) / Double(m.settings.ram.budgetMB << 20))) { Text("In use: \(formatBytes(used))").font(.caption) }
+                ProgressView(value: min(1, Double(used) / Double(m.settings.ram.budgetMB << 20))) { Text("In use: \(formatBytes(used))").font(Typo.caption) }
                 Note(text: "The playing track and the next two are kept resident; a track larger than the budget streams from disk. 24-bit/96 kHz stereo needs about 1.4 MB per second.")
             }
         }
@@ -191,20 +175,20 @@ struct AudioTab: View {
                     }.labelsHidden().frame(width: 290)
                 }
                 if m.settings.replayGain.mode == .loudness {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         if m.library.analysingLoudness {
                             ProgressView(value: Double(m.library.loudnessDone), total: Double(max(1, m.library.loudnessTotal))).frame(width: 160)
-                            Text("\(m.library.loudnessDone) / \(m.library.loudnessTotal) songs measured").font(.caption).foregroundStyle(.secondary)
+                            Text("\(m.library.loudnessDone) / \(m.library.loudnessTotal) songs measured").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                             Button("Stop") { m.library.stopLoudnessAnalysis() }
                         } else {
                             Button("Measure the whole library") { m.library.startLoudnessAnalysis() }.disabled(m.library.loudnessTotal > 0 && m.library.loudnessDone >= m.library.loudnessTotal)
-                            Text(m.library.loudnessTotal == 0 ? "No songs in the library yet" : "\(m.library.loudnessDone) of \(m.library.loudnessTotal) songs measured").font(.caption).foregroundStyle(.secondary)
+                            Text(m.library.loudnessTotal == 0 ? "No songs in the library yet" : "\(m.library.loudnessDone) of \(m.library.loudnessTotal) songs measured").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                         }
                     }.onAppear { m.library.refreshLoudnessProgress() }
                     Note(text: "Every song is levelled by its own measured loudness (integrated LUFS, true-peak limited), so a quiet 1970s master and a loud modern one play at the same volume. Measuring happens once per file and is stored in your library.")
                 }
                 if let g = m.status.replayGainDB { Note(text: String(format: "Applying %+.2f dB to the current track.", g)) }
-                Note(text: "Leveling scales the samples, so playback is no longer bit-perfect while it is on.", color: .orange)
+                Note(text: "Leveling scales the samples, so playback is no longer bit-perfect while it is on.", color: Brand.caution)
             }
         }
     }

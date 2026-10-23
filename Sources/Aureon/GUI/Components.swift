@@ -5,14 +5,28 @@ enum Brand {
     /// Everything here follows the selected theme (see `Theme`); views are rebuilt when the theme changes.
     static var accent: Color { Theme.current.accent }
     static var accent2: Color { Theme.current.accent2 }
-    /// Colour of text and hairlines: white-ish on dark themes, black-ish on light ones. Use `ink.opacity(x)` for faint surfaces and lines.
+    /// The accent as small text (nudged to AA on both surfaces), and the label colour on a solid accent fill.
+    static var accentText: Color { Theme.current.accentText }
+    static var onAccent: Color { Theme.current.onAccent }
+    /// Text and hairlines: ivory on dark themes, warm black on light ones. Hierarchy is by opacity, never by colour.
     static var ink: Color { Theme.current.ink }
+    /// Secondary (7:1) and tertiary (4.5:1) text: the ink at the lowest opacity that still meets those ratios on both surfaces.
+    static var inkSecondary: Color { Theme.current.inkSecondary }
+    static var inkTertiary: Color { Theme.current.inkTertiary }
+    /// A hairline: the ink at 14 %.
+    static var rule: Color { Theme.current.ink.opacity(Theme.current.isLight ? 0.18 : 0.14) }
+    /// The coachline: the accent as a fine pinstripe (the player bar's edge, the playhead, active marks).
+    static var coachline: Color { Theme.current.accent.opacity(0.7) }
+    /// A warm copper for cautions and altered signal (instead of orange), fitted to read on the page in every theme.
+    static var caution: Color { WCAG.fit(RGB(0.86, 0.52, 0.36), against: Theme.current.backdropLimitRGB, minimum: 4.5).color }
     // legacy names, kept so every use follows the same palette
-    static var cyan: Color { accent }
+    static var cyan: Color { accentText }
     static var violet: Color { accent2 }
     static var pink: Color { accent }
+    /// A two-tone wash of neighbouring hues (champagne into brass): only for the progress rule, the waveform fill and active marks.
     static var gradient: LinearGradient { LinearGradient(colors: [accent, accent2], startPoint: .leading, endPoint: .trailing) }
     static var gradientDiagonal: LinearGradient { LinearGradient(colors: [accent, accent2], startPoint: .topLeading, endPoint: .bottomTrailing) }
+    static var gradientVertical: LinearGradient { LinearGradient(colors: [accent, accent2], startPoint: .top, endPoint: .bottom) }
     /// Flat surfaces
     static var canvas: Color { Theme.current.canvas }
     static var sidebar: Color { Theme.current.sidebar }
@@ -31,54 +45,31 @@ struct VisualEffect: NSViewRepresentable {
 }
 
 extension View {
-    /// A floating glass panel: a faint fill, a hairline that catches light at the top edge, optional coloured glow.
-    func panel(radius: CGFloat = 18, fill: Double = 0.045, glow: Color? = nil) -> some View {
-        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Brand.ink.opacity(fill)))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.03), .white.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.8))
-            .shadow(color: glow?.opacity(0.25) ?? .clear, radius: 20)
+    /// A framed region: a hairline and the faintest lift, in place of a card. (`glow` is accepted for old call sites and ignored.)
+    func panel(radius: CGFloat = 4, fill: Double = 0.03, glow: Color? = nil) -> some View {
+        background(RoundedRectangle(cornerRadius: Metrics.radius(radius), style: .continuous).fill(Brand.ink.opacity(fill * 0.7)))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius(radius), style: .continuous).strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
     }
 
-    /// Small mono-spaced label, the "instrument panel" voice of the interface.
-    func microLabel() -> some View { font(.system(size: 10, weight: .medium, design: .monospaced)).tracking(1.4).textCase(.uppercase) }
+    /// A region on the Now Playing backdrop: the same hairline frame as `panel`.
+    func glassPanel(radius: CGFloat = 4) -> some View { panel(radius: radius, fill: 0.04) }
 }
 
-// MARK: - Typography
+// MARK: - Readout tags
 
-enum Typo {
-    static func title(_ size: CGFloat = 40) -> Font { .system(size: size, weight: .semibold, design: .serif) }
-    static let artist = Font.system(size: 21, weight: .medium, design: .default)
-    static let album = Font.system(size: 15, weight: .regular, design: .default)
-    static let kicker = Font.system(size: 10.5, weight: .semibold, design: .default)
-    static let composer = Font.system(size: 14, weight: .regular, design: .serif).italic()
-    static let readout = Font.system(size: 11, weight: .medium, design: .monospaced)
-}
-
-extension View {
-    /// Small upper-case label with wide tracking.
-    func kicker() -> some View { font(Typo.kicker).tracking(2.2).textCase(.uppercase) }
-
-    /// A frosted panel that sits on the immersive background.
-    func glassPanel(radius: CGFloat = 18) -> some View {
-        background(RoundedRectangle(cornerRadius: radius, style: .continuous).fill(.ultraThinMaterial))
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(LinearGradient(colors: [.white.opacity(0.22), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
-    }
-}
-
-// MARK: - Hardware-style badges
-
-/// A recessed indicator plate with an LED, like the format lights on a DAC's front panel.
+/// A technical readout in a hairline frame: a legend in the tone's colour, an optional value beside it. The tones are fitted to the page
+/// (the backdrop's lightest or darkest allowed point, `Theme.backdropLimitRGB`) so every legend keeps 4.5:1.
 struct HWBadge: View {
     enum Tone: CaseIterable {
         case neutral, blue, green, amber, purple, orange
+        /// Restrained hues, light enough for the dark stage; on a light page they are darkened until they read.
         var rgb: RGB {
             switch self {
-            case .neutral: RGB(0.82, 0.82, 0.82); case .blue: RGB(0.45, 0.72, 1); case .green: RGB(0.36, 0.9, 0.55)
-            case .amber: RGB(1, 0.78, 0.3); case .purple: RGB(0.75, 0.6, 1); case .orange: RGB(1, 0.58, 0.28)
+            case .neutral: RGB(0.84, 0.82, 0.78); case .blue: RGB(0.78, 0.82, 0.86); case .green: RGB(0.60, 0.80, 0.64)
+            case .amber: RGB(0.84, 0.70, 0.45); case .purple: RGB(0.78, 0.70, 0.84); case .orange: RGB(0.90, 0.60, 0.44)
             }
         }
         var color: Color { rgb.color }
-        /// Opacity of the plate's black at its lightest (bottom) edge. With it, every legend keeps 4.5:1 even on a white page (see the self-test).
-        static let plateAlpha = 0.78
     }
     let text: String
     var detail: String? = nil
@@ -87,43 +78,33 @@ struct HWBadge: View {
     var compact = false
 
     var body: some View {
-        HStack(spacing: compact ? 5 : 7) {
-            ZStack {
-                Circle().fill(lit ? tone.color : Color.white.opacity(0.15)).frame(width: compact ? 4 : 5, height: compact ? 4 : 5)
-                    .shadow(color: lit ? tone.color.opacity(0.95) : .clear, radius: 3)
-                if lit { Circle().fill(.white.opacity(0.75)).frame(width: 1.6, height: 1.6).offset(x: -0.6, y: -0.6) }     // a domed LED's specular point
-            }
-            Text(text).font(.system(size: compact ? 9.5 : 11, weight: .bold, design: .monospaced)).tracking(compact ? 0.8 : 1.1).foregroundStyle(tone.color)
-                .shadow(color: lit ? tone.color.opacity(0.5) : .clear, radius: 3.5)
+        let surface = Theme.current.backdropLimitRGB
+        let c = lit ? WCAG.fit(tone.rgb, against: surface, minimum: 4.5).color : Brand.inkTertiary
+        HStack(spacing: compact ? 4 : 8) {
+            Text(text).font(Typo.mono(compact ? 9 : 10, .regular)).tracking(compact ? 1.0 : 1.4).foregroundStyle(c)
             if let detail {
-                Rectangle().fill(Brand.ink.opacity(0.18)).frame(width: 1, height: compact ? 9 : 11)
-                Text(detail).font(.system(size: compact ? 9.5 : 11, weight: .semibold, design: .monospaced)).monospacedDigit().foregroundStyle(.white.opacity(0.88))
+                Rectangle().fill(Brand.rule).frame(width: Metrics.hairline, height: compact ? 8 : 10)
+                Text(detail).font(Typo.mono(compact ? 9 : 10, .regular)).foregroundStyle(Brand.inkSecondary)
             }
         }
-        .padding(.horizontal, compact ? 6 : 9).padding(.vertical, compact ? 3 : 5)
-        .background(
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .fill(LinearGradient(colors: [.black.opacity(0.85), .black.opacity(Tone.plateAlpha)], startPoint: .top, endPoint: .bottom))
-                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(LinearGradient(colors: [.black.opacity(0.5), .white.opacity(0.22)], startPoint: .top, endPoint: .bottom), lineWidth: 0.8))
-        )
+        .padding(.horizontal, compact ? 6 : 8).padding(.vertical, compact ? 3 : 4)
+        .overlay(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(detail.map { "\(text), \($0)" } ?? text)
     }
 }
 
-/// The gold "Hi-Res Audio" style mark.
+/// The "Hi-Res Audio" mark: a fine champagne frame around two small words.
 struct HiResMark: View {
     var compact = false
-    private let gold = LinearGradient(colors: [Color(red: 1, green: 0.88, blue: 0.5), Color(red: 0.86, green: 0.62, blue: 0.2), Color(red: 1, green: 0.84, blue: 0.45)], startPoint: .topLeading, endPoint: .bottomTrailing)
     var body: some View {
-        VStack(spacing: 1) {
-            Text("Hi-Res").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundStyle(gold)
-            Text("AUDIO").font(.system(size: 6, weight: .bold)).tracking(3).foregroundStyle(gold).opacity(0.85)
+        let c = Theme.current.accentTextRGB.color
+        VStack(spacing: 2) {
+            Text("HI-RES").font(Typo.sans(compact ? 9 : 10, .medium)).tracking(compact ? 1.4 : 2).foregroundStyle(c)
+            if !compact { Text("AUDIO").font(Typo.sans(9, .regular)).tracking(2.8).foregroundStyle(c.opacity(0.8)) }
         }
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(gold, lineWidth: 1))
-        .shadow(color: Color(red: 1, green: 0.78, blue: 0.3).opacity(0.35), radius: 6)
-        .scaleEffect(compact ? 0.8 : 1).frame(width: compact ? 62 : nil, height: compact ? 28 : nil)
+        .padding(.horizontal, compact ? 6 : 8).padding(.vertical, compact ? 3 : 4)
+        .overlay(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).strokeBorder(c.opacity(0.8), lineWidth: Metrics.hairline))
         .accessibilityLabel("High resolution audio")
     }
 }
@@ -138,7 +119,7 @@ struct FormatBadges: View {
     var body: some View {
         let q = qualityTier(source)
         let upscaled = output.map { $0.sampleRate != source.sampleRate && !$0.isDoP } ?? false
-        WrapLayout(spacing: compact ? 5 : 8, lineSpacing: compact ? 5 : 8) {
+        WrapLayout(spacing: compact ? 4 : 8, lineSpacing: compact ? 4 : 8) {
             if source.isLive { HWBadge(text: "LIVE", tone: .orange, compact: compact) }
             if q.hiRes && !source.isLive { HiResMark(compact: compact) }
             HWBadge(text: source.codec.replacingOccurrences(of: " (lossy)", with: "").uppercased(), detail: source.isLive ? bitrate.map { "\($0) kbps" } : nil,
@@ -191,38 +172,40 @@ func qualityTier(_ i: StreamInfo) -> QualityTier {
 
 // MARK: - Artwork
 
-/// Cover art with a generated placeholder: a soft gradient in the album's own colours.
+/// Cover art with a quiet placeholder: a flat tone from the album's own colours and a fine note. A hairline frames it, with a barely softened corner.
 struct CoverView: View {
     let image: NSImage?
     let palette: ArtPalette
-    var corner: CGFloat = 16
+    var corner: CGFloat = 2
     var symbol = "music.note"
 
     var body: some View {
+        let r = min(Metrics.radius(corner), 3)
         GeometryReader { g in
             ZStack {
                 if let image {
                     Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fill).frame(width: g.size.width, height: g.size.height).clipped().transition(.opacity)
                 } else {
-                    LinearGradient(colors: [palette.grid[0].color, palette.grid[4].color, palette.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Image(systemName: symbol).font(.system(size: g.size.width * 0.3, weight: .ultraLight)).foregroundStyle(.white.opacity(0.55))
+                    palette.grid[4].mixed(with: RGB(0.05, 0.05, 0.06), 0.45).color
+                    Image(systemName: symbol).font(Typo.sans(g.size.width * 0.3, .ultraLight)).foregroundStyle(.white.opacity(0.5))
                 }
             }
             .frame(width: g.size.width, height: g.size.height)
         }
         .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(Brand.ink.opacity(0.12), lineWidth: 0.8))
+        .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(Brand.ink.opacity(0.14), lineWidth: Metrics.hairline))
     }
 }
 
 // MARK: - Fluid slider
 
-/// A slim slider that swells under the pointer, shows a knob and a value bubble, and animates between playback updates.
+/// A slim slider: a one-point rule with the filled part in champagne, a fine vertical mark for the knob that appears under the pointer, a value tag,
+/// and an ease between playback updates. No springs, no glow.
 struct FluidSlider: View {
     @Binding var value: Double
     var range: ClosedRange<Double> = 0...1
-    var tint: Color = Brand.ink
+    var tint: Color = Brand.accent
     var restingHeight: CGFloat = 4
     var enabled = true
     var bubble: ((Double) -> String)? = nil
@@ -243,27 +226,27 @@ struct FluidSlider: View {
     var body: some View {
         GeometryReader { g in
             let w = g.size.width, active = enabled && (hover.v || dragging.v)
-            let h = active ? restingHeight * 1.9 : restingHeight
+            let h: CGFloat = active ? 2 : 1
             let f = fraction(value)
             ZStack(alignment: .leading) {
-                Capsule().fill(Brand.ink.opacity(enabled ? 0.2 : 0.1)).frame(height: h)
-                Capsule().fill(tint.opacity(enabled ? 1 : 0.35)).frame(width: max(h, w * f), height: h)
-                    .shadow(color: tint.opacity(active ? 0.55 : 0), radius: 6)
-                Circle().fill(.white).frame(width: 15, height: 15).shadow(color: .black.opacity(0.35), radius: 3, y: 1)
-                    .scaleEffect(active ? 1 : 0.01).opacity(active ? 1 : 0)
-                    .offset(x: min(max(0, w * f - 7.5), w - 15))
+                Rectangle().fill(Brand.ink.opacity(enabled ? 0.22 : 0.12)).frame(height: h)
+                Rectangle().fill(tint.opacity(enabled ? 1 : 0.35)).frame(width: max(h, w * f), height: h)
+                Rectangle().fill(tint).frame(width: 2, height: 12)
+                    .opacity(active ? 1 : 0)
+                    .offset(x: min(max(0, w * f - 1), w - 2))
                 if let bubble, enabled, active {
                     let shown = dragging.v ? value : (pointerX.v.map { range.lowerBound + Double(min(1, max(0, $0 / w))) * (range.upperBound - range.lowerBound) } ?? value)
-                    Text(bubble(shown)).font(.system(size: 11, weight: .semibold, design: .monospaced)).monospacedDigit()
-                        .padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(.black.opacity(0.65)))
-                        .foregroundStyle(.white).fixedSize()
+                    Text(bubble(shown)).font(Typo.mono(11, .regular))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Rectangle().fill(Brand.canvas)).overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+                        .foregroundStyle(Brand.ink).fixedSize()
                         .offset(x: min(max(0, (dragging.v ? w * f : (pointerX.v ?? w * f)) - 22), max(0, w - 44)), y: -24)
-                        .allowsHitTesting(false).transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        .allowsHitTesting(false).transition(.opacity)
                 }
             }
             .frame(width: w, height: g.size.height, alignment: .leading)
             .contentShape(Rectangle())
-            .animation(.smooth(duration: 0.18), value: active)
+            .animation(Motion.touch, value: active)
             .animation(dragging.v ? nil : .linear(duration: 0.12), value: f)
             .onContinuousHover { phase in
                 switch phase { case .active(let p): hover.v = true; pointerX.v = p.x; case .ended: hover.v = false; pointerX.v = nil }
@@ -309,10 +292,11 @@ struct FluidSlider: View {
 
 // MARK: - Buttons
 
+/// Transport glyphs: no plate, no scale; the glyph brightens under the pointer and dims when pressed.
 struct TransportButtonStyle: ButtonStyle {
     var size: CGFloat = 22
-    /// Colour of the glyphs: white on the immersive Now Playing page, the theme's ink on the player bar.
-    var ink: Color = .white
+    /// Colour of the glyphs: the theme's ink on the player bar, ivory on Now Playing.
+    var ink: Color = Brand.ink
     func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, size: size, ink: ink) }
 
     private struct Inner: View {
@@ -323,18 +307,134 @@ struct TransportButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
-                .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(ink.opacity(enabled ? 1 : 0.35))
+                .font(Typo.sans(size, .light))
+                .foregroundStyle(ink.opacity(enabled ? (configuration.isPressed ? 0.55 : (hover.v ? 1 : 0.78)) : 0.3))
                 .frame(width: size * 2, height: size * 2)
-                .background(Circle().fill(ink.opacity(configuration.isPressed ? 0.2 : (hover.v && enabled ? 0.12 : 0))))
-                .scaleEffect(configuration.isPressed ? 0.9 : (hover.v && enabled ? 1.06 : 1))
-                .animation(.spring(response: 0.25, dampingFraction: 0.65), value: configuration.isPressed)
-                .animation(.smooth(duration: 0.15), value: hover.v)
+                .contentShape(Rectangle())
+                .animation(Motion.touch, value: hover.v)
+                .animation(Motion.touch, value: configuration.isPressed)
                 .onHover { hover.v = $0 }
         }
     }
 }
 
+/// An outlined button: a hairline frame and a small tracked label. The default for every un-styled button.
+struct RuleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration) }
+    private struct Inner: View {
+        let configuration: Configuration
+        @StateObject private var hover = Box(false)
+        @Environment(\.isEnabled) private var enabled
+        @Environment(\.controlSize) private var size
+        var body: some View {
+            let pad: CGFloat = size == .mini ? 6 : (size == .small ? 8 : 12)
+            configuration.label
+                .font(Typo.sans(size == .mini || size == .small ? 11 : 12, .medium)).tracking(0.4)
+                .foregroundStyle(Brand.ink.opacity(enabled ? 1 : 0.4))
+                .padding(.horizontal, pad).padding(.vertical, size == .mini ? 3 : (size == .small ? 4 : 6))
+                .background(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.ink.opacity(configuration.isPressed ? 0.1 : (hover.v && enabled ? 0.05 : 0))))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(hover.v && enabled ? Brand.coachline : Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
+                .contentShape(Rectangle())
+                .animation(Motion.touch, value: hover.v)
+                .onHover { hover.v = $0 }
+        }
+    }
+}
+
+/// The one filled button: champagne with a dark label.
+struct SolidButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration) }
+    private struct Inner: View {
+        let configuration: Configuration
+        @StateObject private var hover = Box(false)
+        @Environment(\.isEnabled) private var enabled
+        @Environment(\.controlSize) private var size
+        var body: some View {
+            let pad: CGFloat = size == .mini ? 6 : (size == .small ? 8 : 12)
+            configuration.label
+                .font(Typo.sans(size == .mini || size == .small ? 11 : 12, .medium)).tracking(0.4)
+                .foregroundStyle(Brand.onAccent)
+                .padding(.horizontal, pad).padding(.vertical, size == .mini ? 3 : (size == .small ? 4 : 6))
+                .background(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.accent))
+                .brightness(configuration.isPressed ? -0.08 : (hover.v && enabled ? 0.05 : 0))
+                .opacity(enabled ? 1 : 0.4)
+                .contentShape(Rectangle())
+                .animation(Motion.touch, value: hover.v)
+                .onHover { hover.v = $0 }
+        }
+    }
+}
+
+extension ButtonStyle where Self == RuleButtonStyle { static var rule: RuleButtonStyle { RuleButtonStyle() } }
+extension ButtonStyle where Self == SolidButtonStyle { static var solid: SolidButtonStyle { SolidButtonStyle() } }
+
+/// The on/off control: two printed segments, OFF | ON. The state is unmistakable: ON is a champagne-gold block with dark type and a lit mark, OFF is
+/// recessed and dim. The whole row is the button; VoiceOver reads the label and "on" or "off".
+struct RuleToggleStyle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            HStack(spacing: 16) {
+                configuration.label
+                Spacer(minLength: 8)
+                OnOffSwitch(on: configuration.isOn).accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(configuration.isOn ? "on" : "off")
+        .accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// The two segments themselves.
+struct OnOffSwitch: View {
+    let on: Bool
+    @StateObject private var hover = Box(false)
+    @Environment(\.isEnabled) private var enabled
+
+    static let width: CGFloat = 76, height: CGFloat = 26
+
+    var body: some View {
+        ZStack {
+            // the block that sits under the active word
+            HStack(spacing: 0) {
+                if on { Spacer(minLength: 0) }
+                ZStack {
+                    Rectangle().fill(on ? Brand.accent : Brand.ink.opacity(0.12))
+                    if !on { Rectangle().fill(Brand.ink.opacity(0.22)).frame(height: Metrics.hairline).frame(maxHeight: .infinity, alignment: .top) }   // the recess: a shadowed top edge
+                }
+                .frame(width: Self.width / 2)
+                if !on { Spacer(minLength: 0) }
+            }
+            HStack(spacing: 0) {
+                Text("OFF").font(Typo.mono(10, on ? .regular : .medium)).tracking(1.4).foregroundStyle(on ? Brand.inkTertiary : Brand.inkSecondary)
+                    .frame(width: Self.width / 2)
+                HStack(spacing: 5) {
+                    Rectangle().fill(on ? Brand.onAccent : Color.clear).frame(width: 4, height: 4)          // the lit mark
+                    Text("ON").font(Typo.mono(10, on ? .medium : .regular)).tracking(1.4).foregroundStyle(on ? Brand.onAccent : Brand.inkTertiary)
+                }
+                .frame(width: Self.width / 2)
+            }
+        }
+        .frame(width: Self.width, height: Self.height)
+        .overlay(RoundedRectangle(cornerRadius: 2, style: .continuous).strokeBorder(on ? Brand.coachline : Brand.ink.opacity(hover.v ? 0.5 : 0.32), lineWidth: Metrics.hairline))
+        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
+        .opacity(enabled ? 1 : 0.45)
+        .animation(Motion.glide, value: on)
+        .onHover { hover.v = $0 }
+        .animation(Motion.touch, value: hover.v)
+    }
+}
+
+extension ToggleStyle where Self == RuleToggleStyle { static var rule: RuleToggleStyle { RuleToggleStyle() } }
+
+extension View {
+    /// A text field framed by a hairline (use with `.textFieldStyle(.plain)`).
+    func ruleField() -> some View {
+        padding(.horizontal, 8).padding(.vertical, 4)
+            .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
+    }
+}
 
 // MARK: - Vertical fader (EQ bands)
 
@@ -353,12 +453,12 @@ struct VerticalFader: View {
     var body: some View {
         let f = fraction(value), mid = fraction(0), active = hover.v || dragging.v
         ZStack {
-            Capsule().fill(Brand.ink.opacity(0.12)).frame(width: 4, height: height)
+            Rectangle().fill(Brand.ink.opacity(0.18)).frame(width: 1, height: height)
             // gain fill: from the zero line to the knob
-            Capsule().fill(Brand.gradient).frame(width: 4, height: max(2, abs(f - mid) * height))
+            Rectangle().fill(Brand.gradientVertical).frame(width: 2, height: max(1, abs(f - mid) * height))
                 .position(x: 15, y: height * (1 - (f + mid) / 2)).opacity(enabled ? 1 : 0.3)
-            Rectangle().fill(Brand.ink.opacity(0.3)).frame(width: 12, height: 1).position(x: 15, y: height * (1 - mid))
-            Circle().fill(.white).frame(width: active ? 14 : 11, height: active ? 14 : 11).shadow(color: Brand.violet.opacity(active ? 0.8 : 0.3), radius: active ? 6 : 2)
+            Rectangle().fill(Brand.ink.opacity(0.3)).frame(width: 12, height: Metrics.hairline).position(x: 15, y: height * (1 - mid))
+            Rectangle().fill(active ? Brand.accent : Brand.ink.opacity(0.85)).frame(width: 14, height: 3)
                 .position(x: 15, y: height * (1 - f))
         }
         .frame(width: 30, height: height)
@@ -366,7 +466,7 @@ struct VerticalFader: View {
         .opacity(enabled ? 1 : 0.45)
         .onHover { hover.v = $0 }
         .scrollAdjustable(hovering: hover.v && enabled) { n in value = ScrollStep.apply(value: value, notches: n, range: range); return true }
-        .animation(.easeOut(duration: 0.12), value: active)
+        .animation(Motion.touch, value: active)
         .gesture(DragGesture(minimumDistance: 0).onChanged { d in
             dragging.v = true
             let p = 1 - min(1, max(0, d.location.y / height))

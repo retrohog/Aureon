@@ -102,12 +102,12 @@ struct LMSSection: View {
             if let d = lms.draft { editor(d) }
             ForEach(lms.servers) { card($0) }
             Card(title: "Lyrion Music Server", subtitle: "Squeezebox servers on your network") {
-                HStack(spacing: 10) {
-                    PillButton(title: lms.discovering ? "Searching…" : "Find on this network", symbol: "dot.radiowaves.left.and.right") { lms.discover() }.disabled(lms.discovering)
-                    PillButton(title: "Add by address…", symbol: "plus") { lms.new() }
+                HStack(spacing: 12) {
+                    RuleButton(title: lms.discovering ? "Searching…" : "Find on this network", symbol: "dot.radiowaves.left.and.right") { lms.discover() }.disabled(lms.discovering)
+                    RuleButton(title: "Add by address…", symbol: "plus") { lms.new() }
                 }
                 ForEach(lms.found, id: \.url) { f in
-                    HStack { Text(f.name).fontWeight(.medium); Text(f.url).foregroundStyle(.secondary); Spacer(); PillButton(title: "Add", symbol: "plus") { lms.new(from: f) } }
+                    HStack { Text(f.name).fontWeight(.medium); Text(f.url).foregroundStyle(Brand.inkSecondary); Spacer(); RuleButton(title: "Add", symbol: "plus") { lms.new(from: f) } }
                 }
                 if let r = lms.report { Note(text: r, color: lms.reportIsError ? .red : .green) }
                 Note(text: "Aureon reads your Lyrion library over its web interface and plays the original files (FLAC stays FLAC) into the same buffered engine as local music. Nothing is transcoded by the server.")
@@ -118,15 +118,15 @@ struct LMSSection: View {
 
     private func card(_ p: LMSProfile) -> some View {
         Card(title: p.name, subtitle: "Lyrion · \(p.url)") {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 if lms.importing == p.id {
                     ProgressView(value: Double(lms.progress.done), total: Double(max(1, lms.progress.total))).frame(width: 180)
-                    Text("\(lms.progress.done) of \(lms.progress.total) tracks").font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    PillButton(title: "Stop", symbol: "stop.fill") { lms.cancelImport() }
+                    Text("\(lms.progress.done) of \(lms.progress.total) tracks").font(Typo.caption).monospacedDigit().foregroundStyle(Brand.inkSecondary)
+                    RuleButton(title: "Stop", symbol: "stop.fill") { lms.cancelImport() }
                 } else {
-                    PillButton(title: "Add to library", symbol: "arrow.down.doc", filled: true) { lms.importServer(p) }.disabled(lms.importing != nil)
-                    PillButton(title: "Edit", symbol: "pencil") { lms.edit(p) }.disabled(lms.importing != nil)
-                    PillButton(title: "Remove", symbol: "trash") { lms.remove(p) }.disabled(lms.importing != nil)
+                    RuleButton(title: "Add to library", symbol: "arrow.down.doc", filled: true) { lms.importServer(p) }.disabled(lms.importing != nil)
+                    RuleButton(title: "Edit", symbol: "pencil") { lms.edit(p) }.disabled(lms.importing != nil)
+                    RuleButton(title: "Remove", symbol: "trash") { lms.remove(p) }.disabled(lms.importing != nil)
                 }
             }
         }
@@ -135,16 +135,16 @@ struct LMSSection: View {
     private func editor(_ d: LMSProfile) -> some View {
         let bind = Binding<LMSProfile>(get: { lms.draft ?? d }, set: { lms.draft = $0 })
         return Card(title: "Lyrion server", subtitle: nil) {
-            HStack { Text("Name").frame(width: 110, alignment: .leading); TextField("Living room", text: bind.name).textFieldStyle(.roundedBorder) }
-            HStack { Text("Address").frame(width: 110, alignment: .leading); TextField("http://192.168.1.20:9000", text: bind.url).textFieldStyle(.roundedBorder) }
-            HStack { Text("User name").frame(width: 110, alignment: .leading); TextField("leave empty if there is no password", text: bind.username).textFieldStyle(.roundedBorder) }
-            HStack { Text("Password").frame(width: 110, alignment: .leading); SecureField("password", text: $lms.password).textFieldStyle(.roundedBorder) }
+            HStack { Text("Name").frame(width: 110, alignment: .leading); TextField("Living room", text: bind.name).textFieldStyle(.plain).ruleField() }
+            HStack { Text("Address").frame(width: 110, alignment: .leading); TextField("http://192.168.1.20:9000", text: bind.url).textFieldStyle(.plain).ruleField() }
+            HStack { Text("User name").frame(width: 110, alignment: .leading); TextField("leave empty if there is no password", text: bind.username).textFieldStyle(.plain).ruleField() }
+            HStack { Text("Password").frame(width: 110, alignment: .leading); SecureField("password", text: $lms.password).textFieldStyle(.plain).ruleField() }
             Note(text: "Lyrion sends credentials as HTTP Basic: keep it on your home network or behind HTTPS. The password is stored in the macOS Keychain.")
-            if let p = lms.problem { Note(text: p, color: .orange) }
-            HStack(spacing: 10) {
-                PillButton(title: "Save", symbol: "checkmark", filled: true) { lms.save() }.disabled(lms.problem != nil)
-                PillButton(title: "Test connection", symbol: "bolt.horizontal") { lms.test() }.disabled(lms.problem != nil || lms.testing)
-                PillButton(title: "Cancel", symbol: "xmark") { lms.cancelEdit() }
+            if let p = lms.problem { Note(text: p, color: Brand.caution) }
+            HStack(spacing: 12) {
+                RuleButton(title: "Save", symbol: "checkmark", filled: true) { lms.save() }.disabled(lms.problem != nil)
+                RuleButton(title: "Test connection", symbol: "bolt.horizontal") { lms.test() }.disabled(lms.problem != nil || lms.testing)
+                RuleButton(title: "Cancel", symbol: "xmark") { lms.cancelEdit() }
                 if lms.testing { ProgressView().controlSize(.small) }
             }
             if let t = lms.testResult { Note(text: t, color: lms.testOK ? .green : .red) }

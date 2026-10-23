@@ -6,7 +6,7 @@ struct IntelligenceTab: View {
     @ObservedObject var ai: IntelligenceCenter = .shared
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             MasterSwitchCard(ai: ai)
             FeatureTogglesCard(ai: ai)
             LocalModelsCard(ai: ai)
@@ -24,18 +24,18 @@ struct HardwareBadge: View {
     let hardware: HostHardware
     var body: some View {
         let tone: Color = hardware.isAppleSilicon && !hardware.isTranslated ? .green : .orange
-        HStack(spacing: 10) {
-            Image(systemName: hardware.isAppleSilicon ? "cpu.fill" : "cpu").font(.system(size: 18, weight: .semibold)).foregroundStyle(tone)
-                .frame(width: 34, height: 34).background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(tone.opacity(0.16)))
+        HStack(spacing: 12) {
+            Image(systemName: hardware.isAppleSilicon ? "cpu.fill" : "cpu").font(Typo.serif(18, .regular)).foregroundStyle(tone)
+                .frame(width: 34, height: 34).background(RoundedRectangle(cornerRadius: Metrics.radius(9), style: .continuous).fill(tone.opacity(0.16)))
             VStack(alignment: .leading, spacing: 2) {
-                Text(hardware.badgeTitle).font(.system(size: 13.5, weight: .semibold))
-                Text(hardware.badgeDetail).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Text(hardware.badgeTitle).font(Typo.sans(13.5, .semibold))
+                Text(hardware.badgeDetail).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(tone.opacity(0.07)))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(tone.opacity(0.28), lineWidth: 0.8))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(11), style: .continuous).fill(tone.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: Metrics.radius(11), style: .continuous).strokeBorder(tone.opacity(0.28), lineWidth: 0.8))
         .accessibilityElement(children: .combine)
     }
 }
@@ -49,21 +49,21 @@ struct MasterSwitchCard: View {
             HardwareBadge(hardware: hw)
             Toggle(isOn: Binding(get: { ai.isMasterOn }, set: { ai.setMaster($0) })) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable Intelligence Features").font(.system(size: 14, weight: .semibold))
-                    Text(ai.isMasterOn ? ai.memoryNote : "All AI features are off.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Enable Intelligence Features").font(Typo.sans(14, .semibold))
+                    Text(ai.isMasterOn ? ai.memoryNote : "All AI features are off.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 }
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.rule)
             if hw.isIntel {
                 Note(text: ai.settings.intelRiskAccepted
                      ? "Software mode: this Intel Mac has no Neural Engine, so models run on the CPU next to the audio engine. Expect higher CPU load; if playback stutters, switch features off."
                      : "Off by default on Intel Macs. Switching it on asks you to confirm, because models running on the CPU can cause audio dropouts.",
-                     color: .orange)
+                     color: Brand.caution)
                 if ai.settings.intelRiskAccepted {
-                    Button("Turn off and show the warning again") { ai.revokeIntelAcceptance() }.buttonStyle(.link).font(.system(size: 12))
+                    Button("Turn off and show the warning again") { ai.revokeIntelAcceptance() }.buttonStyle(.link).font(Typo.sans(12))
                 }
             } else if hw.isTranslated {
-                Note(text: "Aureon is running under Rosetta. On-device language models need the native Apple Silicon build; API models and on-device search still work.", color: .orange)
+                Note(text: "Aureon is running under Rosetta. On-device language models need the native Apple Silicon build; API models and on-device search still work.", color: Brand.caution)
             }
         }
     }
@@ -75,21 +75,21 @@ struct IntelWarningSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 28)).foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").font(Typo.sans(28)).foregroundStyle(Brand.caution)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Turn on AI features on this Intel Mac?").font(.system(size: 17, weight: .semibold))
-                    Text(ai.hardware.cpuBrand).font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text("Turn on AI features on this Intel Mac?").font(Typo.serif(17, .regular))
+                    Text(ai.hardware.cpuBrand).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 }
             }
             Text("Intel Macs have no Neural Engine, so every model runs on the CPU, right next to the audio engine. Aureon keeps AI work off the audio thread, but it cannot make the CPU faster.")
-                .font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
+                .font(Typo.sans(13)).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
                 risk("flame", "High CPU load and heat", "Fans may spin up while a model is working, and the rest of the Mac can feel slow.")
                 risk("waveform.path.badge.minus", "Audio dropouts and stutter", "If the CPU is saturated, playback can miss its deadline. The Real-Time Audio Enhancer drops back to the classic resampler when it cannot keep up, but other playback can still be affected.")
                 risk("xmark.octagon", "Freezes or crashes", "Under memory pressure Aureon may become unresponsive or quit, especially with local models.")
                 risk("cpu", "Local language models need Apple Silicon", "On this Mac, Smart DJ can use an API model (OpenAI, DeepSeek or your own server) instead.")
             }
-            Text("You can switch everything off again at any time on this page.").font(.system(size: 12)).foregroundStyle(.secondary)
+            Text("You can switch everything off again at any time on this page.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
             HStack {
                 Spacer()
                 Button("Keep Off") { ai.declineIntelWarning() }.keyboardShortcut(.cancelAction)
@@ -101,11 +101,11 @@ struct IntelWarningSheet: View {
     }
 
     private func risk(_ icon: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(.orange).frame(width: 22)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon).font(Typo.sans(14, .semibold)).foregroundStyle(Brand.caution).frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 13, weight: .semibold))
-                Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(Typo.sans(13, .semibold))
+                Text(detail).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -135,40 +135,40 @@ struct FeatureRow: View {
     var body: some View {
         let on = ai.settings.isSwitchedOn(feature)
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: feature.icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: feature.icon).font(Typo.sans(14, .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(feature.title).font(.system(size: 13.5, weight: .semibold))
-                        if !feature.allowsAPI, feature == .audioEnhancer || feature == .lyricsGeneration { Badge(text: "LOCAL ONLY", color: .green) }
+                    HStack(spacing: 8) {
+                        Text(feature.title).font(Typo.sans(13.5, .semibold))
+                        if !feature.allowsAPI, feature == .audioEnhancer || feature == .lyricsGeneration { Badge(text: "LOCAL ONLY", color: Brand.accentText) }
                         if ai.isActive(feature) { Badge(text: "ACTIVE", color: Brand.accent) }
                     }
-                    Text(feature.summary).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(feature.summary).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: Binding(get: { on }, set: { ai.setFeature(feature, $0) })).toggleStyle(.switch).labelsHidden().disabled(!ai.isMasterOn)
+                Toggle("", isOn: Binding(get: { on }, set: { ai.setFeature(feature, $0) })).toggleStyle(.rule).labelsHidden().disabled(!ai.isMasterOn)
                     .accessibilityLabel(feature.title)
             }
             if feature.allowsAPI, on {
-                HStack(spacing: 10) {
-                    Text("Runs").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 22 + 10, alignment: .trailing)
+                HStack(spacing: 12) {
+                    Text("Runs").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).frame(width: 22 + 10, alignment: .trailing)
                     SegmentedChoice(selection: Binding(get: { ai.settings.engine(for: feature) }, set: { ai.setEngine(feature, $0) }),
                                     items: IntelligenceEngine.allCases, label: { $0 == .api ? "API · \(ai.settings.api.provider.shortTitle)" : $0.title }, singleLine: true)
                         .frame(maxWidth: 320).disabled(!ai.isMasterOn)
                     Spacer(minLength: 0)
                 }
             }
-            if let s = status { Text(s.text).font(.system(size: 11.5)).foregroundStyle(s.warn ? Color.orange : Color.secondary).padding(.leading, 32).fixedSize(horizontal: false, vertical: true) }
+            if let s = status { Text(s.text).font(Typo.sans(11.5)).foregroundStyle(s.warn ? Brand.caution : Brand.inkSecondary).padding(.leading, 32).fixedSize(horizontal: false, vertical: true) }
             if feature == .audioEnhancer, ai.isActive(.audioEnhancer) { EnhancerStatusLine().padding(.leading, 32) }
             if feature == .lyricsGeneration, on {
-                HStack(spacing: 10) {
-                    Text("Model").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 22 + 10, alignment: .trailing)
+                HStack(spacing: 12) {
+                    Text("Model").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).frame(width: 22 + 10, alignment: .trailing)
                     SegmentedChoice(selection: Binding(get: { ai.settings.whisperModel }, set: { ai.setWhisperModel($0) }),
                                     items: WhisperModelSize.allCases, label: { "\($0.title) · \($0.approxMB) MB" }, singleLine: true)
                         .frame(maxWidth: 360).disabled(!ai.isMasterOn)
                     Spacer(minLength: 0)
                 }
-                Text(ai.settings.whisperModel.detail).font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.leading, 32)
+                Text(ai.settings.whisperModel.detail).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).padding(.leading, 32)
             }
         }
     }
@@ -224,7 +224,7 @@ struct LocalModelsCard: View {
                      current: ai.settings.enhancerModel.map { "\($0.name) · \($0.format.title) · \(LocalModelInspector.formatParameters($0.parameters)) parameters\($0.parametersEstimated ? " (est.)" : "") · \(formatBytes64($0.bytes))" }
                         ?? "None chosen",
                      chooseTitle: "Choose CoreML Model…", role: .audioEnhancer, reset: ai.settings.enhancerModel == nil ? nil : "Remove")
-            if busy.v { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking the model…").font(.system(size: 12)).foregroundStyle(.secondary) } }
+            if busy.v { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking the model…").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) } }
             if let r = lastCheck.v { checkView(r) }
             Note(text: "Language models: an MLX folder (config.json, tokenizer and .safetensors), for example from mlx-community on Hugging Face; GGUF files are checked but cannot run here. Audio enhancer: a CoreML .mlpackage or .mlmodelc. The parameter count is read from the model's own headers before anything is loaded.")
         }
@@ -232,11 +232,11 @@ struct LocalModelsCard: View {
     }
 
     private func modelRow(title: String, icon: String, current: String, chooseTitle: String, role: LocalModelRole, reset: String?) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon).font(Typo.sans(14, .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 13.5, weight: .semibold))
-                Text(current).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(title).font(Typo.sans(13.5, .semibold))
+                Text(current).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             if let reset { Button(reset) { ai.useModel(nil, for: role); lastCheck.v = nil }.controlSize(.small) }
@@ -251,13 +251,13 @@ struct LocalModelsCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let i = r.info {
                     Text("\(i.name): \(i.parameterText) parameters, \(formatBytes64(i.bytes))" + (i.architecture.map { ", \($0)" } ?? "") + (i.quantizationBits.map { ", \($0)-bit" } ?? ""))
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(Typo.sans(12, .semibold))
                 }
-                Text(ok ? "Loaded as the \(r.role)." : (r.verdict.reason ?? "")).font(.system(size: 12)).foregroundStyle(ok ? Color.secondary : Color.red).fixedSize(horizontal: false, vertical: true)
+                Text(ok ? "Loaded as the \(r.role)." : (r.verdict.reason ?? "")).font(Typo.sans(12)).foregroundStyle(ok ? Brand.inkSecondary : Color.red).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill((ok ? Color.green : Color.red).opacity(0.08)))
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(9), style: .continuous).fill((ok ? Brand.accentText : Color.red).opacity(0.08)))
     }
 
     private func choose(_ role: LocalModelRole) {
@@ -304,14 +304,14 @@ struct APIProviderCard: View {
             field("Endpoint", text: $baseURL.v, prompt: api.provider.defaultBaseURL, which: .url)
             field("Model", text: $model.v, prompt: api.provider.defaultModel.isEmpty ? "model name" : api.provider.defaultModel, which: .model)
             field("Embeddings", text: $embedding.v, prompt: api.provider == .deepSeek ? "not offered by DeepSeek" : "text-embedding-3-small", which: .embedding)
-            HStack(spacing: 10) {
-                Text("API key").font(.system(size: 12.5)).foregroundStyle(.secondary).frame(width: 84, alignment: .trailing)
+            HStack(spacing: 12) {
+                Text("API key").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary).frame(width: 84, alignment: .trailing)
                 SecureField(ai.hasKey(api.provider) ? "•••••••• saved in the Keychain" : "Paste your \(api.provider.title) key", text: $key.v)
-                    .textFieldStyle(.roundedBorder).focused($focus, equals: .key).onSubmit(saveKey)
+                    .textFieldStyle(.plain).ruleField().focused($focus, equals: .key).onSubmit(saveKey)
                 Button("Save") { saveKey() }.disabled(key.v.trimmingCharacters(in: .whitespaces).isEmpty)
                 if ai.hasKey(api.provider) { Button("Remove") { ai.removeKey(for: api.provider) } }
             }
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Color.clear.frame(width: 84, height: 1)
                 Button { commitAll(); Task { await ai.testConnection() } } label: { Label("Test Connection", systemImage: "bolt.horizontal") }
                     .disabled(ai.connection == .checking)
@@ -327,18 +327,18 @@ struct APIProviderCard: View {
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String, which: Field) -> some View {
-        HStack(spacing: 10) {
-            Text(label).font(.system(size: 12.5)).foregroundStyle(.secondary).frame(width: 84, alignment: .trailing)
-            TextField(prompt, text: text).textFieldStyle(.roundedBorder).focused($focus, equals: which).onSubmit { commit(which) }
+        HStack(spacing: 12) {
+            Text(label).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary).frame(width: 84, alignment: .trailing)
+            TextField(prompt, text: text).textFieldStyle(.plain).ruleField().focused($focus, equals: which).onSubmit { commit(which) }
         }
     }
 
     @ViewBuilder private var connectionView: some View {
         switch ai.connection {
         case .idle: EmptyView()
-        case .checking: HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…").font(.system(size: 12)).foregroundStyle(.secondary) }
-        case .ok(let m): Label(m, systemImage: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(.green).lineLimit(2)
-        case .failed(let m): Label(m, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(.orange).lineLimit(3)
+        case .checking: HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking…").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) }
+        case .ok(let m): Label(m, systemImage: "checkmark.circle.fill").font(Typo.sans(12)).foregroundStyle(Brand.accentText).lineLimit(2)
+        case .failed(let m): Label(m, systemImage: "exclamationmark.triangle.fill").font(Typo.sans(12)).foregroundStyle(Brand.caution).lineLimit(3)
         }
     }
 
@@ -386,12 +386,12 @@ struct SemanticMatchesSection: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Image(systemName: "text.magnifyingglass").foregroundStyle(Brand.accent)
-                        Text("Matches by meaning").font(.system(size: 17, weight: .semibold))
+                        Text("Matches by meaning").font(Typo.serif(17, .regular))
                         stateView
                         Spacer(minLength: 0)
                     }
                     if !tracks.isEmpty { SongList(tracks: tracks) }
-                    else if case .ready = search.state, search.lastQuery == query { Text("Nothing else fits that description.").font(.system(size: 12.5)).foregroundStyle(.secondary) }
+                    else if case .ready = search.state, search.lastQuery == query { Text("Nothing else fits that description.").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary) }
                 }
                 .task(id: query) {
                     try? await Task.sleep(nanoseconds: 350_000_000)                // wait for typing to pause
@@ -404,8 +404,8 @@ struct SemanticMatchesSection: View {
 
     @ViewBuilder private var stateView: some View {
         switch search.state {
-        case .indexing(let d, let t): HStack(spacing: 6) { ProgressView().controlSize(.small); Text(t > 0 ? "indexing \(d) / \(t)" : "preparing").font(.system(size: 11.5)).foregroundStyle(.secondary) }
-        case .failed(let msg): Text(msg).font(.system(size: 11.5)).foregroundStyle(.orange).lineLimit(2)
+        case .indexing(let d, let t): HStack(spacing: 8) { ProgressView().controlSize(.small); Text(t > 0 ? "indexing \(d) / \(t)" : "preparing").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary) }
+        case .failed(let msg): Text(msg).font(Typo.sans(11.5)).foregroundStyle(Brand.caution).lineLimit(2)
         default: EmptyView()
         }
     }

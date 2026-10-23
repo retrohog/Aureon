@@ -45,6 +45,7 @@ enum Tab: String, CaseIterable, Identifiable {
     case liked = "Liked Songs", playlists = "Playlists"
     case albums = "Albums", artists = "Artists", songs = "Songs", composers = "Composers", works = "Works", conductors = "Conductors", ensembles = "Ensembles"
     case deepDive = "Deep Dive"
+    case rooms = "Rooms"
     case audio = "Audio", dsp = "DSP"
     case rip = "Rip CD", convert = "Convert", cloud = "Cloud", intelligence = "Intelligence"
     case folders = "Folders", abx = "ABX Test"
@@ -57,7 +58,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .liked: "heart"; case .playlists: "music.note.list"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
-        case .deepDive: "sparkle.magnifyingglass"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .intelligence: "brain"; case .folders: "folder"; case .abx: "ear"; case .settings: "gearshape"
+        case .deepDive: "sparkle.magnifyingglass"; case .rooms: "hifispeaker.2"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .intelligence: "brain"; case .folders: "folder"; case .abx: "ear"; case .settings: "gearshape"
         }
     }
 
@@ -68,7 +69,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .albums, .artists, .songs, .liked, .playlists, .folders: .library
         case .composers, .works, .conductors, .ensembles: .classical
         case .deepDive: .discover
-        case .audio, .dsp: .sound
+        case .rooms, .audio, .dsp: .sound
         case .rip, .convert, .cloud, .intelligence, .abx: .tools
         case .settings: .footer
         }
@@ -104,7 +105,11 @@ final class PlayerModel: ObservableObject {
     private(set) var status = PlayerStatus()
     let progress = ProgressModel()
     @Published var devices: [OutputDeviceInfo] = []
-    @Published var tab: Tab = .home {
+    /// The quick-find palette (⌘K).
+    @Published var showPalette = false
+    /// The page of each destination that was open last, so choosing the destination again returns to it.
+    var lastPage: [RailDestination: NavTarget] = [:]
+    @Published var tab: Tab = .player {
         didSet {
             // leaving the DSP page with unsaved changes asks first
             if oldValue == .dsp, tab != .dsp, dspModel.needsPrompt, !djMode {
@@ -116,6 +121,7 @@ final class PlayerModel: ObservableObject {
             if tab != oldValue, !library.search.isEmpty { library.search = "" }
             if tab == .deepDive { loadDeepDiveForCurrent() }
             if let c = tab.libraryCategory, library.category != c { library.category = c }
+            lastPage[RailDestination.of(tab)] = .tab(tab)
             navigator.visit(place)
         }
     }
@@ -145,23 +151,65 @@ final class PlayerModel: ObservableObject {
         dj.enter(options: o, rate: rate > 0 ? rate : 48_000)
     }
     @Published var settingsSection: SettingsSection = .general
+    /// The tab of Atelier → Sound that is open; the last one chosen comes back.
+    @Published var soundSection: SoundSection = SoundSection.saved(UserDefaults.standard.string(forKey: "aureon.soundSection")) { didSet { if soundSection != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(soundSection.rawValue, forKey: "aureon.soundSection") } } }
     /// A page that was hidden from the sidebar and is being used inside Settings instead.
     @Published var settingsPage: Tab?
     @Published var sidebar = SidebarLayout.load() { didSet { if sidebar != oldValue { sidebar.save() } } }
     /// The colour theme. Changing it rebuilds the whole interface (the root view is keyed on the theme's id).
     @Published private(set) var theme: Theme = Theme.current
     /// Which colour theme (its dark and light variants are chosen by `appearance`).
-    @Published var themeFamily = "aureon" { didSet { if themeFamily != oldValue { resolveTheme() } } }
+    @Published var themeFamily = "obsidian" { didSet { if themeFamily != oldValue { backdrop = savedBackdrop(for: themeFamily); resolveTheme() } } }
+    /// How the page backdrop is painted. Remembered separately for each theme, so Obsidian can stay soft while another theme is flat.
+    @Published var backdrop = BackdropMode.soft { didSet { if backdrop != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdrop.rawValue, forKey: "aureon.backdrop." + themeFamily) } } }
+    func savedBackdrop(for family: String) -> BackdropMode {
+        if let e = ProcessInfo.processInfo.environment["AUREON_BACKDROP"], let m = BackdropMode(rawValue: e) { return m }
+        return defaults.string(forKey: "aureon.backdrop." + family).flatMap(BackdropMode.init(rawValue:)) ?? .soft
+    }
+    /// How strong the Album backdrop is (Subtle / Rich / Vivid). One choice for every theme.
+    @Published var backdropIntensity: BackdropIntensity = {
+        if let e = ProcessInfo.processInfo.environment["AUREON_INTENSITY"], let i = BackdropIntensity(rawValue: e) { return i }
+        return UserDefaults.standard.string(forKey: "aureon.backdropIntensity").flatMap(BackdropIntensity.init(rawValue:)) ?? .rich
+    }() { didSet { if backdropIntensity != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdropIntensity.rawValue, forKey: "aureon.backdropIntensity") } } }
+    /// Liquid-glass surfaces on the player bar, the Now Playing panels, the palette and the pop-ups. Off: those are flat theme surfaces.
+    @Published var glassAccents: Bool = {
+        if let e = ProcessInfo.processInfo.environment["AUREON_GLASS"] { return e != "0" }
+        return UserDefaults.standard.object(forKey: "aureon.glassAccents") as? Bool ?? true
+    }() { didSet { if glassAccents != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(glassAccents, forKey: "aureon.glassAccents") } } }
     @Published var appearance = AppearanceMode.dark { didSet { if appearance != oldValue { resolveTheme() } } }
 
-    private func resolveTheme(persist: Bool = true) {
-        let systemLight = NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua
+    /// How pages change: a quick fade, or at once.
+    @Published var pageTransitions: TabMotion.Mode = TabMotion.Mode.saved(UserDefaults.standard.string(forKey: "aureon.pageTransitions")) { didSet { if pageTransitions != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(pageTransitions.rawValue, forKey: "aureon.pageTransitions") } } }
+    /// The launch animation (a short splash before the window opens).
+    @Published var launchAnimation: Bool = SplashPolicy.setting { didSet { if launchAnimation != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(launchAnimation, forKey: SplashPolicy.settingKey) } } }
+    /// Where Rooms should scroll to when it opens (from the quick panel and the palette).
+    enum RoomsFocus: Equatable { case levelSpeakers }
+    @Published var roomsFocus: RoomsFocus?
+    func showLevelSpeakers() { quickPanel = nil; roomsFocus = .levelSpeakers; djMode = false; settingsPage = nil; tab = .rooms }
+    /// Where the quick control panel is open (from the rail or from the player bar), if it is.
+    @Published var quickPanel: QuickPanelAnchor?
+    func toggleQuickPanel(_ anchor: QuickPanelAnchor = .rail) { quickPanel = quickPanel == nil ? anchor : nil }
+    /// Where the appearance switch sits in the window (top-left origin), so the change of appearance grows out of it.
+    var switchAnchor: CGPoint?
+    /// Whether macOS is in its light appearance (replaceable for tests).
+    var systemIsLight: () -> Bool = { NSApp?.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .aqua }
+    private var systemAppearanceObserver: NSObjectProtocol?
+    /// While the appearance is Auto, the theme follows the system's appearance as it changes.
+    func observeSystemAppearance() {
+        guard systemAppearanceObserver == nil else { return }
+        systemAppearanceObserver = DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, self.appearance == .system { self.resolveTheme(persist: false) } }
+        }
+    }
+
+    func resolveTheme(persist: Bool = true) {
+        let systemLight = systemIsLight()
         let light = appearance == .light || (appearance == .system && systemLight)
-        theme = themeFamily == "album" ? Theme.album(from: hero.palette, light: light) : Theme.resolve(family: themeFamily, light: light)
+        theme = Theme.resolve(family: themeFamily, light: light)
         Theme.current = theme
         if persist, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(themeFamily, forKey: "aureon.themeFamily"); defaults.set(appearance.rawValue, forKey: "aureon.appearance") }
     }
-    let navigator = Navigator(start: Place(tab: .home))
+    let navigator = Navigator(start: Place(tab: .player))
     let radio = RadioModel()
     let podcasts = PodcastModel()
     let artistArt = ArtistArt()
@@ -205,7 +253,7 @@ final class PlayerModel: ObservableObject {
         }
     }
     let albumArt = AlbumArt()
-    @Published var hero = HeroArt() { didSet { if themeFamily == "album", hero.token != oldValue.token { resolveTheme(persist: false) } } }
+    @Published var hero = HeroArt()
     @Published var fetchMissingArt = true { didSet { defaults.set(fetchMissingArt, forKey: "aureon.fetchArt"); if fetchMissingArt && !oldValue { lookUpMissingArtwork() } } }
     let artFetcher = ArtworkFetcher()
     private var heroLoading = ""
@@ -247,6 +295,10 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var volume: Float = 0
     /// A ceiling for the volume controls (Settings → General). 1 = no limit.
     @Published var volumeLimit: Float = 1 { didSet { defaults.set(volumeLimit, forKey: "aureon.volumeLimit"); if hasVolume, volume > volumeLimit { setVolume(volumeLimit) } } }
+
+    /// The level a mute came from (the device volume itself is never scaled: muting sets it to zero, unmuting puts it back).
+    var muteMemory = MuteMemory()
+    func toggleMute() { guard hasVolume else { return }; muteMemory.toggle(current: volume) { setVolume($0) } }
 
     func setVolume(_ v: Float) {
         guard hasVolume, let dev = volumeDevice else { return }
@@ -316,7 +368,7 @@ final class PlayerModel: ObservableObject {
         if let f = defaults.string(forKey: "aureon.themeFamily"), ProcessInfo.processInfo.environment["AUREON_THEME"] == nil {
             chosen = Theme.resolve(family: f, light: AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "dark") == .light)
         }
-        themeFamily = chosen.family; appearance = chosen.isLight ? .light : (AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "") ?? .dark)
+        themeFamily = chosen.family; backdrop = savedBackdrop(for: chosen.family); appearance = chosen.isLight ? .light : (AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "") ?? .dark); observeSystemAppearance()
         resolveTheme()
         DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if self?.appearance == .system { self?.resolveTheme() } }

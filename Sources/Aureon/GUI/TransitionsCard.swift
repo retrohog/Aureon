@@ -14,9 +14,9 @@ struct TransitionsCard: View {
                     ValueSlider(value: $m.settings.transition.seconds, in: TransitionSettings.secondsRange, step: 0.5)
                     Text(String(format: "%.1f s", m.settings.transition.seconds)).monospacedDigit().frame(width: 64, alignment: .trailing)
                 }
-                HStack(alignment: .center, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Curve").font(.caption).foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Curve").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                         SegmentedChoice(selection: $m.settings.transition.curve, items: Array(TransitionCurve.allCases)) { $0.title }
                     }
                     TransitionCurvePreview(curve: m.settings.transition.curve, levelDB: m.settings.transition.matchLevels ? -m.settings.transition.maxMatchDB / 2 : 0)

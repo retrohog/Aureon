@@ -30,7 +30,7 @@ struct NaturalPlaylistSheet: View {
                         status
                         if let plan = service.plan, !service.isBusy { result(plan) }
                     }
-                    .padding(20)
+                    .padding(24)
                 }
             }
         }
@@ -39,62 +39,62 @@ struct NaturalPlaylistSheet: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "text.badge.plus").font(.system(size: 15, weight: .semibold)).foregroundStyle(Brand.accent)
-            Text("Describe a Playlist").font(.system(size: 17, weight: .semibold))
+        HStack(spacing: 12) {
+            Image(systemName: "text.badge.plus").font(Typo.sans(15, .semibold)).foregroundStyle(Brand.accent)
+            Text("Describe a Playlist").font(Typo.serif(17, .regular))
             Spacer()
-            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.secondary) }
+            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(16)).foregroundStyle(Brand.inkSecondary) }
                 .buttonStyle(.plain).keyboardShortcut(.cancelAction).accessibilityLabel("Close")
         }
-        .padding(.horizontal, 20).padding(.vertical, 14)
+        .padding(.horizontal, 24).padding(.vertical, 16)
     }
 
     private var disabled: some View {
         VStack(spacing: 12) {
-            Image(systemName: "brain").font(.system(size: 38, weight: .ultraLight)).foregroundStyle(.secondary)
-            Text(ai.isMasterOn ? "Natural-language playlists are off" : "Intelligence features are off").font(.title3.weight(.semibold))
+            Image(systemName: "brain").font(Typo.sans(38, .ultraLight)).foregroundStyle(Brand.inkSecondary)
+            Text(ai.isMasterOn ? "Natural-language playlists are off" : "Intelligence features are off").font(Typo.t3.weight(.semibold))
             Text(ai.hardware.isIntel && !ai.isMasterOn
                  ? "AI features are off by default on Intel Macs. You can switch them on in Intelligence, where the trade-offs are explained."
                  : "Turn on \(ai.isMasterOn ? "this feature" : "Intelligence features") in Intelligence to describe playlists in your own words.")
-                .multilineTextAlignment(.center).foregroundStyle(.secondary).frame(maxWidth: 420).font(.callout)
-            PillButton(title: "Open Intelligence", symbol: "brain", filled: true) { dismiss(); m.tab = .intelligence }.padding(.top, 4)
+                .multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).frame(maxWidth: 420).font(Typo.callout)
+            RuleButton(title: "Open Intelligence", symbol: "brain", filled: true) { dismiss(); m.tab = .intelligence }.padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding(40)
     }
 
     private var composer: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             TextField("Describe what you want to hear…", text: $text.v, axis: .vertical)
-                .textFieldStyle(.plain).font(.system(size: 14)).lineLimit(2...4)
+                .textFieldStyle(.plain).font(Typo.sans(14)).lineLimit(2...4)
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.07)))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Brand.ink.opacity(0.1), lineWidth: 0.8))
+                .background(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.ink.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).strokeBorder(Brand.ink.opacity(0.1), lineWidth: 0.8))
                 .onSubmit { go() }
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     ForEach(Self.examples, id: \.self) { e in
                         Button { text.v = e } label: {
-                            Text(e).font(.system(size: 11.5)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Capsule().fill(Brand.ink.opacity(0.08))).foregroundStyle(.secondary)
+                            Text(e).font(Typo.sans(11.5)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 4)
+                                .background(Slab().fill(Brand.ink.opacity(0.08))).foregroundStyle(Brand.inkSecondary)
                         }.buttonStyle(.plain)
                     }
                 }
             }
-            HStack(spacing: 10) {
-                PillButton(title: service.isBusy ? "Building…" : "Build Playlist", symbol: "sparkles", filled: true) { go() }
+            HStack(spacing: 12) {
+                RuleButton(title: service.isBusy ? "Building…" : "Build Playlist", symbol: "sparkles", filled: true) { go() }
                     .disabled(service.isBusy || text.v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .keyboardShortcut(.return, modifiers: .command)
                 if service.isBusy { ProgressView().controlSize(.small) }
                 Spacer()
-                if !service.engineDescription.isEmpty { Text(service.engineDescription).font(.system(size: 11)).foregroundStyle(.tertiary) }
+                if !service.engineDescription.isEmpty { Text(service.engineDescription).font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary) }
             }
         }
     }
 
     @ViewBuilder private var status: some View {
         switch service.state {
-        case .working(let msg): Text(msg).font(.system(size: 12.5)).foregroundStyle(.secondary)
-        case .failed(let msg): Label(msg, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12.5)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+        case .working(let msg): Text(msg).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary)
+        case .failed(let msg): Label(msg, systemImage: "exclamationmark.triangle.fill").font(Typo.sans(12.5)).foregroundStyle(Brand.caution).fixedSize(horizontal: false, vertical: true)
         default: EmptyView()
         }
     }
@@ -102,20 +102,20 @@ struct NaturalPlaylistSheet: View {
     private func result(_ plan: PlaylistPlan) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(plan.brief.summary).font(.system(size: 13, weight: .semibold))
+                Text(plan.brief.summary).font(Typo.sans(13, .semibold))
                 Text(plan.tracks.isEmpty ? "No songs matched."
                      : "\(plan.tracks.count) songs · \(PlaylistBrief.formatDuration(plan.seconds)) · built by \(plan.engine) in \(String(format: "%.1f", plan.elapsed)) s"
                        + (plan.modelPicked > 0 ? " · the model chose \(plan.modelPicked)" : ""))
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
             }
             ForEach(plan.notes, id: \.self) { Note(text: $0) }
             if !plan.tracks.isEmpty {
                 HStack(spacing: 8) {
-                    TextField("Playlist name", text: $name.v).textFieldStyle(.roundedBorder).frame(maxWidth: 260)
-                    PillButton(title: savedName.v == nil ? "Save Playlist" : "Saved", symbol: savedName.v == nil ? "plus" : "checkmark", filled: savedName.v == nil) { save(plan) }
+                    TextField("Playlist name", text: $name.v).textFieldStyle(.plain).ruleField().frame(maxWidth: 260)
+                    RuleButton(title: savedName.v == nil ? "Save Playlist" : "Saved", symbol: savedName.v == nil ? "plus" : "checkmark", filled: savedName.v == nil) { save(plan) }
                         .disabled(savedName.v != nil)
-                    PillButton(title: "Play", symbol: "play.fill") { m.play(tracks: plan.tracks, at: 0); dismiss() }
-                    PillButton(title: "Add to Queue", symbol: "text.append") { m.library.onAdd?(plan.tracks, false) }
+                    RuleButton(title: "Play", symbol: "play.fill") { m.play(tracks: plan.tracks, at: 0); dismiss() }
+                    RuleButton(title: "Add to Queue", symbol: "text.append") { m.library.onAdd?(plan.tracks, false) }
                     Spacer(minLength: 0)
                 }
                 SongList(tracks: plan.tracks, numbered: true)

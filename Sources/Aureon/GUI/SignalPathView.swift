@@ -56,120 +56,108 @@ enum SignalPath {
     }
 }
 
-struct SignalPathView: View {
-    @EnvironmentObject var m: PlayerModel
-    @StateObject private var hovered = Box<String?>(nil)
+extension SignalPath {
+    /// One line that says it: "Bit-perfect", or which stages change the signal.
+    static func verdict(_ nodes: [PathNode], bitPerfect: Bool) -> String {
+        if bitPerfect { return "Bit-perfect: the device receives exactly the samples in the file." }
+        let altering = nodes.filter(\.alters).map(\.title)
+        if altering.isEmpty { return "Not bit-perfect: the device cannot take the stream as it is." }
+        return "Altered by " + (altering.count == 1 ? altering[0] : altering.dropLast().joined(separator: ", ") + " and " + altering.last!) + "."
+    }
 
-    var body: some View {
-        let nodes = SignalPath.nodes(m.status)
-        let playing = m.isActive && m.status.state == .playing
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Signal path").kicker().foregroundStyle(.white.opacity(0.6))
-                Spacer()
-                if !nodes.isEmpty { verdict }
-            }
-            if nodes.isEmpty {
-                Text("Start playback to trace the audio from the file to your DAC.").font(.callout).foregroundStyle(.white.opacity(0.55)).padding(.vertical, 18)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .top, spacing: 0) {
-                        ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
-                            NodeView(node: node, hot: hovered.v == node.id, tint: tone(nodes, i), last: i == nodes.count - 1)
-                                .onHover { inside in withAnimation(.smooth(duration: 0.18)) { hovered.v = inside ? node.id : (hovered.v == node.id ? nil : hovered.v) } }
-                            if i < nodes.count - 1 { Connector(color: tone(nodes, i), flowing: playing).frame(width: 34, height: 54) }
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                readout(nodes)
-            }
+    /// The stages that are switched off or skipped, as short names.
+    static func bypassed(_ s: PlayerStatus) -> [String] {
+        s.pipeline.filter { $0.lowercased().contains("bypassed") }.map { line in
+            let cut = line.firstIndex(where: { $0 == ":" || $0 == "—" || $0 == "(" }) ?? line.endIndex
+            return String(line[..<cut]).trimmingCharacters(in: .whitespaces).prefix(40).description
         }
-        .padding(18).frame(maxWidth: .infinity, alignment: .leading).glassPanel()
-        .animation(.smooth(duration: 0.3), value: nodes.map(\.id))
-    }
-
-    /// Colour of the signal as it leaves station `i`: green while untouched, orange once anything has altered it.
-    private func tone(_ nodes: [PathNode], _ i: Int) -> Color {
-        nodes[0...i].contains { $0.alters } ? Color(red: 1, green: 0.62, blue: 0.3) : Color(red: 0.4, green: 0.92, blue: 0.6)
-    }
-
-    private var verdict: some View {
-        let perfect = m.status.bitPerfect
-        return HStack(spacing: 6) {
-            Image(systemName: perfect ? "checkmark.seal.fill" : "waveform.badge.magnifyingglass")
-            Text(perfect ? (m.isDoP ? "DoP · DSD bits untouched" : "Bit-perfect") : "Processed").font(.system(size: 11.5, weight: .semibold)).tracking(0.5)
-        }
-        .foregroundStyle(perfect ? Color(red: 0.4, green: 0.92, blue: 0.6) : Color(red: 1, green: 0.62, blue: 0.3))
-        .padding(.horizontal, 10).padding(.vertical, 5)
-        .background(Capsule().fill((perfect ? Color.green : Color.orange).opacity(0.14)))
-        .help(perfect ? "The device receives exactly the samples in the file." : "At least one stage changes the samples, or the device cannot take the stream natively.")
-    }
-
-    private func readout(_ nodes: [PathNode]) -> some View {
-        let n = nodes.first { $0.id == hovered.v }
-        return Text(n?.detail ?? "Hover a stage for details.")
-            .font(Typo.readout).foregroundStyle(.white.opacity(n == nil ? 0.4 : 0.85)).lineLimit(4)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .topLeading)
-            .animation(nil, value: hovered.v)
     }
 }
 
-private struct NodeView: View {
-    let node: PathNode
-    let hot: Bool
-    let tint: Color
-    let last: Bool
+/// The signal path as a vertical line of stages: a ring on the line for each, gold where the stage transforms the signal, plain where it passes it on,
+/// and what is switched off dim below. Each stage names its format; above them, the verdict in one line.
+struct SignalPathView: View {
+    @EnvironmentObject var m: PlayerModel
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.black.opacity(0.28))
-                RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(node.alters ? Color(red: 1, green: 0.62, blue: 0.3).opacity(hot ? 1 : 0.7) : tint.opacity(hot ? 1 : 0.55), lineWidth: hot ? 1.6 : 1)
-                Image(systemName: node.symbol).font(.system(size: 20, weight: .medium)).foregroundStyle(node.alters ? Color(red: 1, green: 0.72, blue: 0.45) : .white)
-                    .symbolRenderingMode(.hierarchical)
+        let nodes = SignalPath.nodes(m.status)
+        let off = SignalPath.bypassed(m.status)
+        VStack(alignment: .leading, spacing: 16) {
+            if nodes.isEmpty {
+                Text("Start playback to trace the audio from the file to your DAC.").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).padding(.vertical, 16)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    BitPerfectRow(perfect: m.status.bitPerfect, dop: m.isDoP)
+                    Text(SignalPath.verdict(nodes, bitPerfect: m.status.bitPerfect)).font(Typo.sans(12)).foregroundStyle(m.status.bitPerfect ? Brand.inkSecondary : Brand.caution)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Rule()
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { i, node in
+                        StageRow(node: node, first: i == 0, last: i == nodes.count - 1 && off.isEmpty, tint: tone(nodes, i), lineAbove: i > 0 ? tone(nodes, i - 1) : nil)
+                    }
+                    ForEach(Array(off.enumerated()), id: \.offset) { i, name in BypassedRow(name: name, last: i == off.count - 1) }
+                }
             }
-            .frame(width: 54, height: 54)
-            .shadow(color: (node.alters ? Color.orange : tint).opacity(hot ? 0.55 : 0.0), radius: 10)
-            .scaleEffect(hot ? 1.08 : 1)
-            VStack(spacing: 2) {
-                Text(node.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Text(node.subtitle).font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
-            }
-            .frame(width: 104)
         }
-        .foregroundStyle(.white)
-        .frame(width: 104)
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .animation(Motion.glide, value: nodes.map(\.id))
+    }
+
+    /// The colour of the signal as it leaves station `i`: gold while untouched, copper once anything has altered it.
+    private func tone(_ nodes: [PathNode], _ i: Int) -> Color { nodes[0...i].contains { $0.alters } ? Brand.caution : Brand.accentText }
+}
+
+/// One stage: the line passing through, a ring on it, the name in the serif, the format in SF Mono and a line about it.
+private struct StageRow: View {
+    let node: PathNode
+    let first: Bool
+    let last: Bool
+    let tint: Color
+    let lineAbove: Color?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Canvas { ctx, size in
+                let c = CGPoint(x: size.width / 2, y: 14)
+                if !first { var p = Path(); p.move(to: CGPoint(x: c.x, y: 0)); p.addLine(to: c); ctx.stroke(p, with: .color((lineAbove ?? tint).opacity(0.7)), lineWidth: 1) }
+                if !last { var p = Path(); p.move(to: c); p.addLine(to: CGPoint(x: c.x, y: size.height)); ctx.stroke(p, with: .color(tint.opacity(0.7)), lineWidth: 1) }
+                let r: CGFloat = node.alters ? 5 : 4
+                let ring = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+                ctx.fill(ring, with: .color(node.alters ? Brand.accent : Brand.canvas))
+                ctx.stroke(ring, with: .color(node.alters ? Brand.accent : Brand.ink.opacity(0.8)), lineWidth: 1.25)
+            }
+            .frame(width: 16)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(node.title).font(Typo.serif(17, .regular)).foregroundStyle(Brand.ink).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Text(node.alters ? "Transforms" : "Passes through").font(Typo.sans(9, .regular)).tracking(1.4).textCase(.uppercase)
+                        .foregroundStyle(node.alters ? Brand.accentText : Brand.inkTertiary)
+                }
+                Text(node.subtitle).font(Typo.mono(11, .regular)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
+                Text(node.detail).font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary).lineLimit(3).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 16)
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(node.title), \(node.subtitle)")
+        .accessibilityLabel("\(node.title), \(node.subtitle), \(node.alters ? "transforms the signal" : "passes it through")")
         .accessibilityHint(node.detail)
     }
 }
 
-/// A line between two stations with small pulses travelling along it while audio plays.
-private struct Connector: View {
-    let color: Color
-    let flowing: Bool
-
+/// A stage that is switched off: a hollow, dim mark.
+private struct BypassedRow: View {
+    let name: String
+    let last: Bool
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !flowing)) { tl in
-            Canvas { ctx, size in
-                let y: CGFloat = 27, x0: CGFloat = 2, x1 = size.width - 2
-                var line = Path(); line.move(to: CGPoint(x: x0, y: y)); line.addLine(to: CGPoint(x: x1, y: y))
-                ctx.stroke(line, with: .color(color.opacity(0.35)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                var head = Path(); head.move(to: CGPoint(x: x1 - 5, y: y - 4)); head.addLine(to: CGPoint(x: x1, y: y)); head.addLine(to: CGPoint(x: x1 - 5, y: y + 4))
-                ctx.stroke(head, with: .color(color.opacity(0.8)), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                guard flowing else { return }
-                let t = tl.date.timeIntervalSinceReferenceDate
-                for k in 0..<3 {
-                    let f = (t * 0.9 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
-                    let x = x0 + (x1 - x0 - 6) * CGFloat(f)
-                    let a = sin(f * .pi)
-                    ctx.fill(Path(ellipseIn: CGRect(x: x - 2.5, y: y - 2.5, width: 5, height: 5)), with: .color(color.opacity(0.9 * a)))
-                }
-            }
+        HStack(alignment: .center, spacing: 16) {
+            Circle().strokeBorder(Brand.ink.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [2, 2])).frame(width: 8, height: 8).frame(width: 16)
+            Text(name).font(Typo.sans(12)).foregroundStyle(Brand.inkTertiary).lineLimit(1)
+            Spacer(minLength: 8)
+            Text("Bypassed").font(Typo.sans(9, .regular)).tracking(1.4).textCase(.uppercase).foregroundStyle(Brand.inkTertiary)
         }
-        .accessibilityHidden(true)
+        .padding(.vertical, 6)
+        .accessibilityLabel("\(name), bypassed")
     }
 }

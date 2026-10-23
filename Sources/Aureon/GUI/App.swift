@@ -49,6 +49,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         MainActor.assumeIsolated { ScrollRouter.shared.install() }
+        // the launch animation: the start-up goes on underneath it, and the app's window comes in as it fades
+        if SplashPolicy.enabled(environment: ProcessInfo.processInfo.environment, setting: SplashPolicy.setting) {
+            MainActor.assumeIsolated {
+                var config = SplashController.Config()
+                config.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                SplashController.shared.begin(config: config, findMain: { NSApp.windows.first { !($0 is SplashWindow) && $0.canBecomeMain } }, startupReady: { AppDelegate.model != nil })
+            }
+        }
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { StallMonitor.shared.start() }
         // earlier versions opened large; once per size policy, bring the window to a comfortable default (users can still resize it afterwards)
         let key = "aureon.windowPolicy", policy = 2
@@ -123,8 +131,8 @@ extension DemoData {
         for (i, a) in albums.enumerated() {
             let dir = root.appendingPathComponent("\(a.1)/\(a.0)", isDirectory: true)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let c1 = NSColor(hue: a.4, saturation: 0.75, brightness: 0.28, alpha: 1), c2 = NSColor(hue: (a.4 + 0.08).truncatingRemainder(dividingBy: 1), saturation: 0.6, brightness: 0.85, alpha: 1)
-            let art = coverPNG(c1, c2, accent: NSColor(hue: (a.4 + 0.5).truncatingRemainder(dividingBy: 1), saturation: 0.45, brightness: 1, alpha: 1), size: 700)
+            let c1 = NSColor(hue: a.4, saturation: 0.5, brightness: 0.2, alpha: 1), c2 = NSColor(hue: (a.4 + 0.05).truncatingRemainder(dividingBy: 1), saturation: 0.36, brightness: 0.6, alpha: 1)
+            let art = coverPNG(c1, c2, accent: NSColor(hue: (a.4 + 0.08).truncatingRemainder(dividingBy: 1), saturation: 0.3, brightness: 0.9, alpha: 1), size: 700)
             for n in 1...(i == 0 ? 3 : 2) {
                 let f = dir.appendingPathComponent("0\(n) Track \(n).flac")
                 try? FileManager.default.copyItem(atPath: source, toPath: f.path)
@@ -156,6 +164,11 @@ extension DemoData {
             try? FileManager.default.copyItem(atPath: source, toPath: f.path)
             injectVorbisComments(f.path, tags)
             if let art { injectFLACPicture(f.path, image: art) }
+            // made-up lyrics for the first song, so the lyrics panel has something to show
+            if name == "1 So What" {
+                let lrc = "[00:00.50]Placeholder verse, first line\n[00:02.20]Another made-up line follows it\n[00:04.00]The third line carries on\n[00:05.80]And a fourth, only for the picture\n[00:07.50]Last placeholder line"
+                try? lrc.write(to: dir.appendingPathComponent("1 So What.lrc"), atomically: true, encoding: .utf8)
+            }
             out.append(f.path)
         }
         return out
@@ -164,11 +177,32 @@ extension DemoData {
 
 @MainActor func runSnapshot(out: String, files: [String]) {
     _ = NSApplication.shared
+    if ProcessInfo.processInfo.environment["AUREON_SPLASH_SHOT"] == "sheet" {
+        // twelve frames across the whole animation, as one contact sheet
+        let times = [0.3, 0.5, 0.65, 0.8, 1.0, 1.2, 1.35, 1.5, 1.7, 1.9, 2.2, 2.6]
+        let scene = SplashScene()
+        let cols = 4, rows = 3, w = 520, h = 320
+        if let ctx = CGContext(data: nil, width: cols * w, height: rows * h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) {
+            ctx.setFillColor(CGColor(gray: 0.3, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: cols * w, height: rows * h))
+            for (i, t) in times.enumerated() {
+                guard let img = scene.image(at: t, scale: 1) else { continue }
+                ctx.draw(img, in: CGRect(x: (i % cols) * w, y: (rows - 1 - i / cols) * h, width: w, height: h))
+            }
+            if let sheet = ctx.makeImage() { try? NSBitmapImageRep(cgImage: sheet).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out)) }
+        }
+        exit(0)
+    }
+    if let ts = ProcessInfo.processInfo.environment["AUREON_SPLASH_SHOT"], let t = Double(ts) {
+        // one frame of the launch animation, at t seconds
+        let scene = SplashScene()
+        if let img = scene.image(at: t) { try? NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out)) }
+        exit(0)
+    }
     if ProcessInfo.processInfo.environment["AUREON_SLIDER_PROBE"] != nil {
         // does SwiftUI's Slider sit on an NSSlider that the scroll router can find and drive?
         final class Probe: ObservableObject { @Published var v = 0.3 }
         let probe = Probe()
-        struct V: View { @ObservedObject var p: Probe; var body: some View { ValueSlider(value: $p.v, in: 0...1).frame(width: 300).padding(20) } }
+        struct V: View { @ObservedObject var p: Probe; var body: some View { ValueSlider(value: $p.v, in: 0...1).frame(width: 300).padding(24) } }
         let host = NSHostingView(rootView: V(p: probe)); host.frame = NSRect(x: 0, y: 0, width: 340, height: 80)
         let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false); win.contentView = host
         host.layoutSubtreeIfNeeded(); RunLoop.current.run(until: Date().addingTimeInterval(0.3)); host.layoutSubtreeIfNeeded()
@@ -216,7 +250,9 @@ extension DemoData {
     if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
     // the scrubber asks for its waveform when it appears, which an offscreen snapshot never does: ask up front (the first track runs first)
     for it in model.items.reversed() where !it.isStream { WaveformStore.shared.request(it.path) }
+    if env["AUREON_SPEAKERS"] != nil { model.refreshDevices(); for d in model.devices.prefix(3) { model.speakers.add(d) }; model.speakers.setup.enabled = true; if model.speakers.setup.members.count > 1 { model.speakers.setup.members[1].role = .surround } }
     if env["AUREON_QUEUE"] != nil { model.showQueue = true }
+    if env["AUREON_PALETTE"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { MainActor.assumeIsolated { model.showPalette = true } } }
     if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; if env["AUREON_AUTO"] != nil { model.dj.smart.enable() } } } }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
     if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
@@ -261,6 +297,8 @@ extension DemoData {
         }
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { MainActor.assumeIsolated { for r in model.library.rows { model.artistArt.load(id: r.id, name: r.title) } } }
+    // the album grid configures its pager when it appears, which an offscreen snapshot never does
+    if env["AUREON_TAB"] == "Albums" { DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { MainActor.assumeIsolated { model.library.pager.configure(AlbumQuery(model.options(for: .albums), search: "")) } } }
     // grid cells load their cover when they scroll into view; an offscreen snapshot never "appears", so load them up front
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { for a in model.library.albums { model.albumArt.load(a) } } }
     if env["AUREON_OPEN_FIRST"] != nil {
@@ -275,9 +313,26 @@ extension DemoData {
     DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
         MainActor.assumeIsolated {
             let h = CGFloat(Double(env["AUREON_HEIGHT"] ?? "") ?? 900), w = CGFloat(Double(env["AUREON_WIDTH"] ?? "") ?? 1100)
-            let host = NSHostingView(rootView: ContentView().environmentObject(model).frame(width: w, height: h).preferredColorScheme(model.theme.isLight ? .light : .dark))
+            let stageModel = StageModel()
+            if let p = env["AUREON_PANEL"], let panel = GalleryPanel(rawValue: p) { stageModel.panel = panel }
+            if env["AUREON_BADGE_DETAIL"] != nil { stageModel.panel = .signal }
+            if let sec = env["AUREON_SOUND"], let s = SoundSection(rawValue: sec) { model.soundSection = s }
+            // the quick panel is a pop-up window, which a snapshot of the main window cannot hold: lay it over the page where the pop-up would be
+            let quickShot = env["AUREON_QUICKPANEL"] != nil
+            let host = NSHostingView(rootView: ContentView(stage: stageModel).environmentObject(model)
+                .overlay(alignment: .topTrailing) {
+                    if quickShot {
+                        QuickPanelView().environmentObject(model)
+                            .background(RoundedRectangle(cornerRadius: GlassPolicy.popoverRadius, style: .continuous).fill(Brand.canvas.opacity(0.94)))
+                            .clipShape(RoundedRectangle(cornerRadius: GlassPolicy.popoverRadius, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: GlassPolicy.popoverRadius, style: .continuous).strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+                            .environment(\.glassAccents, model.glassAccents).foregroundStyle(Brand.ink).padding(.top, 54).padding(.trailing, 96)
+                    }
+                }
+                .frame(width: w, height: h).preferredColorScheme(model.theme.isLight ? .light : .dark))
             host.frame = NSRect(x: 0, y: 0, width: w, height: h)
-            let win = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+            host.safeAreaRegions = []          // an offscreen window has no title bar to avoid: lay out in exactly the frame asked for
+            let win = NSWindow(contentRect: host.frame, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
             win.contentView = host; win.appearance = NSAppearance(named: model.theme.isLight ? .aqua : .darkAqua)
             host.layoutSubtreeIfNeeded()
             if env["AUREON_BENCH_CLICK"] != nil {
@@ -435,7 +490,21 @@ extension DemoData {
                 model.player.stop(); exit(0)
             }
             func capture() {
-                let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds)!
+                // AUREON_SCROLL=<points>: scroll the page's scroll view, to show the header with content under it
+                if let px = Double(env["AUREON_SCROLL"] ?? "") {
+                    func scrollViews(_ v: NSView) -> [NSScrollView] { (v as? NSScrollView).map { [$0] } ?? [] + v.subviews.flatMap(scrollViews) }
+                    let all = host.subviews.flatMap { scrollViews($0) } + scrollViews(host)
+                    if let sv = all.filter({ ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height }).max(by: { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }) {
+                        sv.contentView.scroll(to: NSPoint(x: 0, y: CGFloat(px) - sv.contentInsets.top)); sv.reflectScrolledClipView(sv.contentView)
+                    }
+                    for _ in 0..<4 { RunLoop.current.run(until: Date().addingTimeInterval(0.1)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+                }
+                // let SwiftUI pick up what finished in the meantime (backdrop bitmaps, artwork) before drawing
+                for _ in 0..<6 { RunLoop.current.run(until: Date().addingTimeInterval(0.1)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+                // always at twice the point size, whatever display the window happened to be associated with
+                let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(host.bounds.width * 2), pixelsHigh: Int(host.bounds.height * 2), bitsPerSample: 8, samplesPerPixel: 4,
+                                           hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+                rep.size = host.bounds.size
                 host.cacheDisplay(in: host.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
                 model.player.stop()

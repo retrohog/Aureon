@@ -45,7 +45,11 @@ struct SidebarLayout: Codable, Equatable {
 struct AppLogo: View {
     var size: CGFloat = 22
     var body: some View {
-        Image(nsImage: NSApp?.applicationIconImage ?? NSImage()).resizable().interpolation(.high).aspectRatio(contentMode: .fit).frame(width: size, height: size)
+        // a small hallmark: a serif A in a hairline square, in the accent
+        Text("A").font(Typo.serif(size * 0.7, .light)).foregroundStyle(Brand.accentText)
+            .frame(width: size, height: size)
+            .overlay(Rectangle().strokeBorder(Brand.coachline, lineWidth: Metrics.hairline))
+            .accessibilityLabel("Aureon")
     }
 }
 
@@ -54,19 +58,19 @@ struct SidebarSettings: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            Card(title: "Sidebar", subtitle: "Choose which pages appear and in what order. A page you hide is still one click away in Settings") {
+            Card(title: "Pages", subtitle: "Choose which pages the quiet headers under the rail show up front, and in what order. A page you hide leaves that line; ⌘K still finds every page") {
                 ForEach(SidebarLayout.sections, id: \.self) { sec in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(sec == .listen ? "Listen" : sec.rawValue).font(.caption.weight(.semibold)).foregroundStyle(.secondary).padding(.top, 6)
+                        Text(sec == .listen ? "Listen" : sec.rawValue).font(Typo.caption.weight(.semibold)).foregroundStyle(Brand.inkSecondary).padding(.top, 8)
                         let list = m.sidebar.ordered(in: sec)
                         ForEach(Array(list.enumerated()), id: \.element) { i, t in
-                            HStack(spacing: 10) {
+                            HStack(spacing: 12) {
                                 Image(systemName: t.icon).frame(width: 20).foregroundStyle(Brand.accent)
                                 Text(t.rawValue)
                                 Spacer()
                                 Button { m.sidebar.move(t, by: -1) } label: { Image(systemName: "chevron.up") }.disabled(i == 0)
                                 Button { m.sidebar.move(t, by: 1) } label: { Image(systemName: "chevron.down") }.disabled(i == list.count - 1)
-                                Toggle("", isOn: Binding(get: { !m.sidebar.isHidden(t) }, set: { m.sidebar.setHidden(t, !$0) })).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                                Toggle("", isOn: Binding(get: { !m.sidebar.isHidden(t) }, set: { m.sidebar.setHidden(t, !$0) })).labelsHidden().toggleStyle(.rule).controlSize(.small)
                             }
                             .buttonStyle(.borderless)
                         }

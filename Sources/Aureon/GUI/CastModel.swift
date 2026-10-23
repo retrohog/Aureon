@@ -96,28 +96,28 @@ struct CastCard: View {
             HStack(spacing: 12) {
                 AirPlayButton().frame(width: 36, height: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AirPlay").font(.system(size: 13, weight: .medium))
+                    Text("AirPlay").font(Typo.sans(13, .medium))
                     Note(text: "Choose a HomePod, Apple TV or AirPlay speaker. macOS encodes the stream as Apple Lossless at 44.1 or 48 kHz and applies its own volume; exclusive mode and rate switching do not apply. After choosing, pick “\(m.devices.first { $0.name.lowercased().contains("airplay") }?.name ?? "the AirPlay device")” as the output above if the app does not follow.")
                 }
                 Spacer()
-                PillButton(title: "Refresh outputs", symbol: "arrow.clockwise") { m.refreshDevices() }
+                RuleButton(title: "Refresh outputs", symbol: "arrow.clockwise") { m.refreshDevices() }
             }
             Divider()
             HStack {
-                Text("Chromecast and Google Home").font(.system(size: 13, weight: .medium))
+                Text("Chromecast and Google Home").font(Typo.sans(13, .medium))
                 Spacer()
-                if cast.isCasting || cast.state == .connecting { PillButton(title: "Stop casting", symbol: "stop.fill") { cast.disconnect() } }
+                if cast.isCasting || cast.state == .connecting { RuleButton(title: "Stop casting", symbol: "stop.fill") { cast.disconnect() } }
             }
             if cast.devices.isEmpty {
                 Note(text: cast.scanning ? "Looking for speakers on this network…" : "No speakers found yet.")
             } else {
                 ForEach(cast.devices) { d in
                     HStack(spacing: 8) {
-                        Image(systemName: d.isAudioOnly ? "hifispeaker" : "tv").foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 0) { Text(d.name); Text(d.model).font(.caption2).foregroundStyle(.tertiary) }
+                        Image(systemName: d.isAudioOnly ? "hifispeaker" : "tv").foregroundStyle(Brand.inkSecondary)
+                        VStack(alignment: .leading, spacing: 0) { Text(d.name); Text(d.model).font(Typo.caption2).foregroundStyle(Brand.inkTertiary) }
                         Spacer()
                         if cast.activeDevice?.id == d.id { Badge(text: stateTitle, color: cast.state == .playing ? .green : .orange) }
-                        else { PillButton(title: "Cast here", symbol: "dot.radiowaves.right") { cast.connect(d) }.disabled(cast.state == .connecting) }
+                        else { RuleButton(title: "Cast here", symbol: "dot.radiowaves.right") { cast.connect(d) }.disabled(cast.state == .connecting) }
                     }
                 }
             }

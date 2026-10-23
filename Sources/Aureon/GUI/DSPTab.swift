@@ -7,7 +7,7 @@ struct DSPTab: View {
     @StateObject private var picking = Box(false)
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             profileCard
             Card(title: "DSP path", subtitle: "AVAudioEngine in manual rendering mode, pulled by the DAC callback — never connected to the hardware by macOS") {
                 Toggle("Process audio through EQ and plugins", isOn: $dsp.draft.enabled)
@@ -23,7 +23,7 @@ struct DSPTab: View {
 
     private var profileCard: some View {
         Card(title: "Profile", subtitle: "Settings are kept only when you save them into a profile") {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Menu {
                     Button { dsp.select(nil) } label: { Label("Clean start (nothing applied)", systemImage: dsp.activeID == nil ? "checkmark" : "") }
                     if !dsp.profiles.isEmpty { Divider() }
@@ -31,13 +31,13 @@ struct DSPTab: View {
                 } label: {
                     Label(dsp.active?.name ?? "No profile", systemImage: "slider.horizontal.below.square.filled.and.square")
                 }.fixedSize()
-                if dsp.dirty { Circle().fill(Color.orange).frame(width: 8, height: 8).help("Unsaved changes") }
+                if dsp.dirty { Circle().fill(Brand.caution).frame(width: 8, height: 8).help("Unsaved changes") }
                 Spacer()
                 Button("Revert") { dsp.revert() }.disabled(!dsp.dirty)
                 Button("Save as…") {
                     if let n = promptForText(title: "Save as a new profile", placeholder: "Profile name", confirm: "Save") { dsp.saveAs(n) }
                 }
-                Button { m.saveDSP() } label: { Text(dsp.active == nil ? "Save…" : "Save") }.buttonStyle(.borderedProminent).tint(Brand.accent).disabled(!dsp.dirty)
+                Button { m.saveDSP() } label: { Text(dsp.active == nil ? "Save…" : "Save") }.buttonStyle(.solid).tint(Brand.accent).disabled(!dsp.dirty)
                 if let a = dsp.active {
                     Menu { Button("Rename…") { if let n = promptForText(title: "Rename profile", initial: a.name, confirm: "Rename") { dsp.rename(a.id, to: n) } }
                            Button("Delete “\(a.name)”", role: .destructive) { dsp.delete(a.id) } } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).fixedSize()
@@ -70,16 +70,16 @@ struct DSPTab: View {
                 ForEach(dsp.draft.eq.bands.indices, id: \.self) { i in
                     let b = dsp.draft.eq.bands[i]
                     let isCut = b.kind == .lowCut || b.kind == .highCut
-                    VStack(spacing: 6) {
-                        Text(isCut ? "cut" : String(format: "%+.1f", b.gainDB)).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    VStack(spacing: 8) {
+                        Text(isCut ? "cut" : String(format: "%+.1f", b.gainDB)).font(Typo.caption2.monospacedDigit()).foregroundStyle(Brand.inkSecondary)
                         VerticalFader(value: band(i).gainDB, enabled: b.enabled && !isCut)
-                        Text(freqLabel(b.frequency)).font(.caption2.weight(sel.v == i ? .bold : .regular))
+                        Text(freqLabel(b.frequency)).font(Typo.caption2.weight(sel.v == i ? .bold : .regular))
                             .foregroundStyle(sel.v == i ? Brand.accent : .secondary)
                         Circle().fill(b.enabled ? Brand.accent : Brand.ink.opacity(0.2)).frame(width: 5, height: 5)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Brand.ink.opacity(sel.v == i ? 0.08 : 0)))
+                    .background(RoundedRectangle(cornerRadius: Metrics.radius(8), style: .continuous).fill(Brand.ink.opacity(sel.v == i ? 0.08 : 0)))
                     .contentShape(Rectangle())
                     .onTapGesture { sel.v = i }
                 }
@@ -90,8 +90,8 @@ struct DSPTab: View {
                 Divider()
                 let b = band(sel.v)
                 let kind = b.wrappedValue.kind
-                HStack(spacing: 14) {
-                    Text("Band \(sel.v + 1)").font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 16) {
+                    Text("Band \(sel.v + 1)").font(Typo.sans(12, .semibold))
                     Picker("Type", selection: b.kind) { ForEach(EQBand.Kind.allCases) { Text($0.title).tag($0) } }.frame(width: 190)
                     Toggle("Band on", isOn: b.enabled)
                     Spacer()
@@ -140,7 +140,7 @@ struct DSPTab: View {
                     ForEach(m.hosted) { p in
                         HStack {
                             Image(systemName: "puzzlepiece.extension")
-                            VStack(alignment: .leading) { Text(p.info.name); Text(p.info.manufacturer).font(.caption).foregroundStyle(.secondary) }
+                            VStack(alignment: .leading) { Text(p.info.name); Text(p.info.manufacturer).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
                             Spacer()
                             Button("Open") { m.openPluginUI(p) }
                             Button { m.removePlugin(p.id) } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain)
@@ -183,16 +183,16 @@ struct PluginPicker: View {
     var body: some View {
         let q = query.v.trimmingCharacters(in: .whitespaces).lowercased()
         VStack(alignment: .leading, spacing: 8) {
-            SearchPill(prompt: "Search \(m.availableEffects.count) effects", text: $query.v, width: 240)
+            SearchField(prompt: "Search \(m.availableEffects.count) effects", text: $query.v, width: 240)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    if m.availableEffects.isEmpty { Text("No Audio Unit effects found").foregroundStyle(.secondary).padding(8) }
+                    if m.availableEffects.isEmpty { Text("No Audio Unit effects found").foregroundStyle(Brand.inkSecondary).padding(8) }
                     ForEach(m.effectGroups, id: \.maker) { g in
                         let hits = q.isEmpty ? g.effects : g.effects.filter { ($0.name + " " + $0.manufacturer).lowercased().contains(q) }
                         if !hits.isEmpty {
-                            Text(g.maker).microLabel().foregroundStyle(.tertiary).padding(.top, 6).padding(.leading, 6)
+                            Text(g.maker).microLabel().foregroundStyle(Brand.inkTertiary).padding(.top, 8).padding(.leading, 8)
                             ForEach(hits) { info in
-                                Button { m.addPlugin(info); done() } label: { Text(info.name).font(.system(size: 12.5)).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }
+                                Button { m.addPlugin(info); done() } label: { Text(info.name).font(Typo.sans(12.5)).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }
                                     .buttonStyle(.plain)
                             }
                         }

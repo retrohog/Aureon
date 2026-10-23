@@ -8,8 +8,8 @@ struct ConvertPage: View {
 
     var body: some View {
         PageScaffold(title: "Convert", subtitle: cv.items.isEmpty ? nil : "\(cv.items.count) file\(cv.items.count == 1 ? "" : "s")", trailing: {
-            PillButton(title: "Add files…", symbol: "plus") { pick() }
-            if !cv.items.isEmpty && !cv.running { PillButton(title: "Clear", symbol: "xmark") { cv.clear() } }
+            RuleButton(title: "Add files…", symbol: "plus") { pick() }
+            if !cv.items.isEmpty && !cv.running { RuleButton(title: "Clear", symbol: "xmark") { cv.clear() } }
         }) {
             VStack(alignment: .leading, spacing: 16) {
                 if cv.items.isEmpty { drop } else { list }
@@ -26,24 +26,24 @@ struct ConvertPage: View {
     private var drop: some View {
         EmptyExplainer(icon: "arrow.triangle.2.circlepath", title: "Drop music here",
                        text: "Drop files or whole folders to make copies in AAC, Apple Lossless or FLAC. Tracks can be levelled to a common loudness (EBU R128) without clipping; tags and cover art come along. Several files are converted at the same time.")
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(hover.v ? Color.accentColor : .clear, lineWidth: 2))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius(14)).stroke(hover.v ? Color.accentColor : .clear, lineWidth: 2))
     }
 
     private var list: some View {
         Card(title: "Files", subtitle: nil) {
             VStack(spacing: 2) {
                 ForEach(cv.items) { it in
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         icon(it.state)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(it.job.source.deletingPathExtension().lastPathComponent).lineLimit(1)
-                            Text(it.job.source.deletingLastPathComponent().path).font(.caption2).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
+                            Text(it.job.source.deletingLastPathComponent().path).font(Typo.caption2).foregroundStyle(Brand.inkTertiary).lineLimit(1).truncationMode(.head)
                         }
                         Spacer()
                         if it.state == .working { ProgressView(value: it.progress).frame(width: 120) }
-                        else if let r = it.result, r.ok { Text(detail(r)).font(.caption).foregroundStyle(.secondary) }
-                        else if case .failed(let m) = it.state { Text("Failed").font(.caption).foregroundStyle(.red).help(m) }
-                        if !cv.running { Button { cv.remove(it.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.plain).foregroundStyle(.secondary) }
+                        else if let r = it.result, r.ok { Text(detail(r)).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }
+                        else if case .failed(let m) = it.state { Text("Failed").font(Typo.caption).foregroundStyle(.red).help(m) }
+                        if !cv.running { Button { cv.remove(it.id) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.plain).foregroundStyle(Brand.inkSecondary) }
                     }
                     .padding(.vertical, 3)
                     .help(it.job.destination.path)
@@ -60,11 +60,11 @@ struct ConvertPage: View {
 
     @ViewBuilder private func icon(_ s: ConvertModel.Item.State) -> some View {
         switch s {
-        case .waiting: Image(systemName: "circle").foregroundStyle(.tertiary)
+        case .waiting: Image(systemName: "circle").foregroundStyle(Brand.inkTertiary)
         case .working: Image(systemName: "circle.dotted").foregroundStyle(Color.accentColor)
-        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-        case .cancelled: Image(systemName: "minus.circle").foregroundStyle(.secondary)
+        case .done: Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.accentText)
+        case .failed: Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.caution)
+        case .cancelled: Image(systemName: "minus.circle").foregroundStyle(Brand.inkSecondary)
         }
     }
 
@@ -73,7 +73,7 @@ struct ConvertPage: View {
             SegmentedChoice(selection: $cv.format, items: Array(TranscodeFormat.allCases)) { $0.title }.disabled(cv.running)
             if cv.format == .aac {
                 Picker("AAC bit rate", selection: $cv.bitrate) { ForEach([128_000, 192_000, 256_000, 320_000], id: \.self) { Text("\($0 / 1000) kbps").tag($0) } }.disabled(cv.running)
-                Toggle("Never go above 48 kHz (always on for AAC; this also applies to lossless copies)", isOn: .constant(true)).disabled(true).font(.caption)
+                Toggle("Never go above 48 kHz (always on for AAC; this also applies to lossless copies)", isOn: .constant(true)).disabled(true).font(Typo.caption)
             } else {
                 Toggle("Limit lossless copies to 48 kHz (for players that cannot do more)", isOn: $cv.capRate).disabled(cv.running)
             }
@@ -86,7 +86,7 @@ struct ConvertPage: View {
             }
             Toggle("Keep the folder structure of what I dropped", isOn: $cv.keepFolders).disabled(cv.running)
             HStack {
-                Text("Save in"); Text(cv.destination.path).font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text("Save in"); Text(cv.destination.path).font(Typo.mono(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).truncationMode(.middle)
                 Spacer(); Button("Choose…") { chooseFolder() }.disabled(cv.running)
             }
         }
@@ -94,10 +94,10 @@ struct ConvertPage: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                if cv.running { PillButton(title: "Stop", symbol: "stop.fill") { cv.cancel() }; ProgressView().controlSize(.small) }
-                else { PillButton(title: "Convert \(cv.items.count) file\(cv.items.count == 1 ? "" : "s")", symbol: "arrow.triangle.2.circlepath", filled: true) { cv.start() }.disabled(cv.items.isEmpty) }
-                if !cv.running, cv.items.contains(where: { $0.state == .done }) { PillButton(title: "Show in Finder", symbol: "folder") { cv.reveal() } }
+            HStack(spacing: 12) {
+                if cv.running { RuleButton(title: "Stop", symbol: "stop.fill") { cv.cancel() }; ProgressView().controlSize(.small) }
+                else { RuleButton(title: "Convert \(cv.items.count) file\(cv.items.count == 1 ? "" : "s")", symbol: "arrow.triangle.2.circlepath", filled: true) { cv.start() }.disabled(cv.items.isEmpty) }
+                if !cv.running, cv.items.contains(where: { $0.state == .done }) { RuleButton(title: "Show in Finder", symbol: "folder") { cv.reveal() } }
             }
             if let s = cv.summary { Note(text: s, color: s.contains("failed") ? .orange : .green) }
         }

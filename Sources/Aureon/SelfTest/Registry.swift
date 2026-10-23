@@ -4,7 +4,20 @@ func extraTests() -> [(String, TestFn)] {
     t += powerFeatureTests()
     t += naturalPlaylistTests()
     t += lyricsTests()
-    // stageInteractionTests() reproduces the known close-Now-Playing dead-click bug and fails until it is fixed, so it is not registered
+    t += stageInteractionTests()
+    t += navigationTests()
+    t += controlTests()
+    t += nowPlayingTests()
+    t += qualityBadgeTests()
+    t += analyserTests()
+    t += backdropGlassTests()
+    t += soundQuickTests()
+    t += appearanceTests()
+    t += tabSwitchTests()
+    t += splashTests()
+    t += feedbackTests()
+    t += levelEntryTests()
+    t += multiOutputTests()
     t += dsdOutputTests()
     t += creditGraphTests()
     t += performanceTests()
@@ -113,6 +126,11 @@ func extraTests() -> [(String, TestFn)] {
           ("lms.client", p5.lmsClientAndPaths), ("lms.import", p5.lmsImportAndPlay), ("bridge.sync", p5.bridgePairingAndSync)]
     let ux = UXTests()
     t += [("ux.conflicts", ux.conflictRules), ("ux.sidebar", ux.sidebarLayout), ("ux.scroll", ux.scrollingNeverSticks), ("dj.layout", ux.djLayout), ("dj.tools", ux.djDeckTools), ("dj.assign", ux.djCrossfaderAssign), ("dj.knobs", ux.knobReadouts), ("ux.scrollGate", ux.scrollGate), ("speakers.volume", ux.speakerVolumeMatching), ("speakers.plan", ux.speakerPlan), ("speakers.roles", ux.speakerRoles), ("speakers.ring", ux.speakerDelayAndRing), ("speakers.devices", ux.speakersOnRealDevices)]
+    let cal = CalibrationTests()
+    t += [("calibration.roles", cal.roleBalance), ("calibration.curves", cal.volumeCurves), ("calibration.plan", cal.levelPlan), ("calibration.ramp", cal.hardwareRamp),
+          ("calibration.gain", cal.smoothGain), ("calibration.threads", cal.smoothGainAcrossThreads), ("calibration.stage", cal.outputStage),
+          ("calibration.follower", cal.followerSlides), ("calibration.clock", cal.followerRunsOnItsOwnClock), ("calibration.saves", cal.setupSaves),
+          ("calibration.sender", cal.coalescingSender), ("calibration.zoneLevels", cal.zoneRoomLevels)]
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]
@@ -127,6 +145,10 @@ func extraTests() -> [(String, TestFn)] {
     t += [("ui.ledContrast", hw.ledLegendsKeepContrast), ("ui.ledLamps", hw.lampsDescribeTheStream), ("ui.waveformBuild", hw.waveformFollowsTheAudio),
           ("ui.waveformCache", hw.waveformCacheRoundTrip), ("ui.waveformColumns", hw.waveformColumnsAndEdgeCases), ("ui.scrubMath", hw.scrubberMath),
           ("ui.backdropBlur", hw.backdropImageIsSmallAndBlurred), ("ui.stageNavigation", hw.stageOpensAndReturns), ("ui.lyricsButton", hw.lyricsButtonOpensTheLyrics)]
+    let ds = DesignSystemTests()
+    t += [("ui.themeContrast", ds.everyThemeMeetsContrast), ("ui.defaultThemes", ds.defaultThemesAreObsidianAndIvory), ("ui.typography", ds.typographyTokensArePresent),
+          ("ui.noScatteredFonts", ds.noScatteredFontsOrSprings), ("ui.metrics", ds.metricsStayOnTheGridAndSquare), ("ui.accentPair", ds.accentPairStaysInOneColourFamily),
+          ("ui.softBackdrop", ds.softBackdropNeverCostsTextItsContrast), ("ui.albumBackdrop", ds.albumBackdropIsHeldToTheSameLimit), ("ui.backdropModes", ds.backdropModesAreNamed), ("ui.backdropView", ds.backdropViewDrawsTheWash)]
     let ui = InterfaceTests()
     t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers), ("ui.navigation", ui.navigationStructure), ("ui.liveSignal", ui.liveStationsInTheSignalPath), ("ui.history", ui.navigationHistory), ("ui.republish", ui.playheadChangesDoNotRepublish), ("ui.ordering", ui.sortingFilteringAndGrouping), ("ui.volumeSafety", ui.volumeSliderCannotJump), ("ui.scrollSteps", ui.scrollWheelSteps)]
     let dc = DiscordTests()

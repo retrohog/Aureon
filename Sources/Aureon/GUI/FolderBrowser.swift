@@ -239,11 +239,11 @@ struct FolderBrowserPage: View {
             FolderOutline(model: model, actions: actions)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .glassPanel(radius: 16)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Metrics.radius(16), style: .continuous))
             HStack(spacing: 8) {
                 if model.busy { ProgressView().controlSize(.small) }
                 Text(model.status.isEmpty ? "Click ▶ to play a folder or a file at once. Right-click for tags, booklets and ABX." : model.status)
-                    .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    .font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                 Spacer()
             }
         }
@@ -252,17 +252,17 @@ struct FolderBrowserPage: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("Folders").font(.system(size: 26, weight: .semibold)).tracking(-0.4)
-            Text("Straight from disk · no library scan").microLabel().foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Folders").font(Typo.serif(26, .regular)).tracking(-0.4)
+            Text("Straight from disk · no library scan").microLabel().foregroundStyle(Brand.inkSecondary)
             Spacer(minLength: 12)
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 11)).foregroundStyle(.secondary)
-                TextField("Filter open folders", text: $model.filter).textFieldStyle(.plain).font(.system(size: 12.5)).frame(width: 170)
-                if !model.filter.isEmpty { Button { model.filter = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }.buttonStyle(.plain) }
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
+                TextField("Filter open folders", text: $model.filter).textFieldStyle(.plain).font(Typo.sans(12.5)).frame(width: 170)
+                if !model.filter.isEmpty { Button { model.filter = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Brand.inkSecondary) }.buttonStyle(.plain) }
             }
-            .padding(.horizontal, 9).frame(height: 26)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(0.08)))
+            .padding(.horizontal, 8).frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: Metrics.radius(7), style: .continuous).fill(Brand.ink.opacity(0.08)))
             Button { addFolder() } label: { Image(systemName: "folder.badge.plus") }.help("Add a folder to browse")
             Button { model.refreshAll() } label: { Image(systemName: "arrow.clockwise") }.help("Read the open folders again")
         }

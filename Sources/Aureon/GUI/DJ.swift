@@ -52,21 +52,19 @@ struct Knob: View {
                 Circle().trim(from: 0.125, to: 0.875).stroke(Brand.ink.opacity(0.14), style: StrokeStyle(lineWidth: 2.2, lineCap: .round)).rotationEffect(.degrees(90)).padding(3)
                 Circle().trim(from: 0.125 + 0.75 * min(zero, fraction), to: 0.125 + 0.75 * max(zero, fraction))
                     .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round)).rotationEffect(.degrees(90)).padding(3)
-                    .shadow(color: tint.opacity(grown ? 0.8 : 0), radius: 3)
-                Capsule().fill(.white).frame(width: 2.5, height: size * 0.3).offset(y: -size * 0.27).rotationEffect(.degrees(-135 + 270 * fraction))
+                Slab().fill(.white).frame(width: 2.5, height: size * 0.3).offset(y: -size * 0.27).rotationEffect(.degrees(-135 + 270 * fraction))
             }
             .frame(width: size, height: size)
             .scaleEffect(scale)
-            .shadow(color: .black.opacity(grown ? 0.5 : 0), radius: 10, y: 4)
-            .animation(.spring(response: 0.22, dampingFraction: 0.78), value: grown)
+            .animation(Motion.glide, value: grown)
             .animation(.interactiveSpring(response: 0.1, dampingFraction: 0.9), value: value)
             .overlay(alignment: .bottom) {
-                Text(kind.text(value, range: range)).font(.system(size: 11, weight: .bold, design: .monospaced)).monospacedDigit()
-                    .padding(.horizontal, 7).padding(.vertical, 2).background(Capsule().fill(.black.opacity(0.72))).foregroundStyle(.white).fixedSize()
+                Text(kind.text(value, range: range)).font(Typo.mono(11, .bold)).monospacedDigit()
+                    .padding(.horizontal, 8).padding(.vertical, 2).background(Slab().fill(.black.opacity(0.72))).foregroundStyle(.white).fixedSize()
                     .opacity(grown ? 1 : 0).offset(y: grown ? size * 0.375 + 14 : size * 0.2).allowsHitTesting(false)
                     .animation(.easeOut(duration: 0.14), value: grown)
             }
-            Text(label).microLabel().foregroundStyle(.secondary).opacity(grown ? 0.0 : 1)
+            Text(label).microLabel().foregroundStyle(Brand.inkSecondary).opacity(grown ? 0.0 : 1)
         }
         .frame(height: nil)
         .zIndex(grown ? 10 : 0)
@@ -96,8 +94,8 @@ struct LevelBar: View {
         GeometryReader { g in
             let db = 20 * log10(max(Double(value), 1e-5)), f = max(0, min(1, (db + 48) / 48))
             ZStack(alignment: .bottom) {
-                Capsule().fill(Brand.ink.opacity(0.08))
-                Capsule().fill(LinearGradient(colors: [.green, .yellow, .red], startPoint: .bottom, endPoint: .top)).frame(height: g.size.height * CGFloat(f))
+                Slab().fill(Brand.ink.opacity(0.08))
+                Slab().fill(LinearGradient(colors: [.green, .yellow, .red], startPoint: .bottom, endPoint: .top)).frame(height: g.size.height * CGFloat(f))
                     .mask(alignment: .bottom) { Rectangle().frame(height: g.size.height * CGFloat(f)) }
             }
         }.frame(width: 6)

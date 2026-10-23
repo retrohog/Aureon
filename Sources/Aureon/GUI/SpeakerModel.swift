@@ -21,7 +21,7 @@ final class SpeakerModel: ObservableObject {
         if let d = defaults.data(forKey: Self.key), let s = try? JSONDecoder().decode(SpeakerSetup.self, from: d) { setup = s }
     }
 
-    private func save() { defaults.set(try? JSONEncoder().encode(setup), forKey: Self.key) }
+    private func save() { if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(try? JSONEncoder().encode(setup), forKey: Self.key) } }
 
     /// True when the setup is on and at least two of its devices are present.
     func isActive(devices: [OutputDeviceInfo]) -> Bool { setup.enabled && setup.members.filter { m in devices.contains { $0.uid == m.uid } }.count >= 2 }
@@ -42,8 +42,11 @@ final class SpeakerModel: ObservableObject {
                        set: { v in if let i = self.setup.members.firstIndex(where: { $0.uid == uid }) { self.setup.members[i] = v } })
     }
 
-    /// The volume of the main output changed: the others follow it.
+    /// The volume of the main output changed: the others follow it, each slid to its calibrated level.
     func matchVolume(_ v: Float) { sink?.matchOthers(to: v) }
+
+    /// What the automatic balance adds for this member on top of the user's own level, in dB (0 when it is switched off).
+    func balanceDB(_ m: SpeakerMember) -> Double { setup.autoLevel ? SpeakerCalibration.roleOffsetDB(m.role) : 0 }
 
     func add(_ d: OutputDeviceInfo) {
         guard !d.uid.isEmpty, !setup.members.contains(where: { $0.uid == d.uid }) else { return }
@@ -92,13 +95,13 @@ struct PopoverPicker<T: Hashable>: View {
 
     var body: some View {
         Button { open.toggle() } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 if let icon { Image(systemName: icon(selection)).foregroundStyle(Brand.accent) }
                 Text(label(selection)).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.up.chevron.down").font(Typo.sans(9, .semibold)).foregroundStyle(Brand.inkSecondary)
             }
-            .padding(.horizontal, 10).frame(height: 26).contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(0.09)))
+            .padding(.horizontal, 12).frame(height: 26).contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: Metrics.radius(7), style: .continuous).fill(Brand.ink.opacity(0.09)))
         }
         .buttonStyle(.plain)
         .popover(isPresented: openBinding, arrowEdge: .bottom) {
@@ -110,7 +113,7 @@ struct PopoverPicker<T: Hashable>: View {
                             if let icon { Image(systemName: icon(it)).frame(width: 18) }
                             Text(label(it))
                             Spacer(minLength: 0)
-                        }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle())
+                        }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
             }.padding(8).frame(minWidth: 220)
@@ -128,11 +131,11 @@ struct SpeakerSetupCard: View {
                 if on { m.refreshDevices(); sp.enable(primary: m.devices.first { $0.id == m.deviceID }) } else { sp.setup.enabled = false }
             }))
             if sp.setup.enabled {
-                if sp.setup.members.count < 2 { Note(text: "Add at least one more output below. Until then the sound plays through the main output only.", color: .orange) }
+                if sp.setup.members.count < 2 { Note(text: "Add at least one more output below. Until then the sound plays through the main output only.", color: Brand.caution) }
                 ForEach(sp.setup.members) { mem in
                     if let b = sp.member(mem.uid) { memberRow(b, isMain: m.devices.first { $0.uid == mem.uid }?.id == m.deviceID) }
                 }
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     AddSpeakerButton()
                     QuickSetups()
                 }
@@ -144,23 +147,24 @@ struct SpeakerSetupCard: View {
                     }
                     Toggle("Keep the bass out of the other speakers", isOn: $sp.setup.bassManagement)
                 }
-                Note(text: "Every output has a job. Stereo plays the left and right channels; Centre plays what both have in common (voices); Ambience plays what differs between them (room sound, width); Bass plays only the low notes. Tell Aureon how far each speaker is from where you sit and it delays the nearer ones so the sound from all of them arrives together; “extra delay” fine-tunes by ear. The laptop's speakers are small: they do centre and ambience well, bass poorly.")
-                Note(text: "The outputs share one stream, so Aureon plays all of them at one sample rate they all support, and the sound is no longer bit-perfect. The main output (the one chosen in the sidebar) sets the timing; the others follow it and are kept in step automatically.")
+                Toggle("Balance the speakers by their jobs and keep them balanced when the volume changes", isOn: $sp.setup.autoLevel)
+                Note(text: "Every output has a job. Stereo plays the left and right channels; Centre plays what both have in common (voices); Ambience adds the room around the music (width and reverb above the low notes, which it plays as the stereo speakers do, so the beat stays); Bass plays only the low notes. Aureon asks each output how late it plays and delays the earlier ones, so a built-in speaker and a Bluetooth one still arrive together; “Extra delay” trims that by ear, and can be negative. Tell Aureon how far each speaker is from where you sit and it delays the nearer ones so the sound from all of them arrives together; “extra delay” fine-tunes by ear. The laptop's speakers are small: they do centre and ambience well, bass poorly.")
+                Note(text: "When the volume is changed, every output follows in decibels and slides to its level in a few milliseconds, so none jumps ahead of the others. “Level” is for what Aureon cannot know, such as one speaker simply being more sensitive than another. The outputs share one stream, so Aureon plays all of them at one sample rate they all support, and the sound is no longer bit-perfect. The main output (the one chosen in the sidebar) sets the timing; the others follow it and are kept in step automatically.")
             }
         }
     }
 
     private func memberRow(_ b: Binding<SpeakerMember>, isMain: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
                 Image(systemName: b.wrappedValue.role.symbol).foregroundStyle(Brand.accent).frame(width: 22)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(b.wrappedValue.name).fontWeight(.medium)
-                    if isMain { Text("Main output (sets the timing)").font(.caption2).foregroundStyle(.tertiary) }
+                    if isMain { Text("Main output (sets the timing)").font(Typo.caption2).foregroundStyle(Brand.inkTertiary) }
                 }
                 Spacer()
                 PopoverPicker(selection: b.role, items: SpeakerRole.allCases, label: { $0.title }, icon: { $0.symbol })
-                if !isMain { Button { sp.remove(b.wrappedValue.uid) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary).help("Remove this speaker") }
+                if !isMain { Button { sp.remove(b.wrappedValue.uid) } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(Brand.inkSecondary).help("Remove this speaker") }
             }
             Note(text: b.wrappedValue.role.blurb)
             HStack {
@@ -170,7 +174,7 @@ struct SpeakerSetupCard: View {
             }
             HStack {
                 Text("Extra delay").frame(width: 90, alignment: .leading)
-                ValueSlider(value: b.extraDelayMs, in: 0...100, step: 0.5)
+                ValueSlider(value: b.extraDelayMs, in: -50...500, step: 0.5)
                 Text(String(format: "%.1f ms", b.wrappedValue.extraDelayMs)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
             HStack {
@@ -178,9 +182,14 @@ struct SpeakerSetupCard: View {
                 ValueSlider(value: b.trimDB, in: -12...6, step: 0.5)
                 Text(String(format: "%+.1f dB", b.wrappedValue.trimDB)).monospacedDigit().frame(width: 64, alignment: .trailing)
             }
+            if sp.setup.autoLevel {
+                let auto = sp.balanceDB(b.wrappedValue)
+                Text(abs(auto) < 0.05 ? "Automatic balance: none needed for this job" : String(format: "Automatic balance: %+.1f dB for this job, on top of the level above", auto))
+                    .font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary)
+            }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.05)))
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.ink.opacity(0.05)))
     }
 }
 
@@ -193,9 +202,9 @@ private struct QuickSetups: View {
             .popover(isPresented: Binding(get: { openBox.v }, set: { openBox.v = $0 }), arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(SpeakerModel.Preset.allCases) { p in
-                        Button { sp.apply(p); openBox.v = false } label: { HStack { Text(p.rawValue); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
+                        Button { sp.apply(p); openBox.v = false } label: { HStack { Text(p.rawValue); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }.buttonStyle(.plain)
                     }
-                    Text("Roles are set by device name: the laptop's own speakers are recognised, everything else counts as external.").font(.caption2).foregroundStyle(.secondary).padding(8).frame(width: 250, alignment: .leading)
+                    Text("Roles are set by device name: the laptop's own speakers are recognised, everything else counts as external.").font(Typo.caption2).foregroundStyle(Brand.inkSecondary).padding(8).frame(width: 250, alignment: .leading)
                 }.padding(8).frame(minWidth: 260)
             }
     }
@@ -213,9 +222,9 @@ private struct AddSpeakerButton: View {
         Button { m.refreshDevices(); open.toggle() } label: { Label("Add an output…", systemImage: "plus") }
             .popover(isPresented: openBinding, arrowEdge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
-                    if free.isEmpty { Text("No other outputs found. Plug one in and try again.").font(.caption).foregroundStyle(.secondary).padding(8) }
+                    if free.isEmpty { Text("No other outputs found. Plug one in and try again.").font(Typo.caption).foregroundStyle(Brand.inkSecondary).padding(8) }
                     ForEach(free) { d in
-                        Button { sp.add(d); open = false } label: { HStack { Image(systemName: "hifispeaker"); Text(d.name); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
+                        Button { sp.add(d); open = false } label: { HStack { Image(systemName: "hifispeaker"); Text(d.name); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }.buttonStyle(.plain)
                     }
                 }.padding(8).frame(minWidth: 240)
             }
@@ -234,27 +243,27 @@ struct OutputSwitcher: View {
     var body: some View {
         let multi = sp.isActive(devices: m.devices)
         Button { m.refreshDevices(); open.toggle() } label: {
-            HStack(spacing: 9) {
-                Image(systemName: multi ? "hifispeaker.2.fill" : "hifispeaker").font(.system(size: 14)).frame(width: 20).foregroundStyle(Brand.accent)
-                Text(m.selectedDevice?.name ?? "Output").font(.system(size: 13, weight: .medium)).lineLimit(1)
-                if multi { Text("+\(max(0, sp.setup.members.count - 1))").font(.system(size: 10, weight: .bold)).padding(.horizontal, 5).padding(.vertical, 1).background(Capsule().fill(Brand.accent.opacity(0.25))) }
+            HStack(spacing: 8) {
+                Image(systemName: multi ? "hifispeaker.2.fill" : "hifispeaker").font(Typo.sans(13, .light)).frame(width: 20).foregroundStyle(Brand.inkSecondary)
+                Text(m.selectedDevice?.name ?? "Output").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
+                if multi { Text("+\(max(0, sp.setup.members.count - 1))").font(Typo.sans(10, .bold)).padding(.horizontal, 4).padding(.vertical, 1).background(Slab().fill(Brand.accent.opacity(0.25))) }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                Image(systemName: "chevron.up.chevron.down").font(Typo.sans(9, .semibold)).foregroundStyle(Brand.inkSecondary)
             }
-            .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.06 : 0)))
+            .padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
+            .background(Rectangle().fill(Brand.ink.opacity(hover.v ? 0.04 : 0)))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.help("Choose where the sound plays")
         .popover(isPresented: openBinding, arrowEdge: .trailing) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("OUTPUT").font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 8).padding(.bottom, 2)
+                Text("OUTPUT").font(Typo.caption2.weight(.semibold)).foregroundStyle(Brand.inkSecondary).padding(.horizontal, 8).padding(.bottom, 2)
                 ForEach(m.devices) { d in
                     Button { m.deviceID = d.id; open = false } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "checkmark").opacity(d.id == m.deviceID ? 1 : 0).frame(width: 14)
                             Text(d.name)
                             Spacer(minLength: 0)
-                        }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle())
+                        }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
                 Divider().padding(.vertical, 4)
@@ -262,7 +271,7 @@ struct OutputSwitcher: View {
                     Toggle("Use all set-up speakers", isOn: Binding(get: { sp.setup.enabled }, set: { sp.setup.enabled = $0 })).padding(.horizontal, 8)
                 }
                 Button { open = false; withAnimation(.easeOut(duration: 0.14)) { m.djMode = false; m.tab = .audio } } label: {
-                    HStack(spacing: 8) { Image(systemName: "slider.horizontal.3").frame(width: 14); Text("Speaker setup…"); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 5).contentShape(Rectangle())
+                    HStack(spacing: 8) { Image(systemName: "slider.horizontal.3").frame(width: 14); Text("Speaker setup…"); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }.padding(8).frame(minWidth: 250)
         }

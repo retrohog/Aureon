@@ -24,7 +24,7 @@ struct PersonFocusPage: View {
 
     var body: some View {
         PageScaffold(title: "", back: { lib.closeFocus() }, backTitle: lib.canGoBackFocus ? "Back" : "Library") {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
                 header
                 if graph.sections.count > 1 {
                     SegmentedChoice(selection: $category, items: [nil] + graph.sections.map { Optional($0.category) }, label: { $0?.title ?? "All" })
@@ -40,17 +40,17 @@ struct PersonFocusPage: View {
     }
 
     private var header: some View {
-        HStack(spacing: 22) {
+        HStack(spacing: 24) {
             Avatar(name: graph.person.name, image: art.info[graph.person.id]?.image, size: 110, shadow: true)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("CREDITS").microLabel().foregroundStyle(Brand.cyan)
-                Text(graph.person.name).font(.system(size: 30, weight: .bold)).tracking(-0.6).lineLimit(2)
+                Text(graph.person.name).font(Typo.serif(30, .regular)).tracking(-0.6).lineLimit(2)
                 Text("\(graph.releaseCount) record\(graph.releaseCount == 1 ? "" : "s") · \(graph.trackCount) song\(graph.trackCount == 1 ? "" : "s")" + otherLine)
-                    .font(.system(size: 12.5)).foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    PillButton(title: "Play", symbol: "play.fill", filled: true) { lib.playCredited(trackIDs: allTrackIDs) }
-                    PillButton(title: "Shuffle", symbol: "shuffle") { lib.playCredited(trackIDs: allTrackIDs, shuffle: true) }
-                    PillButton(title: "Add to Queue", symbol: "text.badge.plus") { lib.playCredited(trackIDs: allTrackIDs, add: true) }
+                    .font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary)
+                HStack(spacing: 8) {
+                    RuleButton(title: "Play", symbol: "play.fill", filled: true) { lib.playCredited(trackIDs: allTrackIDs) }
+                    RuleButton(title: "Shuffle", symbol: "shuffle") { lib.playCredited(trackIDs: allTrackIDs, shuffle: true) }
+                    RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { lib.playCredited(trackIDs: allTrackIDs, add: true) }
                 }.padding(.top, 8)
             }
             Spacer(minLength: 0)
@@ -65,11 +65,11 @@ struct PersonFocusPage: View {
     // MARK: sections
 
     private func section(_ s: CreditSectionDTO) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: s.category.icon).foregroundStyle(Brand.accent)
-                Text(s.category.title).font(.system(size: 17, weight: .semibold))
-                Text("\(s.releases.count)").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary)
+                Text(s.category.title).font(Typo.serif(17, .regular))
+                Text("\(s.releases.count)").font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary)
                 Spacer()
             }
             LazyVStack(spacing: 1) { ForEach(s.releases) { releaseRow($0, in: s.category) } }
@@ -80,41 +80,41 @@ struct PersonFocusPage: View {
         let key = cat.rawValue + "|" + r.id, open = expanded.contains(key)
         let roles = r.roles.map(\.label).joined(separator: ", ")
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Button { if open { expanded.remove(key) } else { expanded.insert(key) } } label: {
-                    Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary).frame(width: 14)
+                    Image(systemName: open ? "chevron.down" : "chevron.right").font(Typo.sans(10, .semibold)).foregroundStyle(Brand.inkTertiary).frame(width: 14)
                 }.buttonStyle(.plain)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(r.title + (r.year.map { " (\($0))" } ?? "")).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Text(r.title + (r.year.map { " (\($0))" } ?? "")).font(Typo.sans(13, .medium)).lineLimit(1)
                     Text(([r.artistNames.isEmpty ? nil : "by " + r.artistNames.joined(separator: ", "), roles.isEmpty ? nil : roles]).compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                        .font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                 }
                 Spacer()
-                Text("\(r.tracks.count) song\(r.tracks.count == 1 ? "" : "s")").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.tertiary)
-                Button { lib.playCredited(trackIDs: r.tracks.map(\.id)) } label: { Image(systemName: "play.fill").font(.system(size: 11)) }
+                Text("\(r.tracks.count) song\(r.tracks.count == 1 ? "" : "s")").font(Typo.mono(11.5)).foregroundStyle(Brand.inkTertiary)
+                Button { lib.playCredited(trackIDs: r.tracks.map(\.id)) } label: { Image(systemName: "play.fill").font(Typo.sans(11)) }
                     .buttonStyle(.plain).help("Play the songs they are credited on")
                 if r.isRelease {
-                    Button { lib.clearFocus(); m.tab = .albums; lib.selectedID = r.id } label: { Image(systemName: "square.stack").font(.system(size: 11)) }
+                    Button { lib.clearFocus(); m.tab = .albums; lib.selectedID = r.id } label: { Image(systemName: "square.stack").font(Typo.sans(11)) }
                         .buttonStyle(.plain).help("Open the album")
                 }
             }
-            .padding(.horizontal, 9).padding(.vertical, 6).contentShape(Rectangle())
+            .padding(.horizontal, 8).padding(.vertical, 8).contentShape(Rectangle())
             .onTapGesture { if open { expanded.remove(key) } else { expanded.insert(key) } }
             if open {
                 VStack(spacing: 0) {
                     ForEach(r.tracks) { t in
                         HStack(spacing: 8) {
-                            Text(t.trackNumber.map(String.init) ?? "").font(.system(size: 11.5, design: .monospaced)).foregroundStyle(.secondary).frame(width: 26, alignment: .trailing)
-                            Text(t.title).font(.system(size: 12.5)).lineLimit(1)
+                            Text(t.trackNumber.map(String.init) ?? "").font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary).frame(width: 26, alignment: .trailing)
+                            Text(t.title).font(Typo.sans(12.5)).lineLimit(1)
                             Spacer()
-                            Text(t.roles.map(\.label).joined(separator: ", ")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(t.roles.map(\.label).joined(separator: ", ")).font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                         }
                         .padding(.vertical, 3).padding(.horizontal, 4).contentShape(Rectangle()).onTapGesture { lib.playCredited(trackIDs: [t.id]) }
                     }
-                }.padding(.leading, 34).padding(.trailing, 9).padding(.bottom, 6)
+                }.padding(.leading, 32).padding(.trailing, 8).padding(.bottom, 8)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(open ? 0.05 : 0)))
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(9), style: .continuous).fill(Brand.ink.opacity(open ? 0.05 : 0)))
         .animation(.smooth(duration: 0.18), value: open)
     }
 
@@ -122,21 +122,21 @@ struct PersonFocusPage: View {
 
     private var collaborators: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Worked with").font(.system(size: 17, weight: .semibold))
+            Text("Worked with").font(Typo.serif(17, .regular))
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
                 ForEach(graph.collaborators) { c in
                     Button { lib.openPerson(c.partyID) } label: {
-                        HStack(spacing: 9) {
+                        HStack(spacing: 8) {
                             Avatar(name: c.name, image: art.info[c.partyID]?.image, size: 30)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(c.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                                Text(c.name).font(Typo.sans(12.5, .medium)).lineLimit(1)
                                 Text("\(c.sharedReleases) record\(c.sharedReleases == 1 ? "" : "s")" + (c.roles.isEmpty ? "" : " · " + c.roles.map(\.label).joined(separator: ", ")))
-                                    .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                    .font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                             }
                             Spacer(minLength: 0)
                         }
                         .padding(8).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.06)))
+                        .background(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.ink.opacity(0.06)))
                     }.buttonStyle(.plain)
                 }
             }
@@ -172,27 +172,27 @@ struct AlbumPersonnel: View {
         if !people.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Credits").font(.system(size: 17, weight: .semibold))
+                    Text("Credits").font(Typo.serif(17, .regular))
                     Spacer()
-                    Text("\(people.count) \(people.count == 1 ? "person" : "people")").microLabel().foregroundStyle(.secondary)
+                    Text("\(people.count) \(people.count == 1 ? "person" : "people")").microLabel().foregroundStyle(Brand.inkSecondary)
                 }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 8, alignment: .top)], alignment: .leading, spacing: 8) {
                     ForEach(all ? people : Array(people.prefix(24))) { p in
                         Button { m.library.openPerson(p.id) } label: {
-                            HStack(spacing: 9) {
+                            HStack(spacing: 8) {
                                 Avatar(name: p.name, image: nil, size: 30)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(p.name).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
-                                    Text(p.roles.joined(separator: ", ")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(p.name).font(Typo.sans(12.5, .medium)).lineLimit(1)
+                                    Text(p.roles.joined(separator: ", ")).font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                                 }
                                 Spacer(minLength: 0)
                             }
                             .padding(8).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Brand.ink.opacity(0.06)))
+                            .background(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.ink.opacity(0.06)))
                         }.buttonStyle(.plain)
                     }
                 }
-                if people.count > 24 { Button(all ? "Show fewer" : "Show all \(people.count)") { all.toggle() }.buttonStyle(.plain).font(.system(size: 12, weight: .semibold)).foregroundStyle(Brand.cyan) }
+                if people.count > 24 { Button(all ? "Show fewer" : "Show all \(people.count)") { all.toggle() }.buttonStyle(.plain).font(Typo.sans(12, .semibold)).foregroundStyle(Brand.cyan) }
             }
         }
     }

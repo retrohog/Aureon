@@ -30,7 +30,7 @@ struct HeadphoneCard: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(p.name).fontWeight(.medium)
-                        Text("\(p.source) · \(p.filters.count) filters · pre-amp \(String(format: "%+.1f", p.preampDB)) dB").font(.caption).foregroundStyle(.secondary)
+                        Text("\(p.source) · \(p.filters.count) filters · pre-amp \(String(format: "%+.1f", p.preampDB)) dB").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                     }
                     Spacer()
                     Button("Remove") { m.settings.rt.headphoneEQ = HeadphoneEQSettings() }
@@ -38,7 +38,7 @@ struct HeadphoneCard: View {
                 ResponseGraph(profile: p).frame(height: 70)
             } else { Note(text: "No profile selected.") }
             HStack {
-                TextField("Search your headphones, e.g. HD 650", text: $hp.query).textFieldStyle(.roundedBorder).onSubmit { hp.loadIndex() }
+                TextField("Search your headphones, e.g. HD 650", text: $hp.query).textFieldStyle(.plain).ruleField().onSubmit { hp.loadIndex() }
                     .onChange(of: hp.query) { _, _ in if !hp.indexLoaded { hp.loadIndex() } }
                 if hp.loading { ProgressView().controlSize(.small) }
             }
@@ -46,7 +46,7 @@ struct HeadphoneCard: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(hp.results.prefix(8)) { e in
                         Button { hp.fetch(e) { prof in m.settings.rt.headphoneEQ = HeadphoneEQSettings(enabled: true, profile: prof); hp.query = "" } } label: {
-                            HStack { Text(e.name); Spacer(); Text(e.source + (e.rig.isEmpty ? "" : " · " + e.rig)).font(.caption).foregroundStyle(.secondary) }.contentShape(Rectangle()).padding(.vertical, 4)
+                            HStack { Text(e.name); Spacer(); Text(e.source + (e.rig.isEmpty ? "" : " · " + e.rig)).font(Typo.caption).foregroundStyle(Brand.inkSecondary) }.contentShape(Rectangle()).padding(.vertical, 4)
                         }.buttonStyle(.plain)
                         Divider()
                     }
@@ -73,10 +73,10 @@ struct ResponseGraph: View {
                 if i == 0 { line.move(to: pt) } else { line.addLine(to: pt) }
             }
             ctx.stroke(line, with: .color(.accentColor), lineWidth: 1.6)
-            for (hz, t) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] { ctx.draw(Text(t).font(.system(size: 9)).foregroundStyle(.secondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6)) }
-            ctx.draw(Text("+12 dB").font(.system(size: 9)).foregroundStyle(.secondary), at: CGPoint(x: 22, y: 6))
+            for (hz, t) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] { ctx.draw(Text(t).font(Typo.sans(9)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6)) }
+            ctx.draw(Text("+12 dB").font(Typo.sans(9)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: 22, y: 6))
         }
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.2)))
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(6)).fill(Color.black.opacity(0.2)))
     }
 }
 
@@ -88,7 +88,7 @@ struct RoomCard: View {
             Toggle("Apply room correction", isOn: $m.settings.rt.convolution.enabled)
             HStack {
                 Button { chooseIR() } label: { Label("Choose impulse response…", systemImage: "waveform.path") }
-                Text(m.settings.rt.convolution.irPath.map { ($0 as NSString).lastPathComponent } ?? "none selected").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text(m.settings.rt.convolution.irPath.map { ($0 as NSString).lastPathComponent } ?? "none selected").font(Typo.caption).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                 Spacer()
                 if m.settings.rt.convolution.irPath != nil { Button("Clear") { m.settings.rt.convolution.irPath = nil } }
             }
@@ -134,9 +134,9 @@ struct SystemCard: View {
                     Text("nice \(Int(sys.nice))").monospacedDigit().frame(width: 60, alignment: .trailing)
                 }
             }
-            HStack(spacing: 6) {
-                Circle().fill(sys.helperStatus.hasPrefix("Helper ready") || sys.helperStatus.hasPrefix("Paused") ? Color.green : Color.orange).frame(width: 8, height: 8)
-                Text(sys.helperStatus).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Circle().fill(sys.helperStatus.hasPrefix("Helper ready") || sys.helperStatus.hasPrefix("Paused") ? Brand.accentText : Brand.caution).frame(width: 8, height: 8)
+                Text(sys.helperStatus).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
             }
             HStack {
                 Button("Install helper…") { sys.register() }

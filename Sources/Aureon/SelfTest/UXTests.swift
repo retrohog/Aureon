@@ -42,9 +42,9 @@ struct UXTests {
 
     func sidebarLayout() {
         var l = SidebarLayout()
-        expect(l.visible(in: .sound) == [.audio, .dsp] && l.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx] && l.visible(in: .listen) == [.home, .player, .radio, .podcasts], "the default is the usual sidebar")
+        expect(l.visible(in: .sound) == [.rooms, .audio, .dsp] && l.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx] && l.visible(in: .listen) == [.home, .player, .radio, .podcasts], "the default is the usual sidebar")
         l.setHidden(.dsp, true); l.setHidden(.cloud, true)
-        expect(l.visible(in: .sound) == [.audio] && l.hiddenTabs == [.dsp, .cloud] && l.isHidden(.dsp), "hidden pages leave the sidebar")
+        expect(l.visible(in: .sound) == [.rooms, .audio] && l.hiddenTabs == [.dsp, .cloud] && l.isHidden(.dsp), "hidden pages leave the sidebar")
         l.setHidden(.settings, true); l.setHidden(.search, true)
         expect(!l.isHidden(.settings) && !l.isHidden(.search), "Settings and search cannot be removed")
         l.move(.convert, by: -1)
@@ -64,7 +64,7 @@ struct UXTests {
         expect(reachable.count == Tab.allCases.count, "hiding everything leaves each page listed under Hidden pages")
         // saved by a version that had fewer pages: new pages still appear
         var old = SidebarLayout(); old.order = [Tab.dsp.rawValue]
-        expect(old.ordered(in: .sound) == [.dsp, .audio] && old.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx], "pages missing from a saved order keep their place after the listed ones")
+        expect(old.ordered(in: .sound) == [.dsp, .rooms, .audio] && old.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx], "pages missing from a saved order keep their place after the listed ones")
     }
 
 
@@ -94,7 +94,7 @@ struct UXTests {
         }
         expect(run(.main, 0.3, -0.2) == (0.3, -0.2) && run(.left, 0.3, -0.2) == (0.3, 0.3) && run(.right, 0.3, -0.2) == (-0.2, -0.2))
         expect(abs(run(.center, 0.5, 0.5).0 - 0.5) < 1e-6 && run(.center, 0.5, -0.5).0 == 0, "centre: what both channels share")
-        expect(run(.surround, 0.5, 0.5).0 == 0 && abs(run(.surround, 0.5, -0.5).0 - 0.5) < 1e-6, "ambience: what differs")
+        expect(abs(run(.surround, 0.5, 0.5).0 - 0.5) < 0.001 && abs(run(.surround, 0.5, -0.5).0) < 0.001, "ambience: the low notes as the stereo speakers play them (the beat stays), and no steady difference signal")
         expect(abs(run(.bass, 0.4, 0.4).0 - 0.4) < 0.001, "bass passes steady (low) signals")
         expect(abs(run(.main, 0.4, 0.4, hp: true).0) < 0.001, "high-passed speakers drop them")
         // tones: 40 Hz and 4 kHz through the low and high sides of the crossover

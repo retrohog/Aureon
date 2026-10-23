@@ -138,22 +138,22 @@ struct RemoteImage: View {
     var body: some View {
         ZStack {
             if let i = img.v ?? url.flatMap({ RemoteImages.shared.cached($0, maxPixel: maxPixel) }) {
-                if fit { Color.white.opacity(0.94); Image(nsImage: i).resizable().aspectRatio(contentMode: .fit).padding(10) }
+                if fit { Color.white.opacity(0.94); Image(nsImage: i).resizable().aspectRatio(contentMode: .fit).padding(12) }
                 else { GeometryReader { g in Image(nsImage: i).resizable().aspectRatio(contentMode: .fill).frame(width: g.size.width, height: g.size.height).clipped() } }
             } else {
                 let p = ArtPalette.fallback(seed: seed)
                 LinearGradient(colors: [p.grid[0].color, p.grid[4].color, p.grid[8].color], startPoint: .topLeading, endPoint: .bottomTrailing)
                 if let label {
-                    VStack(spacing: 6) {
-                        Image(systemName: symbol).font(.system(size: 18, weight: .light)).foregroundStyle(.white.opacity(0.6))
-                        Text(label).font(.system(size: 13, weight: .bold)).multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7).foregroundStyle(.white.opacity(0.92)).padding(.horizontal, 10)
+                    VStack(spacing: 8) {
+                        Image(systemName: symbol).font(Typo.sans(18, .light)).foregroundStyle(Brand.inkSecondary)
+                        Text(label).font(Typo.sans(13, .bold)).multilineTextAlignment(.center).lineLimit(3).minimumScaleFactor(0.7).foregroundStyle(Brand.inkSecondary).padding(.horizontal, 12)
                     }
-                } else { Image(systemName: symbol).font(.system(size: 26, weight: .ultraLight)).foregroundStyle(.white.opacity(0.55)) }
+                } else { Image(systemName: symbol).font(Typo.sans(26, .ultraLight)).foregroundStyle(Brand.inkTertiary) }
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(.white.opacity(0.1), lineWidth: 0.8))
+        .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(Brand.ink.opacity(0.1), lineWidth: 0.8))
         .task(id: url) {
             guard let url else { img.v = nil; return }
             if let i = await RemoteImages.shared.image(url, maxPixel: maxPixel) { withAnimation(.smooth(duration: 0.25)) { img.v = i } }

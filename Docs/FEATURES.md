@@ -279,15 +279,21 @@ A two-deck console on one mixer clock.
 
 ## 13. User interface
 
-- ✅ **Apple Music-style layout.** A grouped sidebar (Listen, Library, Classical, Discover, Sound, Tools, Settings) with search, albums as a cover grid, album pages with Play / Shuffle / Add to Queue, and Back / Forward (⌘[ ⌘]) navigation.
-- ✅ **Hardware-style player bar.** A dark-glass floating bar with LED-style lamps (Hi-Res, bit depth and rate, MIX, and more) that fit by priority so the important ones are never hidden. It uses real Liquid Glass on macOS 26 and a material fallback elsewhere. Contrast is checked against WCAG ratios in tests.
-- ✅ **Waveform scrubber.** The scrubber shows the track's waveform, computed once, cached on disk, and borrowed from the DJ analysis when it exists.
-- ✅ **Immersive Now Playing.** Large cover over a drifting mesh gradient in the cover's own colours, serif title hierarchy (title, artist, album · year · genre, composer), format badges, lyrics, a booklet section and a live visualizer. The cover and waveform glide between the mini player and the full view with matched-geometry animation.
-- ✅ **Stage backdrop.** A pre-blurred copy of the cover (blurred off the main thread) sits behind every page.
-- ✅ **Eight themes**, each with dark and light versions: **Album** (the whole app takes its colours from the cover that is playing), Aureon, Evergreen, Nord, Catppuccin, Dracula, Gruvbox and Synthwave.
-- ✅ **Scroll-wheel everywhere.** Every slider, knob and fader responds to the scroll wheel and trackpad, and custom controls pass scrolling on to the page when they cannot use it. The volume slider moves relative to where you drag and can never jump.
+- ✅ **One rail.** Now Playing, Collection, Rooms and Atelier across the top, a quiet line of tabs under each, Back / Forward (⌘[ ⌘]), and a command palette (**⌘K**) that reaches every page, every Sound tab and the main actions.
+- ✅ **Now Playing.** The cover, the title and artist, and a quality plate beside the title (Hi-Res with bit depth and rate, Lossless, or the codec for lossy files, with a gold dot when the path is bit-perfect and the source and output in a hover pop-up). Lyrics, Queue, Signal path, Analyser and Booklet open as a panel beside the cover.
+- ✅ **Focus mode (F).** Only the cover, the names, progress and transport remain, with the cover as large as the window allows. A second press restores the panel; the choice is remembered.
+- ✅ **Player bar.** Cover, title, progress, volume with mute, and the lyrics and queue buttons, on a floating plate of glass; the quality plate shortens first in a narrow window.
+- ✅ **Themes.** Six families (Obsidian with its light twin Ivory, Bespoke, Graphite, Evergreen, Nord, Gruvbox), each in dark and light, with a one-tap light/dark switch in the rail (a soft circular reveal) or Auto to follow macOS. Text contrast is checked against WCAG ratios in tests, on every theme and backdrop.
+- ✅ **Backdrops.** Flat, Soft, **Album** (colours from the cover that is playing, at Subtle, Rich or Vivid, rendered once off the main thread and cross-faded on a track change) and Starlight.
+- ✅ **Glass accents** on the player bar, the Now Playing panels, the palette and pop-ups: Liquid Glass on macOS 26, a blurred material elsewhere; off in Settings and with Reduce Transparency.
+- ✅ **Quick control panel (⌥⌘D).** Output device list with one-click switching, and exclusive access, volume, gapless / crossfade, levelling, upsampling, equaliser, shuffle and repeat, plus Level speakers and More sound settings.
+- ✅ **Atelier → Sound** in five tabs (Output, Conversion, Levels, Headphones & room, Playback), with a bit-perfect strip on top and OFF | ON switches.
+- ✅ **Launch animation** (planet, a ring that draws itself closed, a star, the name); skipped by a click or key, optional in Settings, never delays start-up.
+- ✅ **Page transitions.** A quick fade in place (or none); nothing slides or zooms.
+- ✅ **Waveform scrubber.** The scrubber shows the track's waveform, computed once, cached on disk, and borrowed from the DJ analysis when it exists. The played part keeps at least 4.5:1 contrast against its background (3:1 against the unplayed part) on every theme and backdrop, and a short gold marker shows every seek.
+- ✅ **Scroll-wheel on sliders.** Sliders respond to the scroll wheel and trackpad, and custom controls pass scrolling on to the page when they cannot use it. The volume slider changes with **⌥ + scroll** by default (a plain scroll over the bar scrolls the page), in steps of 1 % with no single event above 3 %; Settings can turn it off or limit it to the handle.
 - ✅ **Volume safety.** The volume controls never invent a reading (an unreadable device volume is shown as unavailable), move only when you grab the knob, and obey an optional ceiling.
-- ✅ **Visualizers.** Spectrum, spectrogram and analog VU needles (300 ms ballistics, peak hold, clip light), fed by a lock-free tap.
+- ✅ **Visualizers.** Spectrum, spectrogram and analog VU needles (300 ms ballistics, peak hold, clip light), fed by a lock-free tap, shown together in the Analyser panel.
 - ✅ **Intelligence page** with the master switch, hardware badge, per-feature switches, local model loader and API settings.
 - ✅ **Home page** with what you were playing, radio and podcast doors and album rails.
 - ✅ **Accessibility.** Reduce Motion is honoured in the animated views.

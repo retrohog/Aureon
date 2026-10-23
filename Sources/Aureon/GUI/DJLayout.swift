@@ -55,23 +55,23 @@ struct DJLayoutEditor: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Arrange the console").font(.system(size: 15, weight: .semibold))
-                Text("Hide what you do not use, and put the rest in the order you like. It is remembered.").font(.system(size: 12)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Arrange the console").font(Typo.sans(15, .semibold))
+                Text("Hide what you do not use, and put the rest in the order you like. It is remembered.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 ForEach(DJLayout.Area.allCases, id: \.self) { area in
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(area.rawValue.uppercased()).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(.secondary).tracking(0.8)
+                        Text(area.rawValue.uppercased()).font(Typo.sans(10.5, .semibold)).foregroundStyle(Brand.inkSecondary).tracking(0.8)
                         let list = dj.layout.items(area)
                         ForEach(Array(list.enumerated()), id: \.element.id) { i, item in
                             let shown = dj.layout.isShown(area, item.id)
                             HStack(spacing: 8) {
                                 Button { dj.layout.setShown(area, item.id, !shown) } label: { Image(systemName: shown ? "eye" : "eye.slash").frame(width: 22).foregroundStyle(shown ? Brand.accent : .secondary) }.buttonStyle(.plain)
-                                Image(systemName: item.icon).frame(width: 18).foregroundStyle(.secondary)
+                                Image(systemName: item.icon).frame(width: 18).foregroundStyle(Brand.inkSecondary)
                                 Text(item.title).opacity(shown ? 1 : 0.5)
                                 Spacer(minLength: 6)
                                 Button { dj.layout.move(area, item.id, by: -1) } label: { Image(systemName: "chevron.up") }.buttonStyle(.plain).disabled(i == 0)
                                 Button { dj.layout.move(area, item.id, by: 1) } label: { Image(systemName: "chevron.down") }.buttonStyle(.plain).disabled(i == list.count - 1)
-                            }.font(.system(size: 12.5)).padding(.vertical, 2)
+                            }.font(Typo.sans(12.5)).padding(.vertical, 2)
                         }
                     }
                 }

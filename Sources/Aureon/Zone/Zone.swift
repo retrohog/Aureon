@@ -104,11 +104,14 @@ final class ZoneFeed: @unchecked Sendable {
     private let scratch: UnsafeMutablePointer<Int32>
     private let scratchFrames = 8192
     private var _emitted = 0
+    /// This room's level (a trim, 0 dB or below). Set from any thread; the push follows it smoothly. At exactly unity the samples are untouched.
+    let level: SmoothGain
 
     static let maxDelaySeconds = 2.0
 
     init(format: CastFormat, path: String) {
         self.format = format
+        level = SmoothGain(rate: Double(format.sampleRate))
         encoder = LiveFLACEncoder(sampleRate: format.sampleRate, channels: format.channels, bitsPerSample: format.bitsPerSample)
         hub = LiveStreamHub(header: encoder.streamHeader)
         server = StreamServer(hub: hub, path: path)
@@ -133,6 +136,7 @@ final class ZoneFeed: @unchecked Sendable {
             let n = min(scratchFrames, frames - done)
             lock.lock()
             delay.process(pcm + done * format.channels, frames: n, output: scratch)
+            level.apply(scratch, frames: n, channels: format.channels)
             _emitted += n
             lock.unlock()
             for f in encoder.encode(scratch, frames: n) { hub.publish(f) }

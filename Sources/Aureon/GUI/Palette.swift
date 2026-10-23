@@ -32,7 +32,8 @@ struct ArtPalette: Equatable, Sendable {
     var grid: [RGB]          // row-major, 9 entries
     var accent: RGB
 
-    static let neutral = ArtPalette(grid: Array(repeating: RGB(0.16, 0.17, 0.2), count: 9), accent: RGB(0.62, 0.68, 0.95))
+    /// No cover: warm graphite, with the amber of the default accent (never a blue).
+    static let neutral = ArtPalette(grid: Array(repeating: RGB(0.16, 0.15, 0.14), count: 9), accent: AccentPair.fallback.accent)
 
     /// Samples the image on a 3×3 grid and tunes each colour for use behind white text: saturated enough to feel like the cover,
     /// dark enough to keep text legible.
@@ -83,8 +84,8 @@ struct ArtPalette: Equatable, Sendable {
         let base = Double(hash % 360) / 360
         func at(_ i: Int) -> RGB {
             let k = Double((hash >> (8 + UInt64(i) * 3)) % 100) / 100
-            return RGB(h: (base + 0.12 * (Double(i % 3) - 1) + 0.05 * k).truncatingRemainder(dividingBy: 1), s: 0.55 + 0.25 * k, v: 0.32 + 0.28 * Double((i * 5) % 9) / 8)
+            return RGB(h: (base + 0.06 * (Double(i % 3) - 1) + 0.03 * k).truncatingRemainder(dividingBy: 1), s: 0.4 + 0.2 * k, v: 0.3 + 0.25 * Double((i * 5) % 9) / 8)
         }
-        return ArtPalette(grid: (0..<9).map(at), accent: RGB(h: base, s: 0.5, v: 0.95))
+        return ArtPalette(grid: (0..<9).map(at), accent: RGB(h: base, s: 0.55, v: 0.95))
     }
 }

@@ -7,12 +7,22 @@ struct ContentView: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var dropping = Box(false)
     @StateObject private var stage: StageModel
+    @StateObject private var idle = IdleTracker()
+    @StateObject private var chrome = ChromeState()
     @Namespace private var stageSpace
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    /// The player bar is a plate of glass: pages stop above it, so only the still backdrop is ever behind the glass (never scrolling or animating content).
+    private var barIsGlass: Bool { GlassPolicy.surface(enabled: m.glassAccents, reduceTransparency: reduceTransparency) == .glass }
 
     @MainActor init(stage: StageModel? = nil) { _stage = StateObject(wrappedValue: stage ?? StageModel()) }
 
-    /// Now Playing has taken the whole window: the sidebar is tucked away.
-    private var immersive: Bool { stage.immersive && m.tab == .player }
+    /// The rail and, for a destination with several pages, its quiet sub-header: what the pages below it keep clear of.
+    private var chromeHeight: CGFloat { chromeHeight(for: m.tab) }
+    private func chromeHeight(for tab: Tab) -> CGFloat { ChromeInset.height(hasSubNav: !RailDestination.of(tab).subNav.isEmpty, hasThirdNav: tab == .audio && !m.djMode) }
+    /// Atelier → Sound has its own line of tabs under the sub-header.
+    private var showsSoundTabs: Bool { m.tab == .audio && !m.djMode }
+    /// Pages that scroll under the bar through `PageScaffold` bring their own inset; the others are kept below it.
+    private func pageKeepsOwnInset(_ tab: Tab) -> Bool { tab != .folders }
 
     var body: some View {
         ZStack {
@@ -20,49 +30,36 @@ struct ContentView: View {
             if m.djMode {
                 DJView().transition(.opacity)
             } else {
-                HStack(spacing: 0) {
-                    // always mounted: inserting and removing it with a transition could leave it drawn but not clickable after Now Playing closed
-                    Sidebar()
-                        .frame(width: 204, alignment: .leading)
-                        .frame(width: immersive ? 0 : 204, alignment: .leading)
-                        .clipped()
-                        .opacity(immersive ? 0 : 1)
-                        .allowsHitTesting(!immersive)
-                        .accessibilityHidden(immersive)
-                    ZStack(alignment: .bottom) {
-                        StageBackdrop(palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: m.tab == .player, light: m.theme.isLight)
-                        page.id(m.tab).frame(maxWidth: .infinity, maxHeight: .infinity).padding(.trailing, m.showQueue ? 362 : 0)
-                        // opacity only: the cover and waveform fly between the bar and Now Playing, and a sliding bar would drag them along
-                        if m.tab != .player { PlayerBar().transition(.opacity) }
-                    }
-                }
-                .transition(.opacity)
+                shell.transition(.opacity)
             }
             if m.showDropToast, let t = m.current ?? m.focusItem {
                 VStack {
                     HStack(spacing: 8) {
                         EqualizerBars(active: true, color: Brand.accent).frame(width: 14, height: 12)
-                        Text("Playing “\(t.title)”").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                        if m.items.count > 1 { Text("+\(m.items.count - 1) queued").font(.system(size: 11.5)).foregroundStyle(.secondary) }
+                        Text("Playing “\(t.title)”").font(Typo.sans(12.5, .semibold)).lineLimit(1)
+                        if m.items.count > 1 { Text("+\(m.items.count - 1) queued").font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary) }
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Capsule().fill(.regularMaterial)).overlay(Capsule().strokeBorder(Brand.ink.opacity(0.15), lineWidth: 0.8)).shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(Slab().fill(.regularMaterial)).overlay(Slab().strokeBorder(Brand.ink.opacity(0.15), lineWidth: 0.8))
                     Spacer()
-                }.padding(.top, 14).transition(.move(edge: .top).combined(with: .opacity)).allowsHitTesting(false)
+                }.padding(.top, 16).transition(.move(edge: .top).combined(with: .opacity)).allowsHitTesting(false)
             }
-            if m.showQueue && !m.djMode {
+            if m.showQueue && !m.djMode && m.tab != .player {
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
                     QueuePanel()
                 }
-                .padding(.top, WindowChrome.band - 8).padding(.trailing, 12).padding(.bottom, m.tab == .player ? 14 : PlayerBar.reserved + 12)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .padding(.top, WindowChrome.band + 8).padding(.trailing, 16).padding(.bottom, m.tab == .player ? 16 : PlayerBar.reserved + 16)
+                .transition(.opacity.animation(TabMotion.animation))
+            }
+            if m.showPalette {
+                CommandPaletteView().transition(.opacity)
             }
             if dropping.v {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Brand.accent.opacity(0.1)))
-                    .overlay(Label(m.djMode ? "Drop to load on a deck" : "Drop to play", systemImage: "play.circle.fill").font(.title3.weight(.semibold)))
-                    .padding(10).transition(.opacity).allowsHitTesting(false)
+                RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).strokeBorder(Brand.accent, style: StrokeStyle(lineWidth: 2.5, dash: [9, 6]))
+                    .background(RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).fill(Brand.accent.opacity(0.1)))
+                    .overlay(Label(m.djMode ? "Drop to load on a deck" : "Drop to play", systemImage: "play.circle.fill").font(Typo.t3.weight(.semibold)))
+                    .padding(12).transition(.opacity).allowsHitTesting(false)
             }
         }
         .ignoresSafeArea(.container, edges: .top)           // the sidebar and pages run under the (transparent) title bar, so the window buttons sit inside the app
@@ -78,21 +75,30 @@ struct ContentView: View {
         } message: { Text(m.conflict?.message ?? "") }
         .background(DuplicateSheetHost(lib: m.library))
         .animation(.easeOut(duration: 0.2), value: m.djMode)
-        .animation(.smooth(duration: 0.28), value: m.showQueue)
         // page changes fade quickly, unless the change comes with its own animation (opening Now Playing from the bar springs)
-        .transaction(value: m.tab) { t in if t.animation == nil { t.animation = .easeOut(duration: 0.16) } }
-        // leaving Now Playing any other way (sidebar shortcut, Back, DJ mode) brings the sidebar back
+        .transaction(value: m.tab) { t in if t.animation == nil { t.animation = TabMotion.animation } }
+        // leaving Now Playing any other way (the rail, Back, DJ mode) ends its full-window state
         .onChange(of: m.tab) { old, tab in
+            chrome.scrolled = false
             if tab == .player, old != .player { stage.returnTab = old }
             if tab != .player, stage.immersive { withAnimation(.easeOut(duration: 0.2)) { stage.immersive = false } }
         }
         .onChange(of: m.djMode) { _, dj in if dj, stage.immersive { stage.immersive = false } }
         .animation(.smooth(duration: 0.22), value: dropping.v)
-        .environmentObject(stage).environment(\.stageNamespace, stageSpace)
+        .environmentObject(stage).environmentObject(idle).environmentObject(chrome).environment(\.stageNamespace, stageSpace)
+        // pointer movement and keys wake the Gallery's rail and controls; a few quiet seconds put them away again
+        .onContinuousHover { phase in if case .active = phase { idle.poke() } }
+        .onKeyPress { _ in idle.poke(); return .ignored }
+        .onAppear { idle.holdsAwake = { [unowned m] in m.tab != .player || m.djMode || m.status.state != .playing || m.showQueue }; idle.poke(); if ProcessInfo.processInfo.environment["AUREON_IDLE"] != nil { idle.rest() } }
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
         .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.lms).environmentObject(m.cast).environmentObject(m.zone).environmentObject(m.speakers).environmentObject(m.bridge)
         .preferredColorScheme(m.theme.isLight ? .light : .dark)
         .foregroundStyle(Brand.ink)
+        .tracking(Typo.bodyTracking)
+        .toggleStyle(.rule)
+        .environment(\.glassAccents, m.glassAccents)
+        .environment(\.pageTransitions, m.pageTransitions)
+        .environment(\.glassTint, m.backdrop == .album ? GlassPolicy.tint(for: m.hero.palette.accent) : nil)
         .background(Brand.canvas)
         .id(m.theme.id)
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
@@ -110,8 +116,36 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder private var page: some View {
-        switch m.tab {
+    /// The window: the backdrop under everything, the page, the rail on top and (off the Gallery) the player bar below.
+    private var shell: some View {
+        ZStack(alignment: .bottom) {
+            StageBackdrop(mode: m.backdrop, theme: m.theme, palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: m.tab == .player, intensity: m.backdropIntensity)
+            // every change of page goes through the one tab container (see `TabSwitcher`): the old page leaves, is not hit-testable at once and is gone when it ends
+            TabSwitcher(tag: m.tab) { tab in
+                page(for: tab)
+                    .environment(\.chromeInset, tab == .player || !pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
+                    .padding(.top, tab == .player || pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.bottom, tab != .player && barIsGlass ? PlayerBar.height : 0)
+                    .clipped()
+            }
+            .padding(.trailing, m.showQueue && m.tab != .player ? 362 : 0)
+            // opacity only: the cover and waveform fly between the bar and Now Playing, and a sliding bar would drag them along
+            if m.tab != .player { PlayerBar().transition(.opacity) }
+            VStack(spacing: 0) {
+                ChromeBar {
+                    TopRail()
+                    if m.tab != .player, !m.currentDestination.subNav.isEmpty { SubNavBar(destination: m.currentDestination).transition(.opacity) }
+                    if showsSoundTabs { SoundTabBar().transition(.opacity) }
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    @ViewBuilder private func page(for tab: Tab) -> some View {
+        switch tab {
         case .home: HomePage()
         case .player: NowPlayingView()
         case .search: SmartSearchPage()
@@ -120,17 +154,31 @@ struct ContentView: View {
         case .liked: LikedPage()
         case .playlists: PlaylistsPage()
         case .albums, .artists, .songs, .composers, .works, .conductors, .ensembles: LibraryPage(lib: m.library, tab: m.tab)
-        case .audio: PageScaffold(title: "Audio", subtitle: "Playback path and processing") { AudioTab() }
+        case .audio: PageScaffold(title: "Sound", subtitle: m.soundSection.blurb, ruled: false) { AudioTab() }
         case .rip: RipPage()
         case .convert: ConvertPage()
         case .cloud: CloudPage()
         case .folders: FolderBrowserPage()
         case .abx: ABXPage()
-        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "AI features, models and providers") { IntelligenceTab() }
-        case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins") { DSPTab() }
-        case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases") { DeepDiveTab() }
+        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "AI features, models and providers", ruled: false) { IntelligenceTab() }
+        case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins", ruled: false) { DSPTab() }
+        case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases", ruled: false) { DeepDiveTab() }
+        case .rooms: RoomsPage()
         case .settings: SettingsPage()
         }
+    }
+}
+
+/// The fade between pages. A page that is on its way out must never answer clicks: when a page change overlaps another animation (closing Now Playing
+/// while the sidebar returns), SwiftUI can leave the outgoing page in the hierarchy, invisible, still in its removed state. Its scroll view then covered
+/// the whole window and swallowed every click meant for the sidebar. In the removed state it is therefore not hit-testable, so a leftover is harmless.
+struct PageHitTesting: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View { content.allowsHitTesting(enabled) }
+}
+extension AnyTransition {
+    static var pageSwap: AnyTransition {
+        .asymmetric(insertion: .opacity, removal: .opacity.combined(with: .modifier(active: PageHitTesting(enabled: false), identity: PageHitTesting(enabled: true))))
     }
 }
 
@@ -148,11 +196,8 @@ struct QueuePanel: View {
     var body: some View {
         QueueView(dropping: false, onClose: { m.showQueue = false })
             .frame(width: 350).frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
-            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Brand.sidebar.opacity(0.8)))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Brand.ink.opacity(0.14), lineWidth: 0.8))
-            .shadow(color: .black.opacity(0.35), radius: 24, y: 8)
+            .background(Rectangle().fill(Brand.sidebar))
+            .overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
     }
 }
 
@@ -178,21 +223,21 @@ struct DJSwitch: View {
     var body: some View {
         Button { withAnimation(.easeOut(duration: 0.2)) { m.djMode.toggle() } } label: {
             if inSidebar {
-                HStack(spacing: 9) {
-                    Image(systemName: "dial.medium").font(.system(size: 14)).frame(width: 20).foregroundStyle(Brand.accent)
-                    Text("DJ Mode").font(.system(size: 13, weight: .medium))
+                HStack(spacing: 8) {
+                    Image(systemName: "dial.medium").font(Typo.sans(13, .light)).frame(width: 20).foregroundStyle(Brand.inkSecondary)
+                    Text("DJ Mode").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 10).frame(height: 28).contentShape(Rectangle())
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.06 : 0)))
+                .padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
+                .background(Rectangle().fill(Brand.ink.opacity(hover.v ? 0.04 : 0)))
             } else {
-                HStack(spacing: 5) {
-                    Image(systemName: "rectangle.grid.2x2").font(.system(size: 11, weight: .semibold))
-                    Text("Normal mode").font(.system(size: 12, weight: .semibold))
+                HStack(spacing: 4) {
+                    Image(systemName: "rectangle.grid.2x2").font(Typo.sans(11, .semibold))
+                    Text("Normal mode").font(Typo.sans(12, .semibold))
                 }
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .foregroundStyle(Color.white)
-                .background(Capsule().fill(Brand.accent))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .foregroundStyle(Brand.onAccent)
+                .background(Slab().fill(Brand.accent))
             }
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.help(m.djMode ? "Back to the normal layout" : "Switch to the two-deck DJ console")
@@ -214,9 +259,9 @@ struct QueueView: View {
         }
         .overlay {
             if dropping {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(m.hero.palette.accent.color.opacity(0.9), style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(m.hero.palette.accent.color.opacity(0.12)))
-                    .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(.headline))
+                RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).strokeBorder(m.hero.palette.accent.color.opacity(0.9), style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
+                    .background(RoundedRectangle(cornerRadius: Metrics.radius(14), style: .continuous).fill(m.hero.palette.accent.color.opacity(0.12)))
+                    .overlay(Label("Drop to add to the queue", systemImage: "plus.circle.fill").font(Typo.headline))
                     .padding(8).transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
@@ -225,23 +270,23 @@ struct QueueView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Queue").font(.system(size: 20, weight: .semibold, design: .serif))
-            if !m.items.isEmpty { Text("\(m.items.count)").font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(.secondary).contentTransition(.numericText()) }
+            Text("Queue").font(Typo.serif(20, .semibold))
+            if !m.items.isEmpty { Text("\(m.items.count)").font(Typo.mono(12, .medium)).foregroundStyle(Brand.inkSecondary).contentTransition(.numericText()) }
             Spacer()
             Button { openPanel() } label: { Image(systemName: "plus") }.help("Add music (⌘O)")
             Button { withAnimation(.smooth) { m.clear() } } label: { Image(systemName: "trash") }.disabled(m.items.isEmpty).help("Clear queue")
             if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.help("Close") }
         }
         .buttonStyle(IconButtonStyle())
-        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 12)
         .animation(.smooth, value: m.items.count)
     }
 
     private var empty: some View {
         VStack(spacing: 12) {
-            Image(systemName: "waveform").font(.system(size: 38, weight: .ultraLight)).foregroundStyle(.secondary)
-            Text("Drop FLAC, ALAC, WAV, AIFF, DSF or DFF files\nor a folder here").multilineTextAlignment(.center).foregroundStyle(.secondary).font(.callout)
-            Button("Add Music…") { openPanel() }.buttonStyle(.borderedProminent).tint(m.hero.palette.accent.color).foregroundStyle(.black)
+            Image(systemName: "waveform").font(Typo.sans(38, .ultraLight)).foregroundStyle(Brand.inkSecondary)
+            Text("Drop FLAC, ALAC, WAV, AIFF, DSF or DFF files\nor a folder here").multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).font(Typo.callout)
+            Button("Add Music…") { openPanel() }.buttonStyle(.solid).tint(m.hero.palette.accent.color).foregroundStyle(.black)
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -266,7 +311,7 @@ struct QueueView: View {
             .listStyle(.plain).scrollContentBackground(.hidden)
             .animation(.snappy(duration: 0.3), value: m.items.map(\.id))
             .onDeleteCommand { withAnimation(.snappy) { m.remove(ids: sel.v); sel.v = [] } }
-            Text("Drag to reorder  ·  ⌫ removes  ·  safe while playing").font(.system(size: 10.5)).foregroundStyle(.tertiary).padding(8)
+            Text("Drag to reorder  ·  ⌫ removes  ·  safe while playing").font(Typo.sans(10.5)).foregroundStyle(Brand.inkTertiary).padding(8)
         }
     }
 
@@ -289,26 +334,26 @@ struct QueueRow: View {
     @StateObject private var hover = Box(false)
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             ZStack {
                 CoverView(image: item.thumb, palette: ArtPalette.fallback(seed: item.album.isEmpty ? item.title : item.album), corner: 6, symbol: item.isDSD ? "dot.radiowaves.left.and.right" : "music.note")
                 if playing || hover.v {
-                    Color.black.opacity(0.5).clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    Color.black.opacity(0.5).clipShape(RoundedRectangle(cornerRadius: Metrics.radius(6), style: .continuous))
                     if playing && !hover.v { EqualizerBars(active: !paused, color: accent).frame(width: 18, height: 16) }
-                    else { Image(systemName: playing && !paused ? "pause.fill" : "play.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(.white) }
+                    else { Image(systemName: playing && !paused ? "pause.fill" : "play.fill").font(Typo.sans(13, .bold)).foregroundStyle(.white) }
                 }
             }
             .frame(width: 42, height: 42)
             .onTapGesture { if playing { m.togglePlay() } else { m.play(item.id) } }
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.system(size: 13, weight: playing ? .semibold : .medium)).foregroundStyle(playing ? accent : .primary).lineLimit(1)
-                Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                Text(item.title).font(Typo.sans(13, playing ? .semibold : .medium)).foregroundStyle(playing ? accent : .primary).lineLimit(1)
+                Text(subtitle).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
             }
             Spacer(minLength: 0)
-            if let n = item.trackNumber, hover.v || playing { Text("\(n)").font(.system(size: 10.5, design: .monospaced)).foregroundStyle(.tertiary) }
+            if let n = item.trackNumber, hover.v || playing { Text("\(n)").font(Typo.mono(10.5)).foregroundStyle(Brand.inkTertiary) }
         }
-        .padding(.horizontal, 6).padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Brand.ink.opacity(playing ? 0.09 : (hover.v ? 0.06 : 0))))
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: Metrics.radius(9), style: .continuous).fill(Brand.ink.opacity(playing ? 0.09 : (hover.v ? 0.06 : 0))))
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.smooth(duration: 0.14)) { hover.v = h } }
         .onTapGesture { if playing { m.togglePlay() } else { m.play(item.id) } }
@@ -334,7 +379,7 @@ struct EqualizerBars: View {
                 for i in 0..<3 {
                     let f = active ? 0.35 + 0.65 * abs(sin(t * (2.3 + Double(i) * 0.9) + Double(i))) : 0.25
                     let h = size.height * CGFloat(f)
-                    ctx.fill(Path(roundedRect: CGRect(x: CGFloat(i) * w * 2, y: size.height - h, width: w, height: h), cornerRadius: 1.5), with: .color(color))
+                    ctx.fill(Path(roundedRect: CGRect(x: CGFloat(i) * w * 2, y: size.height - h, width: w, height: h), cornerRadius: Metrics.radius(1.5)), with: .color(color))
                 }
             }
         }
@@ -348,11 +393,10 @@ struct IconButtonStyle: ButtonStyle {
         @StateObject private var hover = Box(false)
         @Environment(\.isEnabled) private var enabled
         var body: some View {
-            configuration.label.font(.system(size: 13, weight: .semibold)).foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.5))
+            configuration.label.font(Typo.sans(13, .light)).foregroundStyle(enabled ? Brand.ink : Brand.inkTertiary.opacity(0.6))
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Brand.ink.opacity(configuration.isPressed ? 0.18 : (hover.v && enabled ? 0.1 : 0))))
-                .scaleEffect(configuration.isPressed ? 0.92 : 1)
-                .animation(.smooth(duration: 0.15), value: hover.v).animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+                .background(Rectangle().fill(Brand.ink.opacity(configuration.isPressed ? 0.12 : (hover.v && enabled ? 0.06 : 0))))
+                .animation(Motion.touch, value: hover.v).animation(Motion.touch, value: configuration.isPressed)
                 .onHover { hover.v = $0 }
         }
     }
