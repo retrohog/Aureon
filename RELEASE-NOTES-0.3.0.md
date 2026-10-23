@@ -87,7 +87,8 @@ Requires an Apple Silicon Mac with macOS 15 or later.
 ## Checksums
 
 ```
-SHA256_PLACEHOLDER
+2e2f4286c920d6750d41b230ad87dfdc25fc8dfce2e233ce09b5044bed9bd3a1  Aureon-0.3.0.dmg
+f5c151acbe56923b5ebc179834765d2de38b9a344b71328cf21137d850e73f92  Aureon-0.3.0.pkg
 ```
 
 Everything else is unchanged from 0.2.0; see [RELEASE-NOTES-0.2.0.md](RELEASE-NOTES-0.2.0.md) for the earlier changes.
