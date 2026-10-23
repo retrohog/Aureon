@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// The Intelligence page: the master switch, what this Mac can do, every AI feature's switch, local models and the API provider.
+/// The Intelligence page: the master switch, what this Mac can do, every smart feature's switch, local models and the API provider.
 struct IntelligenceTab: View {
     @ObservedObject var ai: IntelligenceCenter = .shared
 
@@ -45,12 +45,12 @@ struct MasterSwitchCard: View {
 
     var body: some View {
         let hw = ai.hardware
-        Card(title: "Intelligence", subtitle: "One switch for every AI feature in Aureon. Off: no model runs, nothing is held in memory for AI, and each feature uses its classic path") {
+        Card(title: "Intelligence", subtitle: "One switch for every smart feature in Aureon. Off: no model runs, nothing is held in memory for them, and each feature uses its classic path") {
             HardwareBadge(hardware: hw)
             Toggle(isOn: Binding(get: { ai.isMasterOn }, set: { ai.setMaster($0) })) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Enable Intelligence Features").font(Typo.sans(14, .semibold))
-                    Text(ai.isMasterOn ? ai.memoryNote : "All AI features are off.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
+                    Text(ai.isMasterOn ? ai.memoryNote : "All Smart features are off.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 }
             }
             .toggleStyle(.rule)
@@ -77,11 +77,11 @@ struct IntelWarningSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill").font(Typo.sans(28)).foregroundStyle(Brand.caution)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Turn on AI features on this Intel Mac?").font(Typo.serif(17, .regular))
+                    Text("Turn on smart features on this Intel Mac?").font(Typo.serif(17, .regular))
                     Text(ai.hardware.cpuBrand).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                 }
             }
-            Text("Intel Macs have no Neural Engine, so every model runs on the CPU, right next to the audio engine. Aureon keeps AI work off the audio thread, but it cannot make the CPU faster.")
+            Text("Intel Macs have no Neural Engine, so every model runs on the CPU, right next to the audio engine. Aureon keeps model work off the audio thread, but it cannot make the CPU faster.")
                 .font(Typo.sans(13)).fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 12) {
                 risk("flame", "High CPU load and heat", "Fans may spin up while a model is working, and the rest of the Mac can feel slow.")

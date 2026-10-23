@@ -519,7 +519,7 @@ struct RemixPanel: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Image(systemName: "wand.and.stars").foregroundStyle(Brand.accent2)
-                Text("AI REMIXER").microLabel()
+                Text("SMART REMIXER").microLabel()
                 Text(remix.status).font(Typo.sans(12.5, .medium)).lineLimit(1)
                 Spacer()
                 ForEach(Array(remix.history.suffix(6).enumerated()), id: \.offset) { _, a in
@@ -604,7 +604,7 @@ struct DJView: View {
                     .background(Slab().fill(dj.remix.enabled ? AnyShapeStyle(Brand.accent2) : AnyShapeStyle(Brand.ink.opacity(0.10))))
                     .foregroundStyle(dj.remix.enabled ? Color.black.opacity(0.85) : Brand.ink)
             }.buttonStyle(.plain).disabled(!ai.isActive(.remixer)).opacity(ai.isActive(.remixer) ? 1 : 0.45)
-            .help(ai.isActive(.remixer) ? "An AI remixer performs filter sweeps, echoes, loop rolls, drops and risers on the playing deck" : "The AI Remixer is switched off on the Intelligence page.")
+            .help(ai.isActive(.remixer) ? "A smart remixer performs filter sweeps, echoes, loop rolls, drops and risers on the playing deck" : "The Smart Remixer is switched off on the Intelligence page.")
             Button { dj.quantize.toggle() } label: {
                 Label("Quantize", systemImage: "square.grid.3x1.below.line.grid.1x2").font(Typo.sans(12, .medium))
                     .padding(.horizontal, 12).padding(.vertical, 4)

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Applies the Intelligence settings to the running app and is the model behind the Intelligence page.
 ///
-/// Turning the master switch (or a feature) off takes effect at once: Smart DJ's model process is quit, the AI Remixer stops, the semantic
+/// Turning the master switch (or a feature) off takes effect at once: Smart DJ's model process is quit, the Smart Remixer stops, the semantic
 /// index is dropped from memory, Smart Shuffle falls back to plain rules, and the audio enhancer's gate closes (its engine reads the gate).
 @MainActor
 final class IntelligenceCenter: ObservableObject {
@@ -145,7 +145,7 @@ final class IntelligenceCenter: ObservableObject {
 
     // MARK: wiring
 
-    /// Connects the app's AI features. Called once by `PlayerModel`.
+    /// Connects the app's smart features. Called once by `PlayerModel`.
     func attach(_ player: PlayerModel) {
         attach(dj: player.dj)
         // the enhancer engine follows the gate itself; starting it now compiles and times the model before the first lossy track plays
@@ -266,13 +266,13 @@ final class IntelligenceCenter: ObservableObject {
         if settings.playlistEngine == .api { Task { await playlists.releaseModel() } }
     }
 
-    /// What the Intelligence page shows as memory in use by AI features right now.
+    /// What the Intelligence page shows as memory in use by smart features right now.
     var memoryNote: String {
         var parts: [String] = []
         if let smart, smart.modelActive { parts.append("Smart DJ model running") }
         if playlists.modelLoaded { parts.append("playlist model running") }
         if LyricsService.shared.isGenerating { parts.append("lyrics model running") }
         if search.isLoaded { parts.append("search index " + formatBytes(search.indexBytes)) }
-        return parts.isEmpty ? "No AI model or index is in memory." : parts.joined(separator: " · ")
+        return parts.isEmpty ? "No model or index is in memory." : parts.joined(separator: " · ")
     }
 }

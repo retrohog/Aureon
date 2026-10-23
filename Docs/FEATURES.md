@@ -1,6 +1,6 @@
 # Aureon features
 
-Aureon is an open-source, audiophile-grade music player for macOS. It keeps your music **bit-perfect from file to DAC by default**. Everything that changes the samples (upsampling, EQ, crossfades, DSD conversion, AI) is opt-in, and the signal-path view always tells you which state you are in.
+Aureon is an open-source, audiophile-grade music player for macOS. It keeps your music **bit-perfect from file to DAC by default**. Everything that changes the samples (upsampling, EQ, crossfades, DSD conversion, smart features) is opt-in, and the signal-path view always tells you which state you are in.
 
 This page lists what the code in this repository does today, grouped by area. For how it is built, see [ARCHITECTURE.md](ARCHITECTURE.md); for the commands, see the [README](../README.md).
 
@@ -21,7 +21,7 @@ Requirements: Swift 6 toolchain (the Command Line Tools are enough). Some visual
 1. [Bit-perfect engine and DSP](#1-bit-perfect-engine-and-dsp)
 2. [Transitions](#2-transitions)
 3. [Oversampling filters, DSD and PCM→DSD](#3-oversampling-filters-dsd-and-pcmdsd)
-4. [Intelligence (AI features)](#4-intelligence-ai-features)
+4. [Intelligence (smart features)](#4-intelligence-smart-features)
 5. [Library and folders](#5-library-and-folders)
 6. [Tag editing](#6-tag-editing)
 7. [Search](#7-search)
@@ -121,12 +121,12 @@ Aureon play --dsd-out 512 --modulator 7 --filter apodizing track.flac
 
 ---
 
-## 4. Intelligence (AI features)
+## 4. Intelligence (smart features)
 
 Every learned model in Aureon lives behind one gate and one settings page, the **Intelligence** tab.
 
 ### Master switch and defaults
-- ✅ **Enable Intelligence Features** is a global master switch. Switching it off takes effect immediately: the Smart DJ model process quits, the AI Remixer stops, the semantic index is dropped from memory, Smart Shuffle falls back to plain rules and the audio enhancer's gate closes. Every feature then uses its classic, non-AI path.
+- ✅ **Enable Intelligence Features** is a global master switch. Switching it off takes effect immediately: the Smart DJ model process quits, the Smart Remixer stops, the semantic index is dropped from memory, Smart Shuffle falls back to plain rules and the audio enhancer's gate closes. Every feature then uses its classic path.
 - ✅ **On by default on Apple Silicon, off by default on Intel Macs.** The hardware is read from the kernel, not from how the binary was built, so an x86_64 copy running under Rosetta on Apple Silicon is still recognised (and told it is translated).
 - ✅ **Intel warning.** Switching the master switch on in an Intel Mac first shows a warning sheet. It only takes effect once the warning is accepted, and the acceptance can be withdrawn.
 - ✅ **One switch per feature**, plus an indicator of what this Mac can run (Apple Silicon with Neural Engine, Intel, translated).
@@ -140,7 +140,7 @@ Every learned model in Aureon lives behind one gate and one settings page, the *
 | **Natural-language playlists** | "A 2-hour mix of late-night, low-energy acoustic tracks with high dynamic range." The request is parsed for length, count, genre, tempo, energy, decade, DR and mood; the whole library is scored using Aureon's own measurements (tempo, key, energy, loudness, DR) plus tags and semantic similarity; the model fills in what the words leave open; the result is fitted to the length and ordered along an energy arc. Works without a model, by ranking alone. | On device or via API |
 | **Semantic Search** | Finds songs by meaning ("rainy sunday piano"). Every song gets a short description that is turned into a vector; a query finds the nearest ones. The index is built in the background, cached per model and freed when the feature is off. | Apple's on-device sentence embeddings (any Mac, Intel included) or an API |
 | **Smart Shuffle** | A small transition network orders a queue so each song flows into the next. | On device |
-| **AI Remixer** | A small on-device network picks filter sweeps, echo-outs, loop rolls, drops, risers and stutters on the bar line of the DJ console and learns from thumbs. It performs the decks' own controls; it does not separate stems. | On device |
+| **Smart Remixer** | A small on-device network picks filter sweeps, echo-outs, loop rolls, drops, risers and stutters on the bar line of the DJ console and learns from thumbs. It performs the decks' own controls; it does not separate stems. | On device |
 | 🧪 **Real-time audio enhancer** (neural upscaler) | Bandwidth extension for lossy sources (radio, podcasts, MP3/AAC files). See the note below. | Strictly on device |
 | 🧪 **Lyrics generation** | Writes time-synced lyrics for a song that has none, using a Whisper speech model. See [Lyrics](#9-lyrics). | Strictly on device |
 
@@ -201,7 +201,7 @@ The engine is complete and tested: a C++ overlap-add and watchdog core (`AureonN
   - **Values:** quoted exact text, contains with `*` and `?` wildcards, ranges `a..b`, comparisons `>`, `>=`, `<`, `<=`, `=`, and hierarchical tags such as `tag:"Classical/Symphonies"`.
   - Case- and accent-insensitive. Errors point at the character where the query went wrong.
 - ✅ **Plain search** across songs, albums, artists and works on the Search page.
-- ✅ **Semantic Search** ("matches by meaning") appears under the ordinary results while the Intelligence feature is on. See [Intelligence](#4-intelligence-ai-features).
+- ✅ **Semantic Search** ("matches by meaning") appears under the ordinary results while the Intelligence feature is on. See [Intelligence](#4-intelligence-smart-features).
 
 ---
 
@@ -272,7 +272,7 @@ A two-deck console on one mixer clock.
 - ✅ **Headphone cue (PFL)** on a second device or outputs 3–4 (🎛 tested with simulated devices only), and a **WAV mix recorder**.
 - ✅ **Library browser** with BPM, key and energy columns, and "Analyse all".
 - ✅ **Customizable layout.** The console's decks, mixer channels, bottom bar and page can each show, hide and reorder their sections from the Layout button; the choice is saved.
-- ✅ **Auto DJ** and **AI Remixer** (see [Intelligence](#4-intelligence-ai-features)), and **Smart DJ** set building.
+- ✅ **Auto DJ** and **Smart Remixer** (see [Intelligence](#4-intelligence-smart-features)), and **Smart DJ** set building.
 - **Limits.** No keylock (changing pitch changes key), no scratching. Tempo and key are estimates and can be wrong on tracks without a clear beat (half and double time is common). The mix runs through a limiter.
 
 ---

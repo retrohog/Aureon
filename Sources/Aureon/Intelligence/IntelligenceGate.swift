@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-// The single place that says whether an AI feature may run. Settings live in `IntelligenceSettings` (saved), the page that edits them is
+// The single place that says whether a smart feature may run. Settings live in `IntelligenceSettings` (saved), the page that edits them is
 // `IntelligenceTab`, and `IntelligenceCenter` applies them to the running app. Everything else, on any thread, asks `IntelligenceGate`.
 
 /// Every feature in Aureon that runs a learned model.
@@ -10,11 +10,11 @@ enum IntelligenceFeature: String, CaseIterable, Codable, Sendable, Identifiable 
     case smartDJ
     /// Finds songs by meaning ("rainy sunday piano") with text embeddings (on-device or an API).
     case semanticSearch
-    /// The real-time AI upscaler (engine in `Upscaler/`). Strictly on-device: never routed to an API.
+    /// The real-time smart upscaler (engine in `Upscaler/`). Strictly on-device: never routed to an API.
     case audioEnhancer
     /// Smart Shuffle's transition network, which orders a queue so each song flows into the next.
     case smartShuffle
-    /// The DJ console's AI Remixer, which learns which moves you like.
+    /// The DJ console's Smart Remixer, which learns which moves you like.
     case remixer
     /// Builds a playlist from a request in plain words ("a 2-hour mix of late-night, low-energy acoustic tracks"): language model on this Mac or an API.
     case naturalPlaylists
@@ -33,7 +33,7 @@ enum IntelligenceFeature: String, CaseIterable, Codable, Sendable, Identifiable 
         case .semanticSearch: "Semantic Search"
         case .audioEnhancer: "Real-Time Audio Enhancer"
         case .smartShuffle: "Smart Shuffle network"
-        case .remixer: "AI Remixer"
+        case .remixer: "Smart Remixer"
         case .naturalPlaylists: "Natural-Language Playlists"
         case .lyricsGeneration: "Lyrics Generation"
         }

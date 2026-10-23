@@ -352,7 +352,7 @@ struct UpscalerTests {
         let e = maxError(y, x, from: 2048, to: -2048, channels: 2, scale: 0.5)
         expect(e < 1e-6, "the model's output plays (error \(db(e)) dB)")
         expect(svc.status.windowsNeural > 80 && svc.status.windowsFallback <= 1, "neural \(svc.status.windowsNeural), fallback \(svc.status.windowsFallback)")
-        expect(!n.source.info.transparent && n.stages.contains { $0.hasPrefix("AI enhancer") }, "\(n.stages)")
+        expect(!n.source.info.transparent && n.stages.contains { $0.hasPrefix("Smart enhancer") }, "\(n.stages)")
         // a source at another rate is resampled to the model's first
         guard let n2 = svc.makeNode(upstream: ArrayFrameSource(Array(x.prefix(44_100 * 2)), rate: 44_100, channels: 2), raw: raw, deckRate: nil, gauge: nil) else { expect(false); return }
         expect(n2.source.info.sampleRate == 48_000 && n2.stages.first?.contains("44100 → 48000") == true, "\(n2.stages)")
@@ -436,7 +436,7 @@ struct UpscalerTests {
         p.setQueue([srv.url.absoluteString]); p.start(options: o)
         var end = Date().addingTimeInterval(15)
         while sink.frameCount < 48_000 && Date() < end { usleep(20_000) }
-        expect(!p.status.pipeline.contains { $0.hasPrefix("AI enhancer") }, "off: no enhancer stage \(p.status.pipeline)")
+        expect(!p.status.pipeline.contains { $0.hasPrefix("Smart enhancer") }, "off: no enhancer stage \(p.status.pipeline)")
         let before = sink.samples
         let h0 = amplitude(before, channels: 2, rate: 48_000, freq: 1320, skip: 12_000, count: 24_000)
         expect(db(h0) < -70, "off: no harmonic \(db(h0)) dB")
@@ -444,8 +444,8 @@ struct UpscalerTests {
         var on = IntelligenceSettings(masterEnabled: true); on.intelRiskAccepted = true; on.set(.audioEnhancer, true)
         g.publish(on); svc.reconcile(wait: true)
         end = Date().addingTimeInterval(15)
-        while !p.status.pipeline.contains(where: { $0.hasPrefix("AI enhancer") }) && Date() < end { usleep(20_000) }
-        expect(p.status.pipeline.contains { $0.hasPrefix("AI enhancer") }, "switching it on rebuilt the stream with the enhancer: \(p.status.pipeline)")
+        while !p.status.pipeline.contains(where: { $0.hasPrefix("Smart enhancer") }) && Date() < end { usleep(20_000) }
+        expect(p.status.pipeline.contains { $0.hasPrefix("Smart enhancer") }, "switching it on rebuilt the stream with the enhancer: \(p.status.pipeline)")
         let mark = sink.frameCount
         end = Date().addingTimeInterval(15)
         while sink.frameCount < mark + 96_000 && Date() < end { usleep(20_000) }

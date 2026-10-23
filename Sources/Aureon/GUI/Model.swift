@@ -846,7 +846,7 @@ final class PlayerModel: ObservableObject {
             player.setOrder(head + (cur.map { [$0] } ?? []) + Shuffler.normal(rest, using: &rng))
         case .smart:
             let paths = Dictionary(items.map { ($0.id, $0.path) }, uniquingKeysWith: { a, _ in a })
-            // the transition network is an AI feature: with Intelligence (or Smart Shuffle's network) off, the shuffle uses plain rules
+            // the transition network is a smart feature: with Intelligence (or Smart Shuffle's network) off, the shuffle uses plain rules
             let useNet = IntelligenceGate.shared.isEnabled(.smartShuffle)
             let store = library.store, net: TransitionNet? = useNet ? (shuffleNet ?? TransitionNet.loadOrCreate()) : nil
             shuffleNet = net

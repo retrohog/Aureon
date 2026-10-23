@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Performs the AI Remixer on the deck that is on air: every bar it asks `RemixPolicy` what to do next, and carries the chosen move out on the
+/// Performs the Smart Remixer on the deck that is on air: every bar it asks `RemixPolicy` what to do next, and carries the chosen move out on the
 /// next bar line with the deck's filter, effects, EQ and loops. Whatever the user had set on the deck is put back when a move ends.
 @MainActor
 final class RemixController: ObservableObject {

@@ -17,15 +17,14 @@
 
 **Aureon is a native macOS music player for people who care about what leaves the machine.** Files are decoded at their own
 sample rate and bit depth into 32-bit integers, a lock-free ring buffer feeds the DAC callback, and the signal-path view
-shows exactly what is in the chain. Processing is there when you want it (upsampling, EQ, crossfeed, room correction,
-DSD) but every stage is opt-in and truly bypassed when off, not merely set to neutral.
+shows what is in the chain. Processing (upsampling, EQ, crossfeed, room correction, DSD) is there when you want it. Every
+stage is opt-in and truly bypassed when off, not merely set to neutral.
 
-> **Status: early (0.3).** The engine and every service are covered by automated self-tests. What could not be verified
-> without special hardware, accounts or signing is listed under [Limitations](#limitations). Read it before relying on
-> those parts.
+> **Status: early (0.3).** The engine and every service are covered by automated self-tests. What could not be verified without
+> special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
 >
-> **Download:** the 0.3.0 build is for **Apple Silicon Macs running macOS 15 or later**. The new design for Intel-based Macs
-> and for Windows is coming. The app is not notarised yet, so the first launch needs right-click → **Open**.
+> **Platforms:** 0.3.0 is for **Apple Silicon Macs on macOS 15 or later**. The new design for Intel Macs and for Windows is
+> next. The app is not notarised yet, so the first launch needs right-click → **Open**.
 
 <br/>
 
@@ -33,9 +32,23 @@ DSD) but every stage is opt-in and truly bypassed when off, not merely set to ne
 
 |  |  |  |
 |:--|:--|:--|
-| 🎯 **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth. Gapless. Exclusive mode and automatic rate switching. | 🔊 **Opt-in sound shaping**<br/>Sinc upsampling with four filters, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction, dither. | 🧭 **Always honest**<br/>The signal path turns orange at the first stage that changes a sample. You always know. |
-| 🎚 **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue, MIDI controllers. | 📚 **Serious library**<br/>Classical-aware tags, credits graph, folders, tag editor, duplicates finder, query search. | 📡 **Play anywhere**<br/>Radio, podcasts, S3-style buckets, Navidrome, Lyrion, Chromecast, Sonos, DLNA, AirPlay. |
-| 🧠 **Optional Intelligence**<br/>On-device playlists, search and DJ sets. One master switch turns all of it off. | 🎨 **A new design, light and dark**<br/>Obsidian and Ivory, an *Album* backdrop that takes its colours from the cover, and glass accents. | 🧪 **Tested without hardware**<br/>Self-tests play real files through the real player and check the delivered samples. |
+| 🎯 **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | 🔊 **Opt-in sound shaping**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | 🧭 **Always honest**<br/>The signal path turns orange at the first stage that changes a sample. |
+| 🎨 **A new design**<br/>Obsidian and Ivory, album-colour backdrops, glass accents, Focus mode and a quick control panel. | 🔈 **Several speakers, one level**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | 🎚 **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
+
+<br/>
+
+## What's new in 0.3.0
+
+| | |
+|:--|:--|
+| **New design** | Four places (Now Playing, Collection, Rooms, Atelier) on one rail, a command palette on **⌘K**, six themes in dark and light, and quality plates for Hi-Res and Lossless. |
+| **Now Playing** | The cover, a quality plate, and a side panel for Lyrics, Queue, Signal path, Analyser or Booklet. **Focus** mode (F) keeps only the cover, names and transport. |
+| **Quick controls** | ⌥⌘D opens the output list and the settings you change most. A sun/moon switch changes appearance. |
+| **Atelier → Sound** | Five tabs (Output, Conversion, Levels, Headphones & room, Playback) with OFF \| ON switches and a bit-perfect strip on top. |
+| **Speaker levelling** | Multiple outputs follow the volume in their own decibel steps, with role-based balance, automatic time alignment and a per-output delay trim. |
+| **Polish** | A launch animation, calm fade page changes (or none), glass accents, and a safer scroll-to-volume setting. |
+
+The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.3.0.md).
 
 <br/>
 
@@ -43,24 +56,20 @@ DSD) but every stage is opt-in and truly bypassed when off, not merely set to ne
 
 <table>
 <tr>
-<td width="50%"><img src="Docs/images/focus.png" alt="Focus mode: the cover as large as the window allows" /><br/><sub><b>Focus mode.</b> Press F: only the cover, the names, progress and transport.</sub></td>
+<td width="50%"><img src="Docs/images/focus.png" alt="Focus mode: the cover as large as the window allows" /><br/><sub><b>Focus mode.</b> The cover, the names, progress and transport.</sub></td>
 <td width="50%"><img src="Docs/images/lyrics-panel.png" alt="Now Playing with the lyrics panel" /><br/><sub><b>Lyrics</b> beside the cover, with a timing offset.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/signal-path.png" alt="The signal path panel" /><br/><sub><b>Signal path.</b> Source, output and every stage, with a bit-perfect switch.</sub></td>
-<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums, with the quality of each at a glance.</sub></td>
+<td width="50%"><img src="Docs/images/signal-path.png" alt="The signal path panel" /><br/><sub><b>Signal path.</b> Source, output and every stage.</sub></td>
+<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums with their quality at a glance.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/atelier-sound.png" alt="Atelier, Sound, Output tab" /><br/><sub><b>Atelier → Sound.</b> Five tabs, OFF | ON switches, and a bit-perfect strip on top.</sub></td>
-<td width="50%"><img src="Docs/images/quick-panel.png" alt="The quick control panel" /><br/><sub><b>Quick controls</b> (⌥⌘D): switch the output and the settings you reach for most.</sub></td>
+<td width="50%"><img src="Docs/images/atelier-sound.png" alt="Atelier, Sound, Output tab" /><br/><sub><b>Atelier → Sound.</b> Output settings, in five tabs.</sub></td>
+<td width="50%"><img src="Docs/images/quick-panel.png" alt="The quick control panel" /><br/><sub><b>Quick controls.</b> Output device and key settings.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/rooms-speaker-setup.png" alt="Rooms with the speaker set-up" /><br/><sub><b>Rooms.</b> Several outputs, each with a job, a level and a delay.</sub></td>
+<td width="50%"><img src="Docs/images/rooms-speaker-setup.png" alt="Rooms with the speaker set-up" /><br/><sub><b>Rooms.</b> Several outputs, each with a job, level and delay.</sub></td>
 <td width="50%"><img src="Docs/images/ivory-theme.png" alt="Ivory, the light theme" /><br/><sub><b>Ivory.</b> The light twin of the default theme.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="Docs/images/quality-badges.png" alt="Songs with Hi-Res plates" /><br/><sub><b>Quality plates.</b> Hi-Res and Lossless at a glance, in the lists and beside the title.</sub></td>
-<td width="50%"><img src="Docs/images/launch-animation.png" alt="The launch animation" /><br/><sub><b>Launch animation.</b> The ring closes round the planet, a star leaves it, the name follows.</sub></td>
 </tr>
 </table>
 
@@ -70,65 +79,158 @@ DSD) but every stage is opt-in and truly bypassed when off, not merely set to ne
 
 <img src="assets/signal-path.svg" alt="Signal path: file, decode, optional DSP, Core Audio, DAC" width="100%" />
 
-With processing off the path is *decoder → lock-free ring buffer → DAC callback* and nothing else touches the samples.
-With DSP on, the callback pulls from an `AVAudioEngine` in manual-rendering mode. The audio render thread allocates
-nothing, takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md).
+With processing off the path is *decoder → lock-free ring buffer → DAC callback* and nothing else touches the samples. With
+DSP on, the callback pulls from an `AVAudioEngine` in manual-rendering mode. The audio render thread allocates nothing,
+takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md).
 
 <br/>
 
 ## Features
 
-### Playback and sound
+### Playback and audio engine
 
 | | |
 |:--|:--|
-| **Lossless playback** | FLAC, ALAC, WAV, AIFF into 32-bit integers. Gapless between tracks of the same format; the device clock follows each track. |
-| **DSD** | DSF and DFF with **DoP** (bits untouched, marker continues across tracks) or conversion to PCM. Up to DSD1024 decimated faster than real time. |
-| **PCM → DSD** | Any music as DSD64–DSD512 for a DoP DAC: your chosen filter, half-band interpolation, then a 5th or 7th-order noise-shaping modulator. Off by default. [Details](Docs/DSD-OUTPUT.md) |
-| **Upsampling** | Native polyphase sinc resampler, any rational ratio, no dependencies. Four oversampling filters (linear phase, minimum phase, apodizing, brickwall) that can be changed live. |
-| **Transitions** | Gapless by default. Optional **crossfade** (1–12 s) or **Smart** transitions that skip silence, keep existing fades and match loudness. Albums stay gapless. |
-| **Memory playback** | Whole tracks decoded into RAM first; zero disk reads during playback, asserted by a test. |
-| **Loudness** | ReplayGain from tags; EBU R128 / ITU-R BS.1770-4 loudness, LRA, true peak and DR measured and cached. |
-| **Multichannel** | 5.1 and 7.1 at their own channel count when the device has the outputs, otherwise an ITU-R BS.775 downmix. |
-| **EQ and correction** | 10-band parametric EQ, AutoEQ headphone profiles, BS2B crossfeed, partitioned-FFT room correction from REW impulse responses, Audio Unit plug-ins, TPDF and noise-shaped dither. |
-| **ABX testing** | Sample-aligned, loudness-matched, double-blind trials scored with a p-value. |
+| **Lossless playback** | FLAC, ALAC, WAV and AIFF decode to 32-bit integers. Gapless between tracks of one format; the device clock follows each track. |
+| **DSD** | DSF and DFF play as **DoP** (bits untouched, markers continue across tracks) or convert to PCM. DSD up to 1024 decodes faster than real time. |
+| **Transitions** | Gapless by default. Choose **crossfade** (1–12 s) or **Smart** transitions that skip silence, keep existing fades and match loudness. Albums stay gapless. |
+| **Memory playback** | Whole tracks load into RAM first, so playback does no disk reads. A test asserts it. |
+| **Loudness** | ReplayGain from tags, plus EBU R128 / ITU-R BS.1770-4 loudness, range, true peak and DR measured once and cached. |
+| **Multichannel** | 5.1 and 7.1 play at their own channel count when the device has the outputs, otherwise through an ITU-R BS.775 downmix. |
+| **Exclusive mode** | Hog mode and automatic sample-rate switching per track, with an integer physical format where the device offers one. |
+| **ABX testing** | Sample-aligned, loudness-matched, double-blind trials, scored with a p-value. |
+
+### Sound shaping
+
+| | |
+|:--|:--|
+| **Upsampling** | A native polyphase sinc resampler for any rational ratio, with four oversampling filters (linear phase, minimum phase, apodizing, brickwall) that change live. |
+| **PCM → DSD** | Turns any music into DSD64–DSD512 for a DoP DAC: your filter, half-band interpolation, then a 5th or 7th-order noise-shaping modulator. Off by default. [Details](Docs/DSD-OUTPUT.md) |
+| **EQ and correction** | 10-band parametric EQ, AutoEQ headphone profiles, BS2B crossfeed, partitioned-FFT room correction from REW impulse responses, Audio Unit plug-ins. |
+| **Dither** | TPDF and noise-shaped dither for the last bits. |
+
+### Now Playing and interface
+
+| | |
+|:--|:--|
+| **One rail** | Now Playing, Collection, Rooms and Atelier across the top, with a quiet line of tabs under each. **⌘K** reaches every page, Sound tab and main action by name. |
+| **Now Playing** | Cover, title, artist and a quality plate: Hi-Res with bit depth and rate, Lossless, or the codec for lossy files. Panels open beside the cover. |
+| **Focus mode** | Press **F** to keep only the cover, names, progress and transport, with the cover as large as the window allows. The choice is remembered. |
+| **Themes** | Six families, each in dark and light: Obsidian (with Ivory as its light twin), Bespoke, Graphite, Evergreen, Nord and Gruvbox. |
+| **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and Starlight. Text contrast is kept on all of them. |
+| **Glass accents** | Liquid Glass on the player bar, panels, palette and pop-ups on macOS 26, a blurred material elsewhere. Switch it off in Settings. |
+| **Quick controls** | ⌥⌘D: switch the output device and reach exclusive access, volume, transitions, levelling, upsampling, EQ, shuffle and repeat. |
+| **Waveform** | Played and unplayed parts keep their contrast on every theme, and each seek is marked. |
+| **Analyser** | Spectrum, spectrogram and levels shown together. |
+| **Settings for motion** | Fade or no page transitions, a launch animation you can turn off, and Reduce Motion is honoured. |
 
 ### Library and metadata
 
 | | |
 |:--|:--|
-| **Library** | Core Data library with classical-aware tags (composer, work, movement, conductor, ensemble, soloists). Always current through file-system events, no rescan at start-up. |
-| **Folders** | Browse the disk as it is, no import needed. Safe with symbolic links. |
-| **Tag editor** | Atomic, bulk editing of FLAC, ALAC/AAC and MP3 tags, ReplayGain included. Never touches a file that is playing. |
+| **Library** | A Core Data library with classical-aware tags (composer, work, movement, conductor, ensemble, soloists), kept current by file-system events with no rescan at start-up. |
+| **Folders** | Browse the disk as it is, with no import. Safe with symbolic links. |
+| **Tag editor** | Atomic, bulk editing of FLAC, ALAC/AAC and MP3 tags, ReplayGain included. It never touches a file that is playing. |
 | **Search** | A small documented query language: `Genre: Jazz AND Year: 1955..1965 NOT Artist: "Miles Davis"`. |
-| **Credits graph** | Pick any person and see every record they worked on, in what role, and with whom. |
-| **Lyrics** | Time-synced, word-by-word highlighting. Sources: `.lrc` file, the file's tags, then LRCLIB. |
+| **Credits graph** | Pick a person and see every record they worked on, in what role and with whom. |
+| **Lyrics** | Time-synced with word highlighting, from a `.lrc` file, the file's tags or LRCLIB, with a ±2 s offset. |
 | **Duplicates** | Finds songs and albums you have twice, recommends the best copy, and moves the rest to the Trash only after you confirm. |
 | **Deep Dive** | Identify untagged files (AcoustID), then MusicBrainz credits, Wikipedia biographies and cover art. |
 | **Booklets** | PDFs next to an album open in a digital booklet reader. |
 
-### DJ, MIDI and Intelligence
+### Outputs, rooms and casting
 
 | | |
 |:--|:--|
-| **DJ console** | Two decks on one mixer clock: waveforms, BPM and key (Camelot) detection, pitch and pitch bend, SYNC and beat sync, quantize, hot cues, loops, rolls, a 3-band EQ with kills, sweep filter, echo / reverb / flanger / gate, crossfader curves, headphone cue and a WAV mix recorder. |
-| **MIDI controllers** | CoreMIDI input with MIDI Learn, 14-bit and relative encoders, soft takeover and presets for the Pioneer DDJ-400 and Korg nanoKONTROL2. |
-| **Intelligence** | One master switch for every smart feature, with a switch per feature. Natural-language playlists, semantic search, Smart DJ sets, Smart Shuffle and a DJ remixer, all on device. Optionally bring your own API key (text only, never audio). Experimental: a neural enhancer for lossy streams and on-device lyrics. |
-
-### Sources and outputs
-
-| | |
-|:--|:--|
-| **Radio and podcasts** | Free stations worldwide (including lossless FLAC streams), upscaled to the DAC's best rate if you like. Podcast directory and RSS. |
-| **Cloud and servers** | Your own Backblaze B2, S3, R2, Wasabi or MinIO bucket, Navidrome / Subsonic, and Lyrion Music Server. |
 | **Speaker set-up** | Several outputs at once, each with a job (stereo, left, right, centre, ambience, bass), a distance, a level and a delay. Levels follow the volume in each device's own decibel steps, and outputs are time-aligned from their reported latency. |
-| **Cast and rooms** | The processed output sent as lossless FLAC to Chromecast and Nest speakers, multi-room zones across Sonos, DLNA and Chromecast, and the system AirPlay picker. |
+| **Cast and rooms** | The processed output as lossless FLAC to Chromecast and Nest speakers, multi-room zones across Sonos, DLNA and Chromecast, and the system AirPlay picker. |
+| **Radio and podcasts** | Free stations worldwide, including lossless FLAC streams, optionally upsampled to the DAC's best rate. A podcast directory and RSS. |
+| **Cloud and servers** | Your own Backblaze B2, S3, R2, Wasabi or MinIO bucket, Navidrome / Subsonic, and Lyrion Music Server. |
+
+### DJ mode and MIDI
+
+| | |
+|:--|:--|
+| **DJ console** | Two decks on one mixer clock: waveforms, BPM and key (Camelot) detection, pitch and bend, SYNC, quantize, hot cues, loops, rolls, a 3-band EQ with kills, sweep filter, echo / reverb / flanger / gate, crossfader curves, headphone cue and a WAV mix recorder. |
+| **MIDI controllers** | CoreMIDI input with MIDI Learn, 14-bit and relative encoders, soft takeover, and presets for the Pioneer DDJ-400 and Korg nanoKONTROL2. |
+
+### Intelligence
+
+| | |
+|:--|:--|
+| **Smart features** | One master switch and a switch per feature: natural-language playlists, semantic search, Smart DJ sets, Smart Shuffle and a remixer for the DJ console, all on the Mac. You can bring your own API key (text only, never audio). Experimental: an enhancer for lossy streams and on-device lyrics. |
+
+### Services and tools
+
+| | |
+|:--|:--|
 | **Rip and convert** | Secure CD ripping with AccurateRip and MusicBrainz; batch transcoding to AAC, Apple Lossless or FLAC. |
 | **Scrobbling and presence** | Last.fm, ListenBrainz and Discord Rich Presence, with an offline retry queue. Secrets live in the Keychain. |
 | **Headless and remote** | `Aureon daemon` serves JSON-RPC over WebSocket with Bonjour discovery and pairing, for a companion app. |
 | **Diagnostics** | `Aureon hwdebug` tests exclusive mode, integer formats, rate switching and callback health on your DAC. |
 
 The complete list, with what each feature has been verified against, is in [Docs/FEATURES.md](Docs/FEATURES.md).
+
+<br/>
+
+## Platforms
+
+| | Status |
+|:--|:--|
+| **Apple Silicon Mac**, macOS 15 or later | Released: 0.3.0 |
+| **Intel Mac** | The new design is next |
+| **Windows** | The new design is planned |
+
+<br/>
+
+## Install
+
+1. Download **Aureon-0.3.0.dmg** from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**. A `.pkg` installer is also provided.
+2. The app is not notarised yet. On first launch, right-click it and choose **Open**.
+3. Allow access to your music folders when macOS asks.
+
+**Build from source** (Swift 6 toolchain):
+
+```bash
+swift build -c release
+./Packaging/make_installer.sh --pkg ~/Desktop     # builds Aureon.app, a dmg and a pkg
+```
+
+`Aureon selftest` runs the full automated suite. `Aureon hwdebug` reports what your DAC accepts.
+
+<br/>
+
+## Known issues
+
+- **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it appeared in test runs and is not fixed yet.
+- **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
+- **Speaker levelling and output alignment are tested by measurement and tests, not by ear on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
+- **The new design is Apple Silicon only for now.** Intel Macs and Windows keep the earlier look until their builds follow.
+
+### Not verified on real hardware or accounts
+
+- **Integer mode and DoP are untested against a real USB DAC.** The built-in headphone output offers float formats only; `hwdebug` shows what your hardware accepts. DSD512 output and the MIDI presets are in the same position.
+- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval). Its logic is tested against stand-in processes.
+- **Casting and multi-room are verified against software speakers**, not real ones. AirPlay uses the system's route picker, so exclusive mode, rate switching and bit-perfect output do not apply.
+- **Cloud storage is tested against an in-memory S3 server** that checks every signature, not a live account. DSD files cannot be streamed from a bucket or server.
+- **CD ripping is tested against a simulated drive.** The IOKit read path has not run on a physical drive, and no drive-offset database is bundled.
+- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** are tested against fakes and canned responses; you supply your own keys.
+- **The headphone cue** in DJ mode is tested with simulated devices only.
+
+<br/>
+
+## Roadmap
+
+| | |
+|:--|:--|
+| 🍎 **Intel and universal build** | The new design for Intel Macs, shipped as one universal app. |
+| 🪟 **Windows** | A Windows 11 port built on the headless daemon. |
+| 🛠 **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
+| 🔌 **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
+| ✅ **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
+| 🧩 **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
+| 🎨 **More themes and layouts** | More colour families and layout presets. |
+| 🔀 **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 
 <br/>
 
@@ -143,58 +245,12 @@ The complete list, with what each feature has been verified against, is in [Docs
 | [Remote protocol](Docs/REMOTE-PROTOCOL.md) | The daemon and the companion-app protocol |
 | [System optimisation](Docs/SYSTEM-OPTIMIZATION.md) | Scheduling and the privileged helper |
 
-<br/>
-
-## Limitations
-
-An honest list of what is **not verified** or **not built**.
-
-<details open>
-<summary><b>Known issues in 0.3.0</b></summary>
-
-- **Speaker levelling and output alignment are verified by tests, not by ear on every kind of speaker.** The balance is a good
-  starting point; use each output's **Level** and **Extra delay** to finish it. Bluetooth speakers add jitter that can need a
-  small delay trim.
-
-</details>
-
-<details>
-<summary><b>Not verified on real hardware or accounts</b></summary>
-
-- **Integer mode and DoP are untested against a real USB DAC.** The built-in headphone output offers float formats only; `hwdebug` tells you what your hardware accepts. DSD512 output and the MIDI presets are in the same position.
-- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval). Its logic is tested against stand-in processes; do the supervised first run described in its doc.
-- **Casting and multi-room are verified against software speakers**, not real ones. AirPlay uses the system's own route picker, so exclusive mode, rate switching and bit-perfect output do not apply.
-- **Cloud storage is tested against an in-memory S3 server** that verifies every signature, not against a live Backblaze or AWS account. DSD files cannot be streamed from a bucket or server.
-- **CD ripping is tested against a simulated drive.** The IOKit read path has not run on a physical drive. No drive-offset database is bundled: enter your drive's offset.
-- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** are tested against fakes and canned responses; you supply your own keys.
-- **The headphone cue** in DJ mode is tested with simulated devices only.
-
-</details>
-
-<details open>
-<summary><b>Roadmap</b></summary>
-
-Planned for upcoming releases:
-
-| | |
-|:--|:--|
-| 🍎 **Intel and Windows** | The new design for Intel-based Macs and for Windows. |
-| ✅ **Notarised releases** | A signed, notarised app so the first launch needs no right-click. |
-| 🔀 **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
-| 🎚 **DJ extras** | Keylock, scratching, MIDI output and LED feedback for controllers. |
-| 📱 **Companion app** | An iOS app built on the included remote protocol, with an encrypted channel. |
-| 🎙 **Podcasts** | Streaming start, an episode queue and resume position. |
-| 📻 **More radio** | HLS and Ogg/Opus stations. |
-| 🔬 **Real-hardware verification** | USB DAC integer mode and DoP, DSD512, CD drives, Chromecast and Sonos, and the MIDI presets. |
-| 🧮 **libsoxr resampler** | An optional alternative to the native resampler. |
-
-</details>
-
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Most valuable: a USB-DAC `hwdebug --json` report, libsoxr as an alternative resampler,
-TLS for the remote channel, an iOS companion app.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Most useful: a USB-DAC `hwdebug --json` report, libsoxr as an alternative resampler, TLS for the remote channel, an iOS companion app.
 
-## License
+## Credits and licence
+
+Built with Swift, Core Audio and SQLite. Metadata and lyrics come from MusicBrainz, AcoustID, Wikipedia and LRCLIB; the optional on-device models run through MLX and WhisperKit.
 
 MIT. See [LICENSE](LICENSE).

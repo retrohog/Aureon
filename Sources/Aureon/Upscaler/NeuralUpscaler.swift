@@ -277,7 +277,7 @@ final class NeuralUpscaler: @unchecked Sendable {
         register(stream)
         let node = NeuralUpscaleSource(chain, stream: stream, service: self, gauge: gauge)
         let ms = Double(b.info.window) / modelRate * 1000
-        stages.append(String(format: "AI enhancer: %@, %.0f ms blocks, %d× overlap, on this Mac only; falls back to the sinc resampler when late", b.info.name, ms, b.info.window / b.info.hop))
+        stages.append(String(format: "Smart enhancer: %@, %.0f ms blocks, %d× overlap, on this Mac only; falls back to the sinc resampler when late", b.info.name, ms, b.info.window / b.info.hop))
         return (node, stages)
     }
 

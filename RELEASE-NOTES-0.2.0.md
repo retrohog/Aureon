@@ -43,7 +43,7 @@ crossfades, DSD conversion, Intelligence features) is opt-in, and the signal-pat
 
 ### 🧠 Intelligence (optional)
 
-- One **Intelligence** tab: a master switch for every AI feature, a switch per feature, a hardware indicator, a local model loader and optional API settings. Switching the master off unloads the models at once and every feature falls back to its classic behaviour.
+- One **Intelligence** tab: a master switch for every smart feature, a switch per feature, a hardware indicator, a local model loader and optional API settings. Switching the master off unloads the models at once and every feature falls back to its classic behaviour.
 - **On by default on Apple Silicon, off by default on Intel Macs**, where turning it on first shows a warning.
 - **Natural-language playlists:** describe what you want to hear and get a playlist.
 - **Semantic search:** find songs by meaning ("rainy sunday piano") next to the normal results.

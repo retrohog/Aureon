@@ -160,7 +160,7 @@ struct ContentView: View {
         case .cloud: CloudPage()
         case .folders: FolderBrowserPage()
         case .abx: ABXPage()
-        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "AI features, models and providers", ruled: false) { IntelligenceTab() }
+        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "Smart features, models and providers", ruled: false) { IntelligenceTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins", ruled: false) { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases", ruled: false) { DeepDiveTab() }
         case .rooms: RoomsPage()

@@ -520,7 +520,7 @@ struct IntelligenceTests {
             _ = run(c.search, "calm")
             expect(c.search.isLoaded && c.memoryNote.contains("search index"))
             c.setMaster(false)
-            expect(!c.search.isLoaded && c.search.state == .idle && c.memoryNote.hasPrefix("No AI"), "killswitch drops the index")
+            expect(!c.search.isLoaded && c.search.state == .idle && c.memoryNote.hasPrefix("No model"), "killswitch drops the index")
         }
         // the index arithmetic
         let idx = SemanticIndex(dimension: 2, paths: ["a", "b", "c"], normalized: [1, 0, 0, 1, 0.6, 0.8])

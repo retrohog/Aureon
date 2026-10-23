@@ -94,7 +94,7 @@ final class Player: @unchecked Sendable {
     let replayGain = ReplayGainStore()
     let cache = TrackCache(budgetBytes: 1 << 30)
     let analysisTap = AnalysisTap()
-    /// The AI enhancer for lossy streams (switched in the Intelligence settings). Tests substitute their own before `start`.
+    /// The Smart enhancer for lossy streams (switched in the Intelligence settings). Tests substitute their own before `start`.
     lazy var upscaler: NeuralUpscaler = { NeuralUpscaler.shared.observeSettings(); return .shared }()
     /// How much audio is queued for the device: tells the enhancer how long it may wait for a block.
     let playoutGauge = PlayoutGauge()
@@ -377,7 +377,7 @@ final class Player: @unchecked Sendable {
             }
             chain = DoPStampSource(chain, clock: clock)
         } else {
-            // AI enhancer (lossy sources only): sinc to the model's rate, the model, then on to the device rate below
+            // Smart enhancer (lossy sources only): sinc to the model's rate, the model, then on to the device rate below
             if let n = upscaler.makeNode(upstream: chain, raw: plan.raw, deckRate: s.deckRate, gauge: playoutGauge) {
                 chain = n.source; stages += n.stages; neural = true
             }
@@ -790,7 +790,7 @@ final class Player: @unchecked Sendable {
                 }
             }
 
-            // AI enhancer switched on, or its model finished loading, while a lossy stream plays without it: rebuild that stream.
+            // Smart enhancer switched on, or its model finished loading, while a lossy stream plays without it: rebuild that stream.
             // (Switching it off needs no rebuild: the stage crossfades to its input and passes it through unchanged.)
             let upGen = upscaler.generation
             if upGen != seenUpscaler {

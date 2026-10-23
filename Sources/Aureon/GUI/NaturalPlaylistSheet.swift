@@ -54,7 +54,7 @@ struct NaturalPlaylistSheet: View {
             Image(systemName: "brain").font(Typo.sans(38, .ultraLight)).foregroundStyle(Brand.inkSecondary)
             Text(ai.isMasterOn ? "Natural-language playlists are off" : "Intelligence features are off").font(Typo.t3.weight(.semibold))
             Text(ai.hardware.isIntel && !ai.isMasterOn
-                 ? "AI features are off by default on Intel Macs. You can switch them on in Intelligence, where the trade-offs are explained."
+                 ? "Smart features are off by default on Intel Macs. You can switch them on in Intelligence, where the trade-offs are explained."
                  : "Turn on \(ai.isMasterOn ? "this feature" : "Intelligence features") in Intelligence to describe playlists in your own words.")
                 .multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).frame(maxWidth: 420).font(Typo.callout)
             RuleButton(title: "Open Intelligence", symbol: "brain", filled: true) { dismiss(); m.tab = .intelligence }.padding(.top, 4)
