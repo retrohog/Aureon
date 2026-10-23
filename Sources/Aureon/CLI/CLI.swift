@@ -13,7 +13,6 @@ Aureon — bit-perfect music player
   Aureon verify <a> <b>        prove two files decode to identical samples
   Aureon devices               output devices and their rates
   Aureon convert [options] <out-dir> <file|folder>...   batch transcode (see below)
-  Aureon selftest [filter]     run the built-in test suite
   Aureon daemon [options]      headless audio engine + network remote control (see below)
   Aureon hwdebug [options]     hardware path diagnostics (hog mode, integer mode, timing)
   Aureon radiocheck URL [sec]  open a live radio stream and report what it decodes (plays nothing)

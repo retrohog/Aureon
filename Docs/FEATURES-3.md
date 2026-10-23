@@ -9,7 +9,7 @@ One processed stream, one FLAC feed per room, a sample-exact delay line in front
 - **DLNA / UPnP** (SSDP discovery, SOAP AVTransport): each room gets its own stream. "Align rooms" reads each room's play position, finds the second boundaries (±20–40 ms), and sets delays so that delay + latency is equal everywhere; the sliders trim by ear in 1 ms steps.
 - **Chromecast**: same feed, started through the Cast channel.
 - **AirPlay 2** is not a zone member: macOS only lets its own output route drive AirPlay receivers, and third-party senders cannot join its private sync. Use the AirPlay button.
-- Honest limits: nothing here has run against real speakers (tests use in-memory renderers). Sub-millisecond sync across protocols is not possible without a shared clock; devices' clocks drift, so re-align in long sessions.
+- Honest limits: nothing here has run against real speakers. Sub-millisecond sync across protocols is not possible without a shared clock; devices' clocks drift, so re-align in long sessions.
 
 ## Lyrion Music Server (Cloud page)
 UDP discovery on port 3483, JSON-RPC library import (`songs`, paged, `serverstatus`), and the original file from `/music/<id>/download` through the same chunked RAM reader as buckets and Subsonic servers (`Streaming/LMS.swift`). Basic auth; password in the Keychain.

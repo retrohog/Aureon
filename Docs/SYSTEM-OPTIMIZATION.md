@@ -11,7 +11,7 @@ Three independent pieces, from harmless to privileged.
   as an overload (default 50 %). Raising it helps heavy processing such as long convolution.
 * The CoreAudio IOProc thread is already real-time and cannot be raised beyond what the system grants.
 
-Verified by tests that read the policy back from the kernel (the kernel may raise the *computation* time to its own minimum).
+Verified by reading the policy back from the kernel (the kernel may raise the *computation* time to its own minimum).
 
 ## 2. Quiet mode (privileged helper)
 
@@ -42,13 +42,13 @@ then System → "Install helper…" and approve it in System Settings → Genera
 will refuse to register it; the settings then show "Helper not installed". The helper's code requirement defaults to
 `identifier "org.aureon.player" and anchor apple generic`; override with `AUREON_HELPER_REQUIREMENT` for your own team.
 
-### What is tested, and what is not
+### What has been checked, and what has not
 
-Tested (220+ self-tests): the suspender against real stand-in processes (SIGSTOP/SIGCONT verified through the kernel's process state),
+Checked: the suspender against real stand-in processes (SIGSTOP/SIGCONT verified through the kernel's process state),
 crash recovery including pid reuse, the heartbeat watchdog and hard cap, the whole XPC protocol over an in-process anonymous listener,
 refusal of out-of-range priorities, resume when the client vanishes, and the app-side controller with a fake helper.
 
-**Not tested**: registering and running the helper as root under launchd (it needs a signing identity and your approval), and
+**Not checked**: registering and running the helper as root under launchd (it needs a signing identity and your approval), and
 pausing the *real* Spotlight/Time Machine daemons. Do a supervised first run: start playback, check `ps -o stat -p $(pgrep mds)`
 shows `T`, stop playback, check it returns to `S`.
 

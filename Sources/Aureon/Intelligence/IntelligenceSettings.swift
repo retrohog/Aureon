@@ -136,7 +136,7 @@ struct IntelligenceSettings: Codable, Equatable, Sendable {
         d.set(masterEnabled, forKey: Self.masterKey)
     }
 
-    /// What the app starts with. The self-test runs with every feature allowed (individual tests switch them off), and never reads
+    /// What the app starts with. Headless runs start with every feature allowed (callers can switch them off), and never read
     /// or writes the user's own choices.
     static func initial(hardware: HostHardware, environment: [String: String] = ProcessInfo.processInfo.environment) -> IntelligenceSettings {
         if environment["AUREON_TESTING"] != nil {

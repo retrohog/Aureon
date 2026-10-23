@@ -21,7 +21,7 @@
 * **Renderer** (`Engine/Sink.swift`) is the only code the audio callback runs. With DSP off it is a single `ring.read`.
   With DSP on it calls the engine's manual-rendering block, whose source node reads the same ring.
 * **Sinks** abstract the output: `CoreAudioSink` (HAL IOProc, device clock, hog mode, physical formats) and
-  `RecordingSink` (consumes the ring like a DAC and keeps every sample — the test harness).
+  `RecordingSink` (consumes the ring like a DAC and keeps every sample).
 
 ## Real-time rules
 
@@ -100,7 +100,7 @@ is deterministic: seek(n) reproduces the same samples as reading to n.
 ## Memory playback
 
 `MemoryTrack` is the fully decoded stream *before* resampling/gain, so changing those settings does not re-decode. `TrackCache`
-keeps the playing track and the next two within a byte budget. `DiskStats` counts file reads; tests assert zero during RAM playback.
+keeps the playing track and the next two within a byte budget. `DiskStats` counts file reads, and stays at zero during RAM playback.
 
 ## Real-time processing chain
 
@@ -116,7 +116,7 @@ ring ─► [DSP engine] ─► convolution ─► crossfeed ─► headphone EQ
 * The chain is built off the audio thread for the current stream format (loading and resampling an impulse response, designing filters)
   and published through an **`RCUBox`**: a lock-free read-copy-update cell. The callback does two atomic increments and one load; the
   publisher swaps the pointer, waits (bounded) for any read that may still use the old object, and only then releases it. If the wait
-  times out the old object is leaked rather than risking a use-after-free. A hammer test swaps 20 000 times against a spinning reader.
+  times out the old object is leaked rather than risking a use-after-free.
 * A format change rebuilds the chain for the new rate. Chain latency (one convolution block) is reported in the signal path.
 
 ## Visualisers

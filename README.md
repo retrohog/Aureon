@@ -8,7 +8,6 @@
 
 ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-1c2340?style=flat-square&logo=apple&logoColor=white)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](Package.swift)
-[![Self-tests](https://img.shields.io/badge/self--tests-650%2B%20passing-2f7d4f?style=flat-square)](Docs/ARCHITECTURE.md)
 [![MIT](https://img.shields.io/badge/license-MIT-f0b45f?style=flat-square)](LICENSE)
 
 <img src="Docs/images/now-playing.png" alt="Aureon's Now Playing page" width="100%" />
@@ -20,7 +19,7 @@ sample rate and bit depth into 32-bit integers, a lock-free ring buffer feeds th
 shows what is in the chain. Processing (upsampling, EQ, crossfeed, room correction, DSD) is there when you want it. Every
 stage is opt-in and truly bypassed when off, not merely set to neutral.
 
-> **Status: early (0.3).** The engine and every service are covered by automated self-tests. What could not be verified without
+> **Status: early (0.3).** What could not be verified without
 > special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
 >
 > **Platforms:** 0.3.0 is for **Apple Silicon Macs on macOS 15 or later**. The new design for Intel Macs and for Windows is
@@ -94,7 +93,7 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 | **Lossless playback** | FLAC, ALAC, WAV and AIFF decode to 32-bit integers. Gapless between tracks of one format; the device clock follows each track. |
 | **DSD** | DSF and DFF play as **DoP** (bits untouched, markers continue across tracks) or convert to PCM. DSD up to 1024 decodes faster than real time. |
 | **Transitions** | Gapless by default. Choose **crossfade** (1–12 s) or **Smart** transitions that skip silence, keep existing fades and match loudness. Albums stay gapless. |
-| **Memory playback** | Whole tracks load into RAM first, so playback does no disk reads. A test asserts it. |
+| **Memory playback** | Whole tracks load into RAM first, so playback does no disk reads. |
 | **Loudness** | ReplayGain from tags, plus EBU R128 / ITU-R BS.1770-4 loudness, range, true peak and DR measured once and cached. |
 | **Multichannel** | 5.1 and 7.1 play at their own channel count when the device has the outputs, otherwise through an ITU-R BS.775 downmix. |
 | **Exclusive mode** | Hog mode and automatic sample-rate switching per track, with an integer physical format where the device offers one. |
@@ -196,26 +195,26 @@ swift build -c release
 ./Packaging/make_installer.sh --pkg ~/Desktop     # builds Aureon.app, a dmg and a pkg
 ```
 
-`Aureon selftest` runs the full automated suite. `Aureon hwdebug` reports what your DAC accepts.
+`Aureon hwdebug` reports what your DAC accepts.
 
 <br/>
 
 ## Known issues
 
-- **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it appeared in test runs and is not fixed yet.
+- **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it is not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
-- **Speaker levelling and output alignment are tested by measurement and tests, not by ear on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
+- **Speaker levelling and output alignment have not been checked by ear on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
 - **The new design is Apple Silicon only for now.** Intel Macs and Windows keep the earlier look until their builds follow.
 
 ### Not verified on real hardware or accounts
 
 - **Integer mode and DoP are untested against a real USB DAC.** The built-in headphone output offers float formats only; `hwdebug` shows what your hardware accepts. DSD512 output and the MIDI presets are in the same position.
-- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval). Its logic is tested against stand-in processes.
+- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval). Its logic has only been run against stand-in processes.
 - **Casting and multi-room are verified against software speakers**, not real ones. AirPlay uses the system's route picker, so exclusive mode, rate switching and bit-perfect output do not apply.
-- **Cloud storage is tested against an in-memory S3 server** that checks every signature, not a live account. DSD files cannot be streamed from a bucket or server.
-- **CD ripping is tested against a simulated drive.** The IOKit read path has not run on a physical drive, and no drive-offset database is bundled.
-- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** are tested against fakes and canned responses; you supply your own keys.
-- **The headphone cue** in DJ mode is tested with simulated devices only.
+- **Cloud storage has been run against an in-memory S3 server** that checks every signature, not a live account. DSD files cannot be streamed from a bucket or server.
+- **CD ripping has been run against a simulated drive.** The IOKit read path has not run on a physical drive, and no drive-offset database is bundled.
+- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** have been run against fakes and canned responses; you supply your own keys.
+- **The headphone cue** in DJ mode has only been run with simulated devices.
 
 <br/>
 

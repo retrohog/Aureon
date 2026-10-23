@@ -2,7 +2,7 @@ import Foundation
 import Synchronization
 
 // MIDI control surfaces, part 1: the value types. Nothing here touches CoreMIDI, the UI or the audio engine,
-// so all of it is covered by plain self-tests.
+// so all of it can be exercised without hardware.
 //
 //   CoreMIDI thread ─► MIDIEventRing (lock-free) ─► main-thread drain ─► mapping ─► model setters ─► atomics ─► audio thread
 //

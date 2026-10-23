@@ -1,11 +1,11 @@
 # Aureon 0.3: ripping, loudness, multichannel, extreme rates, converting, cloud, casting, Smart DJ
 
-How each subsystem works, how it is tested, and where its limits are. Source folders are named in brackets.
+How each subsystem works and where its limits are. Source folders are named in brackets.
 
 ## Loudness [Loudness/, Pipeline/ReplayGain.swift]
 BS.1770-4: K-weighting (two biquads per channel, double precision, `vDSP_deq22D`), 400 ms blocks every 100 ms, absolute gate −70 LUFS and relative gate −10 LU,
 channel weights (surrounds +1.5 dB, LFE excluded), loudness range per EBU Tech 3342, true peak with a 4× (2× above 96 kHz, 1× above 192 kHz) windowed-sinc
-oversampler, DR from 3-second blocks. `r128.*` tests check the EBU Tech 3341 test signals. Results are cached in the library (`lufs`, `truePeakDB`, `lra`, `dr`)
+oversampler, DR from 3-second blocks. It follows the EBU Tech 3341 test signals. Results are cached in the library (`lufs`, `truePeakDB`, `lra`, `dr`)
 and recomputed when the file changes.
 
 ## Multichannel [Pipeline/Multichannel.swift]
@@ -43,5 +43,4 @@ sends silence while nothing plays so the speaker never has to reload. The sink d
 ## Smart DJ [SmartDJ/, Packages/SmartDJHelper/]
 `IntentParser` → `ContextBuilder` (candidates, JSON, schema) → model → `SmartDJSelection` (parse, check against `Relevance`, complete). `SmartDJService` owns the
 lifecycle: `enable()` starts `HelperProcessBackend`, which runs `AureonSmartDJ` (MLX Swift, grammar-guided JSON decoding) and talks to it over a pipe;
-`disable()` sends `unload` and ends the process. Tests cover every step with a stand-in model, the process protocol with scripted helpers (crash, hang, refusal,
-deaf), and, where the helper is built and the model is on disk, the real model (`smartdj.real`).
+`disable()` sends `unload` and ends the process.real`).

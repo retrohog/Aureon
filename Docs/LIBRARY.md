@@ -15,7 +15,7 @@ Change (seq, revision, kind, uid, op)   append-only log for remote sync
 * `Party` is one row per person or group (merged by MusicBrainz id, else by case/diacritic-folded name). `kind` is `group` for ensembles.
 * A track's credits are replaced as a whole when its file is re-tagged; parties/works/releases left with no tracks are pruned.
 * Every synced entity has a stable `uid` (UUID string).
-* The store uses SQLite on disk, and an in-memory SQLite store (`/dev/null`) in tests so predicates compile exactly as in production.
+* The store uses SQLite on disk, and an in-memory SQLite store (`/dev/null`) for in-memory use so predicates compile exactly as in production.
   (SwiftData's `@Model` macro needs full Xcode; Core Data does not.)
 
 ## Reading tags
@@ -81,4 +81,4 @@ through the people visited. `sharedCredits(a, b)` returns the records two people
 with a credit. All three are remote methods (`library.credits`, `library.sharedCredits`, `library.people`; see REMOTE-PROTOCOL.md).
 
 Credits are only as complete as the tags: the page shows what the files say, and a record missing `PERFORMER`, `PRODUCER` or
-`ENGINEER` tags simply has fewer entries. Tests: `credits.*` in the self-test suite, using a made-up studio scene.
+`ENGINEER` tags simply has fewer entries.

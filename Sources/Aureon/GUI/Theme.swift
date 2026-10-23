@@ -5,7 +5,7 @@ import SwiftUI
 /// progress rule). Everything the interface paints with comes from here (through `Brand`). Every family has a dark and a light variant.
 ///
 /// The values are stored as `RGB` so contrast can be computed on them: `ink`, its two lighter steps and the accent are all held to WCAG AA
-/// against both surfaces, which the self-test checks for every theme.
+/// against both surfaces, for every theme.
 struct Theme: Identifiable, Equatable {
     let id: String
     let family: String

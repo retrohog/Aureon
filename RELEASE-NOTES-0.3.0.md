@@ -61,7 +61,7 @@ always shows which state you are in.
 
 - Casting and multi-room streams can crash under heavy load: the live FLAC encoder has an intermittent index error. Not fixed yet.
 - The app is ad-hoc signed and not notarised. The first launch needs right-click → **Open**, and macOS may ask again for music-folder access after an update.
-- Speaker levelling and alignment are covered by tests, not verified by ear on every speaker. Bluetooth speakers may need an Extra delay trim.
+- Speaker levelling and alignment have not been checked by ear on every speaker. Bluetooth speakers may need an Extra delay trim.
 - Intel Macs and Windows do not have the new design yet.
 
 The README lists what has not been verified on real hardware.
