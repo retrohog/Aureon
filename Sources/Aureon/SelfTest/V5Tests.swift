@@ -587,6 +587,13 @@ struct SplashTests {
         expect(AppDelegate.quitsWhenTheLastWindowCloses(appWindowAppeared: true), "afterwards the app quits when its last window closes, as it always did")
     }
 
+    func theAppWindowIsRequestedWhenNoneOpened() {
+        let regular = window()
+        let splash = SplashWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [.borderless], backing: .buffered, defer: false)
+        expect(SplashController.needsAppWindow([]) && SplashController.needsAppWindow([splash]), "only the splash (or nothing) is open: the app's window is needed")
+        expect(!SplashController.needsAppWindow([splash, regular]) && !SplashController.needsAppWindow([regular]), "a window of the app is open: nothing to do")
+    }
+
     func reduceMotionHoldsTheMarkAndFades() {
         let main = window()
         let c = SplashController.shared
@@ -607,7 +614,7 @@ func splashTests() -> [(String, TestFn)] {
     return [("ui.splashFlags", { MainActor.assumeIsolated { SplashTests().flagsAndSettingTurnItOff() } }), ("ui.splashFinish", { MainActor.assumeIsolated { SplashTests().endsWhenBothAreDoneOrAtTheCap() } }),
             ("ui.splashScene", { MainActor.assumeIsolated { SplashTests().theSceneStartsEmptyAndEndsWithTheName() } }), ("ui.splashPlanetRing", { MainActor.assumeIsolated { SplashTests().theLogoNeverMovesAndTheRingIsLayeredAroundThePlanet() } }), ("ui.splashLoop", { MainActor.assumeIsolated { SplashTests().theRingDrawsItselfIntoAClosedLoop() } }), ("ui.splashBehind", { MainActor.assumeIsolated { SplashTests().noRingShowsInsideThePlanetWhileItIsBehind() } }), ("ui.splashTiming", { MainActor.assumeIsolated { SplashTests().theStarAndTheNameKeepTheirMoments() } }), ("ui.splashRun", { MainActor.assumeIsolated { SplashTests().runsAndLeavesNothing() } }),
             ("ui.splashCap", { MainActor.assumeIsolated { SplashTests().theCapEndsItWhateverTheStartupDoes() } }), ("ui.splashSkip", { MainActor.assumeIsolated { SplashTests().aClickOrKeySkipsIt() } }),
-            ("ui.splashReduceMotion", { MainActor.assumeIsolated { SplashTests().reduceMotionHoldsTheMarkAndFades() } }), ("ui.splashNoQuit", { MainActor.assumeIsolated { SplashTests().theSplashClosingNeverQuitsTheApp() } })]
+            ("ui.splashReduceMotion", { MainActor.assumeIsolated { SplashTests().reduceMotionHoldsTheMarkAndFades() } }), ("ui.splashNoQuit", { MainActor.assumeIsolated { SplashTests().theSplashClosingNeverQuitsTheApp() } }), ("ui.splashAppWindow", { MainActor.assumeIsolated { SplashTests().theAppWindowIsRequestedWhenNoneOpened() } })]
 }
 
 /// Tester feedback: a waveform that can be read on every background, a seek that always answers, a volume that scrolling cannot jump, and Focus.

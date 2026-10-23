@@ -604,6 +604,16 @@ final class SplashController {
         DispatchQueue.main.asyncAfter(deadline: .now() + length + 0.6) { [weak self] in MainActor.assumeIsolated { if let self, self.generation == run { self.tearDown(main: main) } } }
     }
 
+    /// True when no window of the app itself (anything but the splash) exists.
+    static func needsAppWindow(_ windows: [NSWindow]) -> Bool { !windows.contains { !($0 is SplashWindow) && $0.canBecomeMain } }
+
+    /// Asks the system to reopen the running app, which opens its window (the same request a click on the Dock icon sends).
+    static func reopenAppWindow() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
+    }
+
     /// The splash window is ordered out, closed and released, not just hidden; the app's window is whole again and is key.
     private func tearDown(main: NSWindow?) {
         guard isRunning else { return }
@@ -618,6 +628,9 @@ final class SplashController {
         if let m = main ?? findMain() {
             m.alphaValue = 1; m.ignoresMouseEvents = false
             m.makeKeyAndOrderFront(nil)
+        } else if Self.needsAppWindow(NSApp?.windows ?? []) {
+            // The app's own window never opened (AppKit can skip opening it when the splash was already on screen): ask for it the way a click on the Dock icon would.
+            Self.reopenAppWindow()
         }
         self.main = nil
         let done = completion; completion = nil
