@@ -73,8 +73,8 @@ Open **Aureon-0.3.0.dmg** and drag **Aureon** to **Applications**, or run **Aure
 ## Downloads and checksums
 
 ```
-SHA256 (Aureon-0.3.0.dmg)  2e2f4286c920d6750d41b230ad87dfdc25fc8dfce2e233ce09b5044bed9bd3a1
-SHA256 (Aureon-0.3.0.pkg)  f5c151acbe56923b5ebc179834765d2de38b9a344b71328cf21137d850e73f92
+SHA256 (Aureon-0.3.0.dmg)  632a5ff407fa3c5b24c1e47170b5eb000a2d5ce98616dd2751e058cb8079ea24
+SHA256 (Aureon-0.3.0.pkg)  025a2d13d845b8db7b5f5e35036230f0b14798de59787913b5926889a9bd6f9f
 ```
 
 Earlier changes are in [RELEASE-NOTES-0.2.0.md](RELEASE-NOTES-0.2.0.md).
