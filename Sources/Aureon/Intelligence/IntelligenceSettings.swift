@@ -67,7 +67,11 @@ struct IntelligenceSettings: Codable, Equatable, Sendable {
     var api = APIConfig()
 
     /// First launch: on for Apple Silicon, off for Intel, where it must be switched on by hand (and the warning accepted).
-    static func defaults(for hw: HostHardware) -> IntelligenceSettings { IntelligenceSettings(masterEnabled: hw.isAppleSilicon) }
+    static func defaults(for hw: HostHardware) -> IntelligenceSettings {
+        var s = IntelligenceSettings(masterEnabled: hw.isAppleSilicon)
+        if hw.localLanguageModelBlocker != nil { s.smartDJEngine = .api; s.playlistEngine = .api }       // no on-device language model on Intel
+        return s
+    }
 
     init(masterEnabled: Bool) { self.masterEnabled = masterEnabled }
 
@@ -128,6 +132,7 @@ struct IntelligenceSettings: Codable, Equatable, Sendable {
     static func load(_ d: UserDefaults = .standard, hardware: HostHardware) -> IntelligenceSettings {
         var s = d.data(forKey: key).flatMap { try? JSONDecoder().decode(IntelligenceSettings.self, from: $0) } ?? defaults(for: hardware)
         if d.object(forKey: masterKey) != nil { s.masterEnabled = d.bool(forKey: masterKey) }
+        if hardware.localLanguageModelBlocker != nil { s.smartDJEngine = .api; s.playlistEngine = .api }
         return s
     }
 

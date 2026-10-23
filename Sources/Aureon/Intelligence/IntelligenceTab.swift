@@ -133,7 +133,10 @@ struct FeatureRow: View {
     let feature: IntelligenceFeature
 
     var body: some View {
-        let on = ai.settings.isSwitchedOn(feature)
+        let hw = ai.hardware
+        let blocker = feature == .audioEnhancer ? hw.audioEnhancerBlocker : nil
+        let localBlocked = (feature == .smartDJ || feature == .naturalPlaylists) && hw.localLanguageModelBlocker != nil
+        let on = ai.settings.isSwitchedOn(feature) && blocker == nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: feature.icon).font(Typo.sans(14, .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
@@ -146,19 +149,22 @@ struct FeatureRow: View {
                     Text(feature.summary).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: Binding(get: { on }, set: { ai.setFeature(feature, $0) })).toggleStyle(.rule).labelsHidden().disabled(!ai.isMasterOn)
+                Toggle("", isOn: Binding(get: { on }, set: { ai.setFeature(feature, $0) })).toggleStyle(.rule).labelsHidden().disabled(!ai.isMasterOn || blocker != nil)
                     .accessibilityLabel(feature.title)
             }
             if feature.allowsAPI, on {
                 HStack(spacing: 12) {
                     Text("Runs").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).frame(width: 22 + 10, alignment: .trailing)
                     SegmentedChoice(selection: Binding(get: { ai.settings.engine(for: feature) }, set: { ai.setEngine(feature, $0) }),
-                                    items: IntelligenceEngine.allCases, label: { $0 == .api ? "API · \(ai.settings.api.provider.shortTitle)" : $0.title }, singleLine: true)
+                                    items: IntelligenceEngine.allCases, label: { $0 == .api ? "API · \(ai.settings.api.provider.shortTitle)" : $0.title }, singleLine: true,
+                                    isDisabled: { localBlocked && $0 == .onDevice })
                         .frame(maxWidth: 320).disabled(!ai.isMasterOn)
                     Spacer(minLength: 0)
                 }
             }
-            if let s = status { Text(s.text).font(Typo.sans(11.5)).foregroundStyle(s.warn ? Brand.caution : Brand.inkSecondary).padding(.leading, 32).fixedSize(horizontal: false, vertical: true) }
+            if let blocker { unavailableNote(blocker) }
+            else if localBlocked, on, let reason = hw.localLanguageModelBlocker { unavailableNote("“On this Mac” is unavailable. \(reason)") }
+            if blocker == nil, let s = status { Text(s.text).font(Typo.sans(11.5)).foregroundStyle(s.warn ? Brand.caution : Brand.inkSecondary).padding(.leading, 32).fixedSize(horizontal: false, vertical: true) }
             if feature == .audioEnhancer, ai.isActive(.audioEnhancer) { EnhancerStatusLine().padding(.leading, 32) }
             if feature == .lyricsGeneration, on {
                 HStack(spacing: 12) {
@@ -171,6 +177,10 @@ struct FeatureRow: View {
                 Text(ai.settings.whisperModel.detail).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary).padding(.leading, 32)
             }
         }
+    }
+
+    private func unavailableNote(_ reason: String) -> some View {
+        Text("\(HostHardware.appleSiliconOnlyNote). \(reason)").font(Typo.sans(11.5)).foregroundStyle(Brand.caution).padding(.leading, 32).fixedSize(horizontal: false, vertical: true)
     }
 
     private var status: (text: String, warn: Bool)? {
@@ -218,12 +228,12 @@ struct LocalModelsCard: View {
             modelRow(title: "Smart DJ language model", icon: "text.bubble",
                      current: ai.settings.languageModel.map { "\($0.name) · \($0.format.title) · \(LocalModelInspector.formatParameters($0.parameters)) parameters · \(formatBytes64($0.bytes))" }
                         ?? "Qwen2.5 0.5B Instruct, 4-bit MLX (built in, downloaded on first use)",
-                     chooseTitle: "Load Model…", role: .languageModel, reset: ai.settings.languageModel == nil ? nil : "Use Built-in")
+                     chooseTitle: "Load Model…", role: .languageModel, blocker: ai.hardware.localLanguageModelBlocker, reset: ai.settings.languageModel == nil ? nil : "Use Built-in")
             Divider()
             modelRow(title: "Audio enhancer model", icon: "waveform.badge.plus",
                      current: ai.settings.enhancerModel.map { "\($0.name) · \($0.format.title) · \(LocalModelInspector.formatParameters($0.parameters)) parameters\($0.parametersEstimated ? " (est.)" : "") · \(formatBytes64($0.bytes))" }
                         ?? "None chosen",
-                     chooseTitle: "Choose CoreML Model…", role: .audioEnhancer, reset: ai.settings.enhancerModel == nil ? nil : "Remove")
+                     chooseTitle: "Choose CoreML Model…", role: .audioEnhancer, blocker: ai.hardware.audioEnhancerBlocker, reset: ai.settings.enhancerModel == nil ? nil : "Remove")
             if busy.v { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Checking the model…").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) } }
             if let r = lastCheck.v { checkView(r) }
             Note(text: "Language models: an MLX folder (config.json, tokenizer and .safetensors), for example from mlx-community on Hugging Face; GGUF files are checked but cannot run here. Audio enhancer: a CoreML .mlpackage or .mlmodelc. The parameter count is read from the model's own headers before anything is loaded.")
@@ -231,16 +241,17 @@ struct LocalModelsCard: View {
         .opacity(ai.isMasterOn ? 1 : 0.55)
     }
 
-    private func modelRow(title: String, icon: String, current: String, chooseTitle: String, role: LocalModelRole, reset: String?) -> some View {
+    private func modelRow(title: String, icon: String, current: String, chooseTitle: String, role: LocalModelRole, blocker: String?, reset: String?) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon).font(Typo.sans(14, .semibold)).foregroundStyle(Brand.accent).frame(width: 22).padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(Typo.sans(13.5, .semibold))
                 Text(current).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
+                if let blocker { Text("\(HostHardware.appleSiliconOnlyNote). \(blocker)").font(Typo.sans(11.5)).foregroundStyle(Brand.caution).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 8)
             if let reset { Button(reset) { ai.useModel(nil, for: role); lastCheck.v = nil }.controlSize(.small) }
-            Button(chooseTitle) { choose(role) }.controlSize(.small).disabled(busy.v)
+            Button(chooseTitle) { choose(role) }.controlSize(.small).disabled(busy.v || blocker != nil)
         }
     }
 

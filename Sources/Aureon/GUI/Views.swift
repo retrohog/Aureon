@@ -87,6 +87,8 @@ struct SegmentedChoice<T: Hashable>: View {
     var icon: ((T) -> String)? = nil
     /// Keep every label on one line (shrinking it a little if it must): for narrow controls.
     var singleLine = false
+    /// Choices that are shown but cannot be picked.
+    var isDisabled: (T) -> Bool = { _ in false }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -104,6 +106,7 @@ struct SegmentedChoice<T: Hashable>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .disabled(isDisabled(it)).opacity(isDisabled(it) ? 0.4 : 1)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }

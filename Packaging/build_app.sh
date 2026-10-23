@@ -10,6 +10,10 @@
 # The lyrics speech model (Whisper) is another separate program (Packages/WhisperHelper, WhisperKit), built and embedded the same way.
 #   SKIP_WHISPER=1  never build it       REBUILD_WHISPER=1  rebuild even if a build exists
 #
+# ARCHS="arm64 x86_64" (default) builds a universal app: each slice is built on its own and joined with lipo. ARCHS=arm64 (or x86_64)
+#               gives a single-architecture build, which is faster for development. The Smart DJ helper is always arm64-only (MLX runs only on
+#               Apple Silicon); the lyrics helper is arm64 unless WHISPER_ARCHS="arm64 x86_64" is set and WhisperKit builds for it.
+#
 # --with-helper embeds the privileged quiet-mode helper (Contents/MacOS/AureonHelper) and its launchd plist
 #               (Contents/Library/LaunchDaemons/org.aureon.helper.plist) for SMAppService. macOS only lets a *signed* app register it:
 #               set CODESIGN_IDENTITY="Developer ID Application: Name (TEAMID)". Without it the bundle is ad-hoc signed.
@@ -20,8 +24,26 @@ for a in "$@"; do case "$a" in --with-helper) WITH_HELPER=1 ;; *) DEST="$a" ;; e
 APP="$DEST/Aureon.app"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
-swift build -c release
-BINDIR="$(swift build -c release --show-bin-path)"
+ARCHS="${ARCHS:-arm64 x86_64}"
+MINOS=15.0
+# Each slice gets its own scratch folder: the products folder does not depend on --triple, so one shared folder would be overwritten.
+build_slice() { swift build -c release --triple "$1-apple-macosx$MINOS" --scratch-path ".build/slice-$1" "${@:2}"; }
+for a in $ARCHS; do
+  case "$a" in arm64|x86_64) ;; *) echo "error: unsupported architecture '$a' (use arm64 and/or x86_64)"; exit 1 ;; esac
+  build_slice "$a"
+done
+
+# Copies the one slice, or joins all slices into one universal binary: join_slices <product> <destination>
+join_slices() {
+  local ins=() a
+  for a in $ARCHS; do ins+=("$(build_slice "$a" --show-bin-path)/$1"); done
+  if [ "${#ins[@]}" = 1 ]; then cp "${ins[0]}" "$2"; else lipo -create "${ins[@]}" -output "$2"; fi
+}
+# Fails the build when a slice is missing from a binary: check_slices <binary>
+check_slices() {
+  local have a; have=" $(lipo -archs "$1") "
+  for a in $ARCHS; do case "$have" in *" $a "*) ;; *) echo "error: $1 has no $a slice (has:$have)"; exit 1 ;; esac; done
+}
 
 W="$(mktemp -d)"
 swift Packaging/make_icon.swift "$W/icon.png" Packaging/AppIcon-source.png
@@ -34,7 +56,8 @@ iconutil -c icns "$W/AppIcon.iconset" -o "$W/AppIcon.icns"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINDIR/Aureon" "$APP/Contents/MacOS/Aureon"
+join_slices Aureon "$APP/Contents/MacOS/Aureon"
+check_slices "$APP/Contents/MacOS/Aureon"
 cp "$W/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -71,7 +94,8 @@ PLIST
 
 if [ "$WITH_HELPER" = 1 ]; then
   mkdir -p "$APP/Contents/Library/LaunchDaemons"
-  cp "$BINDIR/AureonHelper" "$APP/Contents/MacOS/AureonHelper"
+  join_slices AureonHelper "$APP/Contents/MacOS/AureonHelper"
+  check_slices "$APP/Contents/MacOS/AureonHelper"
   cat > "$APP/Contents/Library/LaunchDaemons/org.aureon.helper.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -92,7 +116,7 @@ if [ "${SKIP_SMARTDJ:-0}" != 1 ]; then
   if [ ! -x "$SMART_OUT/AureonSmartDJ" ] || [ "${REBUILD_SMARTDJ:-0}" = 1 ]; then
     if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find metal >/dev/null 2>&1; then
       echo "Building the Smart DJ language model helper (first time: a few minutes)…"
-      ( cd "$SMART_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonSmartDJ -configuration Release -destination 'platform=macOS' \
+      ( cd "$SMART_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonSmartDJ -configuration Release -destination 'platform=macOS' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
           -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-smartdj-build.log 2>&1 ) \
         || echo "note: the Smart DJ helper did not build (see /tmp/aureon-smartdj-build.log); the app will use plain ranking."
     else
@@ -116,7 +140,7 @@ if [ "${SKIP_WHISPER:-0}" != 1 ]; then
   if [ ! -x "$WHISPER_OUT/AureonWhisper" ] || [ "${REBUILD_WHISPER:-0}" = 1 ]; then
     if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find xcodebuild >/dev/null 2>&1; then
       echo "Building the lyrics speech-model helper (first time: a few minutes)…"
-      ( cd "$WHISPER_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonWhisper -configuration Release -destination 'platform=macOS' \
+      ( cd "$WHISPER_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonWhisper -configuration Release -destination 'platform=macOS' ARCHS="${WHISPER_ARCHS:-arm64}" ONLY_ACTIVE_ARCH=NO \
           -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-whisper-build.log 2>&1 ) \
         || echo "note: the lyrics helper did not build (see /tmp/aureon-whisper-build.log); lyrics from files and the internet still work."
     else
@@ -133,6 +157,8 @@ if [ "${SKIP_WHISPER:-0}" != 1 ]; then
 fi
 
 # Resource bundles inside the helpers are sealed first: codesign refuses to seal the app around nested code that is not signed.
+# A universal helper comes out of xcodebuild without a signature (a single-architecture one is signed by the linker), so sign each program too.
+for x in "$APP"/Contents/Helpers/*/Aureon*; do [ -f "$x" ] && [ -x "$x" ] && codesign --force -s "$IDENTITY" "$x" >/dev/null 2>&1; done
 for b in "$APP"/Contents/Helpers/*/*.bundle; do [ -e "$b" ] && codesign --force -s "$IDENTITY" "$b" >/dev/null 2>&1; done
 
 if [ "$IDENTITY" = "-" ]; then
@@ -142,6 +168,7 @@ if [ "$IDENTITY" = "-" ]; then
 else
   codesign --force --deep -s "$IDENTITY" "$APP" 2>&1 | tail -1
 fi
-codesign --verify --strict "$APP" 2>&1 | tail -2 || true
+codesign --verify --strict "$APP" || { echo "error: the signature of $APP does not verify"; exit 1; }
+echo "Architectures: $(lipo -archs "$APP/Contents/MacOS/Aureon")"
 echo "Installed: $APP$([ "$WITH_HELPER" = 1 ] && echo ' (with helper)')"
 if [ "$WITH_HELPER" = 1 ] && [ "$IDENTITY" = "-" ]; then echo "note: ad-hoc signed; macOS will not let you register the helper (set CODESIGN_IDENTITY)."; fi

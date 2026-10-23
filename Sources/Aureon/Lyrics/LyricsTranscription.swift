@@ -337,7 +337,7 @@ enum WhisperHelperLocator {
         for base in [cwd, URL(fileURLWithPath: cwd).deletingLastPathComponent().path] {
             candidates.append(URL(fileURLWithPath: base).appendingPathComponent("Packages/WhisperHelper/.build/xcode/Build/Products/Release/\(name)"))
         }
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) && MachOSlices.canRun($0) }
     }
 
     /// Where downloaded models are kept (shared by all sizes).

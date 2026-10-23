@@ -355,12 +355,14 @@ struct NaturalPlaylistTests {
             expect(!i.playlists.isAllowed() && i.showIntelWarning, "still off behind the warning")
             i.acceptIntelWarning()
             expect(i.playlists.isAllowed(), "on once accepted")
+            expect(i.settings.playlistEngine == .api && i.settings.smartDJEngine == .api, "Intel starts on the API engine")
+            i.setEngine(.naturalPlaylists, .onDevice)
             var reason = ""
             do { _ = try i.playlistBackend() } catch { reason = error.localizedDescription }
             expect(reason.contains("Apple Silicon"), "on-device models need Apple Silicon: \(reason)")
             // the engine choice is its own and shares the provider
             i.setEngine(.naturalPlaylists, .api)
-            expect(i.settings.playlistEngine == .api && i.settings.smartDJEngine == .onDevice && i.settings.engine(for: .naturalPlaylists) == .api, "engine choice is separate from Smart DJ")
+            expect(i.settings.playlistEngine == .api && i.settings.smartDJEngine == .api && i.settings.engine(for: .naturalPlaylists) == .api, "engine choice is separate from Smart DJ")
             // switching it off while the model is loaded frees the model
             let model = ScriptedPlaylistModel()
             a.playlists.makeBackend = { (model, "m", "scripted") }

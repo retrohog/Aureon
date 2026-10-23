@@ -138,7 +138,7 @@ final class IntelligenceGate: Sendable {
     static func mask(for s: IntelligenceSettings, hardware: HostHardware) -> UInt32 {
         guard s.masterEnabled, hardware.isAppleSilicon || s.intelRiskAccepted else { return 0 }
         var m = masterBit
-        for f in IntelligenceFeature.allCases where s.isSwitchedOn(f) { m |= f.bit }
+        for f in IntelligenceFeature.allCases where s.isSwitchedOn(f) && !(f == .audioEnhancer && hardware.audioEnhancerBlocker != nil) { m |= f.bit }
         return m
     }
 }

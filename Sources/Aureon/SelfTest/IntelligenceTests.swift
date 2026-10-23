@@ -128,6 +128,40 @@ struct IntelligenceTests {
         }
     }
 
+    func intelShowsAppleSiliconOnlyFeaturesAsUnavailable() {
+        let i = Self.intel, m = Self.appleM, r = Self.rosetta
+        expect(i.localLanguageModelBlocker?.contains("MLX") == true && i.audioEnhancerBlocker?.contains("Neural Engine") == true, "Intel gets a one-line reason for each")
+        expect(m.localLanguageModelBlocker == nil && m.audioEnhancerBlocker == nil && r.localLanguageModelBlocker == nil, "Apple Silicon (and Rosetta, which has its own message) is not blocked")
+        expect(HostHardware.appleSiliconOnlyNote == "Only available on Apple Silicon Macs")
+        // a saved "enhancer on" cannot switch the enhancer on for an Intel Mac, and the language-model engine is the API there
+        var s = IntelligenceSettings(masterEnabled: true); s.intelRiskAccepted = true; s.audioEnhancer = true
+        expect(IntelligenceGate.mask(for: s, hardware: i) != 0 && !IntelligenceGate(hardware: i, settings: s).isEnabled(.audioEnhancer) && IntelligenceGate(hardware: i, settings: s).isEnabled(.smartDJ))
+        expect(IntelligenceGate(hardware: m, settings: s).isEnabled(.audioEnhancer), "the same settings do switch it on for Apple Silicon")
+        let d = suite()
+        IntelligenceSettings(masterEnabled: true).save(d)
+        let loaded = IntelligenceSettings.load(d, hardware: i), loadedM = IntelligenceSettings.load(d, hardware: m)
+        expect(loaded.smartDJEngine == .api && loaded.playlistEngine == .api && loaded.searchEngine == .onDevice, "Intel: Smart DJ and playlists use the API, search stays on this Mac")
+        expect(loadedM.smartDJEngine == .onDevice && loadedM.playlistEngine == .onDevice)
+    }
+
+    func helperProgramsAreCheckedForTheirProcessorType() {
+        func fat(_ types: [UInt32]) -> Data {
+            var d = Data([0xCA, 0xFE, 0xBA, 0xBE]); d.append(contentsOf: withUnsafeBytes(of: UInt32(types.count).bigEndian, Array.init))
+            for t in types { d.append(contentsOf: withUnsafeBytes(of: t.bigEndian, Array.init)); d.append(Data(count: 16)) }
+            return d
+        }
+        func thin(_ t: UInt32) -> Data { var d = Data([0xCF, 0xFA, 0xED, 0xFE]); d.append(contentsOf: withUnsafeBytes(of: t.littleEndian, Array.init)); d.append(Data(count: 24)); return d }
+        func file(_ name: String, _ data: Data) -> URL { let u = dir.appendingPathComponent(name); try? data.write(to: u); return u }
+        let arm: UInt32 = 0x0100000C, x86: UInt32 = 0x01000007
+        let armOnly = file("arm-only", thin(arm)), universal = file("universal", fat([x86, arm])), intelOnly = file("x86-only", fat([x86]))
+        let script = file("script.sh", Data("#!/bin/sh\nexit 0\n".utf8)), empty = file("empty", Data())
+        expect(!MachOSlices.canRun(armOnly, on: Self.intel) && MachOSlices.canRun(armOnly, on: Self.appleM), "an arm64-only helper is refused on Intel")
+        expect(MachOSlices.canRun(universal, on: Self.intel) && MachOSlices.canRun(universal, on: Self.appleM))
+        expect(MachOSlices.canRun(intelOnly, on: Self.intel) && !MachOSlices.canRun(intelOnly, on: Self.appleM))
+        expect(MachOSlices.canRun(script, on: Self.intel) && MachOSlices.canRun(empty, on: Self.intel) && MachOSlices.canRun(dir.appendingPathComponent("missing"), on: Self.intel), "anything that is not a Mach-O is left to the system")
+        expect(MachOSlices.cpuTypes(of: universal) == [x86, arm] && MachOSlices.cpuTypes(of: armOnly) == [arm])
+    }
+
     func killswitchClosesEveryFeature() {
         MainActor.assumeIsolated {
             let c = center(Self.appleM)

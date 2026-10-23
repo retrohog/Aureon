@@ -4,6 +4,7 @@
 #   ./Packaging/make_installer.sh [--pkg] [OUTPUT_FOLDER]
 #
 # The .dmg opens to Aureon.app next to an Applications shortcut: drag one onto the other. The .pkg installs into /Applications.
+# ARCHS (see build_app.sh) selects the architectures; ARTIFACT_SUFFIX (for example -universal) is added to the file names.
 # Output goes to OUTPUT_FOLDER (default: the repository folder). CODESIGN_IDENTITY / SKIP_SMARTDJ / SKIP_WHISPER work as in build_app.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,13 +33,14 @@ Aureon $VERSION
    notarised; after that it opens normally.
 3. When macOS asks for access to your music folders, say Allow. The choice is remembered across updates.
 TXT
-DMG="$OUT/Aureon-$VERSION.dmg"
+SUFFIX="${ARTIFACT_SUFFIX:-}"
+DMG="$OUT/Aureon-$VERSION$SUFFIX.dmg"
 rm -f "$DMG"
 hdiutil create -volname "Aureon $VERSION" -srcfolder "$DMGDIR" -format UDZO -fs HFS+ -ov "$DMG" >/dev/null
 echo "Disk image: $DMG ($(du -h "$DMG" | cut -f1))"
 
 if [ "$WITH_PKG" = 1 ]; then
-  PKG="$OUT/Aureon-$VERSION.pkg"
+  PKG="$OUT/Aureon-$VERSION$SUFFIX.pkg"
   rm -f "$PKG"
   pkgbuild --component "$APP" --install-location /Applications --identifier org.aureon.player.pkg --version "$VERSION" "$PKG" >/dev/null
   echo "Installer package: $PKG ($(du -h "$PKG" | cut -f1))"
