@@ -203,7 +203,7 @@ swift build -c release
 
 - **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it is not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
-- **Speaker levelling and output alignment have not been checked by ear on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
+- **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
 - **The new design is Apple Silicon only for now.** Intel Macs and Windows keep the earlier look until their builds follow.
 
 ### Not verified on real hardware or accounts
