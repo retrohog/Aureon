@@ -317,6 +317,7 @@ struct SettingsPage: View {
                 case .appearance: AppearanceSettings()
                 case .nowPlaying: NowPlayingSettings()
                 case .miniPlayer: MiniPlayerSettings()
+                case .startup: StartupSettings()
                 case .sidebar: SidebarSettings()
                 case .connect: ConnectTab()
                 case .midi: MIDIPage()
@@ -406,7 +407,7 @@ struct GeneralSettings: View {
                 }
             }
             Card(title: "Window", subtitle: "") {
-                Button("Reset window size") { if let w = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.canBecomeMain }) { w.setContentSize(NSSize(width: 1080, height: 700)); w.center() } }
+                Button("Reset window size") { WindowMemoryController.shared.forget(); if let w = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.canBecomeMain && !($0 is MiniPanel) }) { w.setContentSize(NSSize(width: 1080, height: 700)); w.center() } }
             }
         }
     }

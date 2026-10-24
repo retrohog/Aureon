@@ -63,12 +63,58 @@ extension View {
     /// Puts the scrim behind a header: it appears once the content below has scrolled under it.
     func scrim(scrolledUnder: Bool) -> some View { background(ScrimBackground(scrolledUnder: scrolledUnder)) }
 
-    /// A page's scroll view: its content starts below the bar (`chromeInset`) but scrolls under it, and it tells the scrim when it has.
-    func underChrome(_ chrome: ChromeState, inset: CGFloat) -> some View {
-        contentMargins(.top, inset, for: .scrollContent)
+    /// A page's scroll view: its content starts below the bar (`chromeInset`) but scrolls under it, it tells the scrim when it has, and where it is scrolled
+    /// is remembered for the page (see `ScrollMemory`).
+    func underChrome(_ chrome: ChromeState, inset: CGFloat) -> some View { modifier(UnderChrome(chrome: chrome, inset: inset)) }
+}
+
+/// Where each page was scrolled to, so a page opens where it was left (also after a restart). Plain storage, not observed: scrolling must not redraw anything.
+final class ScrollMemory: @unchecked Sendable {
+    static let shared = ScrollMemory()
+    private let lock = NSLock()
+    private var values: [String: Double] = [:]
+    /// How many pages are kept.
+    static let limit = 40
+
+    func offset(_ key: String) -> Double? { lock.lock(); defer { lock.unlock() }; return values[key] }
+    func set(_ key: String, _ y: Double) { lock.lock(); values[key] = y <= 1 ? nil : y; lock.unlock() }
+    var all: [String: Double] {
+        get { lock.lock(); defer { lock.unlock() }; return values }
+        set { lock.lock(); values = Dictionary(uniqueKeysWithValues: newValue.prefix(Self.limit).map { ($0.key, $0.value) }); lock.unlock() }
+    }
+}
+
+private struct ScrollKeyKey: EnvironmentKey { static let defaultValue = "" }
+extension EnvironmentValues {
+    /// Names the page for `ScrollMemory` (the page, and what is open on it).
+    var scrollKey: String {
+        get { self[ScrollKeyKey.self] }
+        set { self[ScrollKeyKey.self] = newValue }
+    }
+}
+
+private struct UnderChrome: ViewModifier {
+    let chrome: ChromeState
+    let inset: CGFloat
+    @Environment(\.scrollKey) private var key
+    @State private var position = ScrollPosition(edge: .top)
+    @State private var restoring = true
+
+    func body(content: Content) -> some View {
+        content
+            .contentMargins(.top, inset, for: .scrollContent)
             .contentMargins(.top, inset, for: .scrollIndicators)
+            .scrollPosition($position)
             .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.y > -g.contentInsets.top + 2 } action: { _, scrolled in
                 if chrome.scrolled != scrolled { chrome.scrolled = scrolled }
+            }
+            .onScrollGeometryChange(for: Double.self) { g in Double(g.contentOffset.y) } action: { _, y in
+                if !restoring, !key.isEmpty { ScrollMemory.shared.set(key, y) }
+            }
+            .onAppear {
+                guard !key.isEmpty, let y = ScrollMemory.shared.offset(key) else { restoring = false; return }
+                // after the page has laid itself out (a grid of covers is built as it is asked for)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { position.scrollTo(y: CGFloat(y)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { restoring = false } }
             }
     }
 }

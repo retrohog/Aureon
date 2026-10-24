@@ -11,7 +11,7 @@ struct AureonApp: App {
                 .environmentObject(model)
                 .frame(minWidth: model.djMode ? 1280 : 860, minHeight: 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
                 .onOpenURL { model.add(urls: [$0], play: true) }
-                .onAppear { AppDelegate.model = model; model.mini.start() }
+                .onAppear { AppDelegate.model = model; model.mini.start(); model.restoreSession() }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1080, height: 700)
@@ -52,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { AppDelegate.model?.saveSession(); WindowMemoryController.shared.saveNow() }
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate(ignoringOtherApps: true)
         MainActor.assumeIsolated { ScrollRouter.shared.install() }
@@ -73,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 w.setContentSize(NSSize(width: 1080, height: 700)); w.center()
             }
         }
+        WindowMemoryController.shared.attachMainWindow()
     }
 }
 

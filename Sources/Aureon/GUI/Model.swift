@@ -34,6 +34,15 @@ struct QueueItem: Identifiable {
     var isDSD: Bool { ["dsf", "dff"].contains(url.pathExtension.lowercased()) }
 }
 
+/// A song that is ready at the place it was left at the last launch.
+struct PendingResume: Equatable {
+    var id: UUID
+    var position: Double
+    var duration: Double
+    var title: String
+    var artist: String
+}
+
 struct HostedPlugin: Identifiable {
     let id = UUID()
     let info: PluginInfo
@@ -85,9 +94,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
+    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", startup = "Startup & memory", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .startup: "memorychip"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -495,7 +504,16 @@ final class PlayerModel: ObservableObject {
 
     var current: QueueItem? { started ? items.first { $0.id == status.trackID } : nil }
     /// What the player view shows: the audible track, else the one that will start, else the first in the queue.
-    var focusItem: QueueItem? { current ?? items.first { $0.id == status.trackID } ?? items.first }
+    /// A song restored at launch, ready at the place it was left; Play starts it from there.
+    @Published var pendingResume: PendingResume?
+    /// The card that offers to continue (Resume: Ask me).
+    @Published var resumeOffer: PendingResume?
+    private var sessionRestored = false
+    private var sessionTicks = 0
+    private var lastSessionSignature: SessionSignature?
+    private struct SessionSignature: Equatable { var count: Int; var track: UUID?; var tab: Tab; var section: SettingsSection; var selected: String? }
+
+    var focusItem: QueueItem? { current ?? items.first { $0.id == status.trackID } ?? items.first { $0.id == pendingResume?.id } ?? items.first }
     var isActive: Bool { started && !status.finished }
     var isDoP: Bool { status.info?.isDoP ?? false }
 
@@ -720,6 +738,7 @@ final class PlayerModel: ObservableObject {
     }
 
     func play(_ id: UUID, at seconds: Double = 0) {
+        pendingResume = nil; resumeOffer = nil
         requestMetadata(id, urgent: true)
         if isActive && seconds == 0 { player.send(.jump(id)); return }
         started = true
@@ -730,6 +749,7 @@ final class PlayerModel: ObservableObject {
 
     func togglePlay() {
         if isActive { player.send(.togglePause) }
+        else if let p = pendingResume, items.contains(where: { $0.id == p.id }) { play(p.id, at: p.position) }
         else if let first = (current ?? items.first(where: { $0.id == status.trackID }) ?? items.first) { play(first.id) }
     }
 
@@ -755,6 +775,7 @@ final class PlayerModel: ObservableObject {
         if player.queueRevision != lastQueueRev { reconcileItems() }
         refreshHero()
         countPlay()
+        rememberSessionIfChanged()
         if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { requestMetadata(id, urgent: true); for k in 1...2 where i + k < items.count { requestMetadata(items[i + k].id) } } }
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }
         if started && s.trackID != lastDeepDiveID && tab == .deepDive { loadDeepDiveForCurrent() }
@@ -783,6 +804,76 @@ final class PlayerModel: ObservableObject {
         }
         _ = fresh                                   // covers load as their rows appear (see requestMetadata)
     }
+
+    // MARK: remembering the session
+
+    private var sessionMemoryOn: Bool {
+        let e = ProcessInfo.processInfo.environment
+        return e["AUREON_SNAPSHOT"] == nil && e["AUREON_TESTING"] == nil
+    }
+
+    /// Writes what Aureon should come back to (cheap, and only when something changed or every five seconds while it plays).
+    func saveSession(force: Bool = false) {
+        guard force || sessionMemoryOn, sessionRestored else { return }
+        currentSessionRecord().save(defaults)
+    }
+
+    /// The session as it is now.
+    func currentSessionRecord() -> SessionRecord {
+        let cur = focusItem, idx = cur.flatMap { c in items.firstIndex { $0.id == c.id } }
+        let live = started && (status.state == .playing || status.state == .paused)
+        let pos = live ? status.position : (pendingResume?.position ?? 0), dur = live ? status.duration : (pendingResume?.duration ?? 0)
+        return SessionRecord.make(items: items.map { ($0.path, $0.isStream) }, currentID: idx, position: pos, duration: dur, tab: tab, section: settingsSection,
+                                  selectedID: library.selectedID, deviceUID: selectedDevice?.uid.isEmpty == false ? selectedDevice?.uid : nil,
+                                  scroll: look.memory.rememberPage ? ScrollMemory.shared.all : [:], now: Date().timeIntervalSince1970)
+    }
+
+    private func rememberSessionIfChanged() {
+        guard sessionMemoryOn, sessionRestored else { return }
+        sessionTicks &+= 1
+        let sig = SessionSignature(count: items.count, track: status.trackID, tab: tab, section: settingsSection, selected: library.selectedID)
+        if sig != lastSessionSignature || (started && sessionTicks % 50 == 0) { lastSessionSignature = sig; saveSession() }
+    }
+
+    /// At launch: brings back the queue, the song and its place, the page and the output, as far as the settings say. Called once.
+    func restoreSession() {
+        guard !sessionRestored else { return }
+        defer { sessionRestored = true }
+        guard sessionMemoryOn else { return }
+        guard let plan = SessionPlan.restore(SessionRecord.load(defaults), memory: look.memory, exists: { FileManager.default.fileExists(atPath: $0) }) else { return }
+        apply(plan)
+    }
+
+    /// Carries out a restore: the output, the page, the queue (not started) and the song, ready at its place, or playing from it.
+    func apply(_ plan: SessionRestore) {
+        ScrollMemory.shared.all = plan.scroll
+        if let uid = plan.deviceUID, let d = devices.first(where: { $0.uid == uid }), d.id != deviceID { deviceID = d.id }
+        if let t = plan.tab { tab = t }
+        if plan.tab != nil { settingsSection = plan.section; if let id = plan.selectedID, tab != .settings { library.selectedID = id } }
+        guard !plan.paths.isEmpty else { return }
+        let known = library.store?.tracks(paths: plan.paths) ?? [:]
+        let entries = player.append(plan.paths)
+        items = zip(entries, plan.paths).map { e, p in
+            let url = URL(fileURLWithPath: p, isDirectory: false), remote = RemoteMedia.isRemote(p) ? p : nil
+            if let t = known[p] { return QueueItem(id: e.id, url: url, title: t.title, artist: t.artistLine, album: t.releaseTitle ?? "", remotePath: remote) }
+            return QueueItem(id: e.id, url: url, title: url.deletingPathExtension().lastPathComponent, remotePath: remote)
+        }
+        lastQueueRev = player.queueRevision
+        originalOrder = items.map(\.id)
+        guard let i = plan.current, items.indices.contains(i) else { return }
+        let item = items[i]
+        let pending = PendingResume(id: item.id, position: plan.position, duration: plan.duration, title: item.title, artist: item.artist)
+        requestMetadata(item.id, urgent: true)
+        if plan.autoplay { play(item.id, at: plan.position); return }
+        pendingResume = pending
+        progress.update(position: plan.position, duration: plan.duration)
+        if plan.offer { resumeOffer = pending }
+    }
+
+    /// The card's "Continue": plays from where it was left.
+    func acceptResumeOffer() { if let p = resumeOffer { resumeOffer = nil; if items.contains(where: { $0.id == p.id }) { play(p.id, at: p.position) } } }
+    /// The card's "Start fresh": the restored queue is put away.
+    func declineResumeOffer() { resumeOffer = nil; pendingResume = nil; clear(); library.selectedID = nil; saveSession(force: true) }
 
     /// Adds library tracks to the queue (and optionally starts the first).
     func addTracks(_ tracks: [TrackDTO], play start: Bool) {
