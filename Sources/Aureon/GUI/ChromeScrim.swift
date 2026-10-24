@@ -22,12 +22,12 @@ enum ScrimStyle {
     static func visible(scrolledUnder: Bool) -> Bool { scrolledUnder }
 }
 
-/// The inset that pages keep clear at the top: the rail, and the sub-header of a destination that has one.
+/// The inset that pages keep clear at the top of the main panel: a margin, and the chips of a destination that has them.
 enum ChromeInset {
-    static let rail: CGFloat = 52
-    static let subNav: CGFloat = 32
-    /// The third line, under the sub-header (the tabs of Atelier → Sound).
-    static let thirdNav: CGFloat = 28
+    static let rail: CGFloat = 12
+    static let subNav: CGFloat = 52
+    /// The second line of chips (the tabs of Sound → Sound).
+    static let thirdNav: CGFloat = 40
     static func height(hasSubNav: Bool, hasThirdNav: Bool = false) -> CGFloat { rail + (hasSubNav ? subNav : 0) + (hasThirdNav ? thirdNav : 0) }
 }
 

@@ -1,7 +1,8 @@
 import SwiftUI
 
-// The slim rail across the top: the planet mark, five destinations in widely tracked small capitals with a champagne line under the one you are in,
-// and the quick-find. On the Gallery it rests: it fades after a few seconds without the pointer, and returns with any movement or key.
+// The top bar and the rail of the Pulse shell. The top bar holds the window buttons, the mark, Back and Forward, Home, the always-visible search,
+// the output chip and Settings; the rail down the left holds Library, Playlists, Radio, Rooms and Sound. On Now Playing the bar rests: it fades after
+// a few seconds without the pointer, and returns with any movement or key.
 
 /// Whether the interface is awake. Pointer movement and keys wake it; a few seconds of nothing lets the Gallery's controls and the rail fall away.
 /// One timer, rescheduled lazily: a pointer move only records the time, so waking costs nothing per event.
@@ -71,11 +72,34 @@ struct PlanetMark: View {
     }
 }
 
-/// The rail.
-struct TopRail: View {
+/// A round icon button of the top bar and the player bar: 36 points, a soft disc under the pointer, the accent when it is on.
+struct RoundIconStyle: ButtonStyle {
+    var on = false
+    var size: CGFloat = 36
+    func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, on: on, size: size) }
+    private struct Inner: View {
+        let configuration: Configuration
+        let on: Bool
+        let size: CGFloat
+        @StateObject private var hover = Box(false)
+        @Environment(\.isEnabled) private var enabled
+        var body: some View {
+            configuration.label
+                .font(Typo.sans(16, .regular))
+                .foregroundStyle(on ? Brand.accentText : (hover.v || configuration.isPressed ? Brand.ink : Brand.inkSecondary).opacity(enabled ? 1 : 0.4))
+                .frame(width: size, height: size)
+                .background(Circle().fill(Brand.ink.opacity(configuration.isPressed ? 0.14 : (hover.v && enabled ? 0.08 : 0))))
+                .contentShape(Circle())
+                .animation(Motion.touch, value: hover.v)
+                .onHover { hover.v = $0 }
+        }
+    }
+}
+
+/// The bar across the top of the window.
+struct PulseTopBar: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var idle: IdleTracker
-    @Namespace private var railLine
 
     private var resting: Bool { !idle.awake && m.tab == .player && !m.djMode }
 
@@ -83,26 +107,26 @@ struct TopRail: View {
         ZStack {
             HStack(spacing: 0) {
                 Color.clear.frame(width: 84, height: 1)          // the window buttons are placed over the left of this row by `WindowChrome`
-                NavButtons()
-                PlanetMark(size: 28).padding(.leading, 8).help("Aureon")
+                PlanetMark(size: 28).help("Aureon")
+                NavButtons().padding(.leading, 12)
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 40) {
-                ForEach([RailDestination.listen, .collection, .rooms, .atelier], id: \.self) { RailItem(destination: $0, line: railLine) }
+            HStack(spacing: 10) {
+                HomeButton()
+                TopSearchField()
             }
-            HStack(spacing: 4) {
+            .frame(maxWidth: 520).padding(.horizontal, 250)
+            HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                QuickPanelButton(anchor: .rail)
-                AppearanceSwitch()
-                QuickFindButton()
-                RailGear()
+                OutputChip()
+                SettingsButton()
             }
             .padding(.trailing, 16)
             // ⌥⌘D: the quick control panel
             Button { withAnimation(Motion.glide) { m.toggleQuickPanel(.rail) } } label: { Color.clear }
                 .buttonStyle(.plain).keyboardShortcut("d", modifiers: [.option, .command]).frame(width: 0, height: 0).accessibilityHidden(true)
         }
-        .frame(height: WindowChrome.band)
+        .frame(height: Metrics.topBarHeight)
         .opacity(resting ? 0 : 1)
         .allowsHitTesting(!resting)
         .accessibilityElement(children: .contain)
@@ -110,18 +134,105 @@ struct TopRail: View {
 }
 
 extension PlayerModel {
-    /// The destination that is on screen. Diagnostics are a section of the settings page that belongs to the Atelier.
+    /// The destination that is on screen. Diagnostics are a section of the settings page that belongs to Sound.
     var currentDestination: RailDestination {
-        if djMode { return .atelier }
-        if tab == .settings && settingsSection == .system && settingsPage == nil { return .atelier }
+        if djMode { return .sound }
+        if tab == .settings && settingsSection == .system && settingsPage == nil { return .sound }
         return RailDestination.of(tab)
+    }
+}
+
+struct HomeButton: View {
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        let on = m.currentDestination == .home && m.tab == .home
+        Button { withAnimation(Motion.page) { m.go(.tab(.home)) } } label: { Image(systemName: on ? "house.fill" : "house") }
+            .buttonStyle(RoundIconStyle(on: on, size: 40))
+            .help("Home").accessibilityLabel("Home").accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+struct SettingsButton: View {
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        let on = m.currentDestination == .settings
+        Button { withAnimation(Motion.page) { m.go(.settings(m.settingsSection)) } } label: { Image(systemName: "gearshape") }
+            .buttonStyle(RoundIconStyle(on: on, size: 40)).help("Settings").accessibilityLabel("Settings")
+    }
+}
+
+/// The search field, always in the bar. It opens the quick-find (⌘K), which searches the library, the pages and the settings.
+struct TopSearchField: View {
+    @EnvironmentObject var m: PlayerModel
+    @StateObject private var hover = Box(false)
+    var body: some View {
+        Button { withAnimation(Motion.glide) { m.showPalette = true } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").font(Typo.sans(14, .regular))
+                Text("Search songs, albums, artists").font(Typo.sans(14.5, .medium)).lineLimit(1)
+                Spacer(minLength: 8)
+                Text("⌘K").font(Typo.mono(11, .regular)).padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(Brand.ink.opacity(0.08)))
+            }
+            .foregroundStyle(hover.v ? Brand.ink : Brand.inkSecondary)
+            .padding(.horizontal, 16).frame(height: 38).frame(maxWidth: .infinity)
+            .background(Capsule().fill(Brand.panel2))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
+        .keyboardShortcut("k", modifiers: .command)
+        .help("Find anything (⌘K)").accessibilityLabel("Search")
+    }
+}
+
+/// The output and its rate, as a chip: a dot in the accent, the device, the rate it runs at. It opens the quick controls.
+struct OutputChip: View {
+    @EnvironmentObject var m: PlayerModel
+    @StateObject private var hover = Box(false)
+
+    private var text: String {
+        let name = m.selectedDevice.map { QuickDevices.shortName($0.name) } ?? "No device"
+        guard m.isActive, let rate = m.status.info?.sampleRate, rate > 0 else { return name }
+        return name + " · " + formatRate(rate)
+    }
+
+    var body: some View {
+        Button { withAnimation(Motion.glide) { m.toggleQuickPanel(.rail) } } label: {
+            HStack(spacing: 8) {
+                Circle().fill(Brand.accent).frame(width: 8, height: 8)
+                Text(text).font(Typo.sans(13, .medium)).lineLimit(1)
+            }
+            .foregroundStyle(m.quickPanel == .rail || hover.v ? Brand.ink : Brand.inkSecondary)
+            .padding(.horizontal, 14).frame(height: Metrics.pillHeight)
+            .background(Capsule().fill(Brand.ink.opacity(m.quickPanel == .rail ? 0.1 : (hover.v ? 0.06 : 0))))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
+        .help("Output: \(m.selectedDevice?.name ?? "none"). Quick controls (⌥⌘D)")
+        .accessibilityLabel("Output").accessibilityValue(text)
+        .popover(isPresented: Binding(get: { m.quickPanel == .rail }, set: { if !$0, m.quickPanel == .rail { m.quickPanel = nil } }), arrowEdge: .bottom) {
+            QuickPanelView().environmentObject(m)
+        }
+    }
+}
+
+/// The rail down the left: five destinations, each a symbol over a small label. The one you are in sits on a raised plate.
+struct PulseRail: View {
+    @EnvironmentObject var m: PlayerModel
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(RailDestination.rail) { RailItem(destination: $0) }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 8).frame(width: Metrics.railWidth)
+        .accessibilityElement(children: .contain)
     }
 }
 
 struct RailItem: View {
     @EnvironmentObject var m: PlayerModel
     let destination: RailDestination
-    let line: Namespace.ID
     @StateObject private var hover = Box(false)
 
     var body: some View {
@@ -129,13 +240,14 @@ struct RailItem: View {
         Button {
             withAnimation(Motion.page) { m.go(on ? destination.home : target) }
         } label: {
-            Text(destination.rawValue).font(Typo.sans(11, on ? .medium : .regular)).tracking(2.6).textCase(.uppercase)
-                .foregroundStyle(on ? Brand.ink : (hover.v ? Brand.ink : Brand.inkSecondary))
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) {
-                    if on { Rectangle().fill(Brand.gradient).frame(height: 1).padding(.trailing, -2.6).matchedGeometryEffect(id: "rail.underline", in: line) }
-                }
-                .contentShape(Rectangle())
+            VStack(spacing: 5) {
+                Image(systemName: destination.icon).font(Typo.sans(20, .regular)).frame(height: 24)
+                Text(destination.rawValue).font(Typo.sans(11, on ? .medium : .regular)).lineLimit(1)
+            }
+            .foregroundStyle(on || hover.v ? Brand.ink : Brand.inkSecondary)
+            .frame(width: 60, height: 58)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Brand.panel2 : Brand.ink.opacity(hover.v ? 0.06 : 0)))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .animation(Motion.touch, value: hover.v)
@@ -148,83 +260,29 @@ struct RailItem: View {
     private var target: NavTarget { m.lastPage[destination] ?? destination.home }
 }
 
-struct RailGear: View {
-    @EnvironmentObject var m: PlayerModel
-    @StateObject private var hover = Box(false)
-    var body: some View {
-        let on = m.currentDestination == .settings
-        Button { withAnimation(Motion.page) { m.go(.settings(m.settingsSection)) } } label: {
-            Image(systemName: "gearshape").font(Typo.sans(14, .light))
-                .foregroundStyle(on ? Brand.accentText : (hover.v ? Brand.ink : Brand.inkSecondary))
-                .frame(width: 32, height: 32).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
-        .help("Settings").accessibilityLabel("Settings")
-    }
-}
-
-struct QuickFindButton: View {
-    @EnvironmentObject var m: PlayerModel
-    @StateObject private var hover = Box(false)
-    var body: some View {
-        Button { withAnimation(Motion.glide) { m.showPalette = true } } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(Typo.sans(13, .light))
-                Text("⌘K").font(Typo.mono(10, .regular)).tracking(1)
-            }
-            .foregroundStyle(hover.v ? Brand.ink : Brand.inkSecondary)
-            .padding(.horizontal, 8).frame(height: 32).contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
-        .keyboardShortcut("k", modifiers: .command)
-        .help("Find anything (⌘K)").accessibilityLabel("Quick find")
-    }
-}
-
-/// The quiet sub-header under the rail: every page of the destination as small capitals in one line, a champagne line under the one you are on. It
-/// tightens its spacing when the window is narrow and, if that is not enough, scrolls sideways under soft edges.
+/// The chips along the top of a destination's pages: every page of it in one line, the one you are on filled. They tighten when the window is narrow
+/// and, if that is not enough, scroll sideways under soft edges.
 struct SubNavBar: View {
     @EnvironmentObject var m: PlayerModel
     let destination: RailDestination
-    @Namespace private var lineSpace
 
     private func hidden(_ t: NavTarget) -> Bool { if case .tab(let tab) = t { return m.sidebar.isHidden(tab) } else { return false } }
 
-    private func line(spacing: CGFloat, tracking: CGFloat, _ items: [NavTarget]) -> some View {
-        HStack(spacing: spacing) { ForEach(items) { SubNavItem(target: $0, tracking: tracking, line: lineSpace) } }.fixedSize()
+    private func line(_ items: [NavTarget]) -> some View {
+        HStack(spacing: 8) {
+            ForEach(items) { t in
+                PillChip(title: t.title, on: m.isCurrent(t)) { withAnimation(Motion.page) { m.go(t) } }
+            }
+        }.fixedSize()
     }
 
     var body: some View {
         let items = destination.subNav.filter { !hidden($0) || m.isCurrent($0) }
         ViewThatFits(in: .horizontal) {
-            line(spacing: 28, tracking: 2, items)
-            line(spacing: 20, tracking: 1.4, items)
-            line(spacing: 14, tracking: 1, items)
-            ScrollView(.horizontal, showsIndicators: false) { line(spacing: 14, tracking: 1, items).padding(.horizontal, 32) }
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.05), .init(color: .black, location: 0.95), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
+            line(items).frame(maxWidth: .infinity, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) { line(items) }
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.94), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
         }
-        .frame(maxWidth: .infinity).frame(height: 32)
-    }
-}
-
-struct SubNavItem: View {
-    @EnvironmentObject var m: PlayerModel
-    let target: NavTarget
-    var tracking: CGFloat = 2
-    let line: Namespace.ID
-    @StateObject private var hover = Box(false)
-    var body: some View {
-        let on = m.isCurrent(target)
-        Button { withAnimation(Motion.page) { m.go(target) } } label: {
-            Text(target.title).font(Typo.sans(10, on ? .medium : .regular)).tracking(tracking).textCase(.uppercase)
-                .foregroundStyle(on ? Brand.ink : (hover.v ? Brand.inkSecondary : Brand.inkTertiary))
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) { if on { Rectangle().fill(Brand.gradient).frame(height: 1).matchedGeometryEffect(id: "subnav.underline", in: line) } }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain).onHover { hover.v = $0 }
-        .animation(Motion.touch, value: hover.v).animation(TabMotion.animation, value: on)
-        .accessibilityLabel(target.title)
-        .accessibilityAddTraits(on ? .isSelected : [])
+        .padding(.horizontal, 24).frame(height: ChromeInset.subNav)
     }
 }

@@ -81,16 +81,16 @@ struct StageInteractionTests {
             UserDefaults.standard.set(false, forKey: "aureon.lyrics.show"); UserDefaults.standard.set(false, forKey: "aureon.lyrics.expanded")
         }
         reset(); r.win.makeFirstResponder(nil); pump(0.5, r.host)
-        // the rail: four destinations spread across the middle of its row
-        for x in stride(from: 330.0, to: 880.0, by: 10.0) {
-            click(r, CGPoint(x: x, y: 38))      // (the top 28 points of a titled window belong to its title bar)
+        // the rail: five destinations down the left of the window
+        for y in stride(from: 70.0, to: 420.0, by: 10.0) {
+            click(r, CGPoint(x: 36, y: y))
             if r.m.tab != .home || r.m.djMode { out.rail += 1 }
             reset(); RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
         pump(0.4, r.host)
-        // the bar: the queue button is at its right end
-        for x in stride(from: 1060.0, to: 1190.0, by: 6.0) {
-            click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height + 56))   // (the buttons sit a little higher on the glass plate than on the flat band)
+        // the bar: the queue button is in its right column, beside lyrics and the output
+        for x in stride(from: 900.0, to: 1060.0, by: 6.0) {
+            click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height / 2))
             if r.m.showQueue { out.bar += 1 }
             reset(); RunLoop.current.run(until: Date().addingTimeInterval(0.02))
         }
@@ -115,19 +115,19 @@ struct StageInteractionTests {
             // open: click the cover in the bar, the way the owner does
             r.m.tab = .home; r.m.showQueue = false; pump(0.4, r.host)
             var opened = false
-            for x in stride(from: 30.0, to: 76.0, by: 6.0) where !opened {
-                click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height + 52))
+            for x in stride(from: 30.0, to: 90.0, by: 6.0) where !opened {
+                click(r, CGPoint(x: x, y: r.host.bounds.height - PlayerBar.height / 2))
                 opened = r.m.tab == .player
             }
             expect(opened, "round \(round): a click on the bar's cover opens the Gallery")
             pump(1.5, r.host)
-            // leave: a click on the rail, on Collection
+            // leave: a click on Home in the top bar
             var left = false
-            for x in stride(from: 480.0, to: 640.0, by: 8.0) where !left {
-                click(r, CGPoint(x: x, y: 38))
+            for x in stride(from: 340.0, to: 400.0, by: 6.0) where !left {
+                click(r, CGPoint(x: x, y: 32))
                 left = r.m.tab != .player
             }
-            expect(left, "round \(round): a click on the rail leaves the Gallery")
+            expect(left, "round \(round): a click on Home leaves the Gallery")
             pump(1.5, r.host)
             let after = probe(r)
             expect(after.rail >= before.rail - 2 && after.bar >= before.bar - 1, "round \(round): after the Gallery the rail and the bar answer as before: \(after) vs \(before)")

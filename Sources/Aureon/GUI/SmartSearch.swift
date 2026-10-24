@@ -77,7 +77,7 @@ struct SmartSearchPage: View {
             if showTree.v {
                 TagTreePanel(tree: q.tree, loading: q.treeLoading, current: m.searchText) { node in m.searchText = node.query }
                     .frame(width: 236)
-                    .padding(.leading, 16).padding(.top, WindowChrome.band - 6).padding(.bottom, 96)
+                    .padding(.leading, 16).padding(.top, 12).padding(.bottom, 24)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
             ZStack(alignment: .topLeading) {

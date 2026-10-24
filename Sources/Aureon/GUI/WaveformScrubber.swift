@@ -142,7 +142,7 @@ struct WaveformLineArt: View, Equatable {
 /// position updates, hovering shows the time under the pointer, dragging scrubs, and scrolling over it seeks (a trackpad gesture that starts on
 /// it, or the mouse wheel with ⌥). Any other scrolling is passed on to the page, through `ScrollRouter`.
 struct WaveformScrubber: View {
-    enum Style { case bar, stage, line }
+    enum Style { case bar, stage, line, slim }
 
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var progress: ProgressModel
@@ -156,7 +156,7 @@ struct WaveformScrubber: View {
     @StateObject private var pulse = Box(SeekPulse())
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var pitch: CGFloat { style == .bar ? 3 : 4 }
+    private var pitch: CGFloat { style == .bar || style == .slim ? 3 : 4 }
     private var barWidth: CGFloat { style == .bar ? 1 : 1.5 }
 
     var body: some View {
@@ -172,7 +172,12 @@ struct WaveformScrubber: View {
         GeometryReader { g in
             let w = g.size.width, h = g.size.height
             ZStack(alignment: .leading) {
-                if style == .line {
+                if style == .slim {
+                    // the player bar's slider: a 5-point rounded track filled with the progress, and a 13-point thumb while the pointer is near
+                    Capsule().fill(Brand.ink.opacity(0.18)).frame(height: 5)
+                    Capsule().fill(hoverX.v != nil || dragging.v ? Brand.accent : Brand.ink.opacity(0.9)).frame(width: max(5, w * f), height: 5).opacity(enabled || live ? 1 : 0.35)
+                    if enabled { Circle().fill(Brand.ink).frame(width: 13, height: 13).offset(x: min(max(0, w * f - 6.5), w - 13)).opacity(hoverX.v != nil || dragging.v ? 1 : 0).allowsHitTesting(false) }
+                } else if style == .line {
                     WaveformLineArt(overview: ov, color: wc.unplayed.color).equatable()
                     WaveformLineArt(overview: ov, color: wc.played.color, gradient: [wc.played.color, wc.played2.color]).equatable()
                         .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
@@ -185,11 +190,11 @@ struct WaveformScrubber: View {
                         .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
                         .opacity(enabled || live ? 1 : 0.35)
                 }
-                if pulse.v.count > 0 { SeekPulseMark(x: pulse.v.x, height: h + (style == .line ? 8 : 4)).id(pulse.v.count) }
-                if let x = hoverX.v, enabled, !dragging.v {
+                if pulse.v.count > 0, style != .slim { SeekPulseMark(x: pulse.v.x, height: h + (style == .line ? 8 : 4)).id(pulse.v.count) }
+                if let x = hoverX.v, enabled, !dragging.v, style != .slim {
                     Rectangle().fill(Brand.ink.opacity(0.4)).frame(width: Metrics.hairline, height: h).offset(x: min(max(0, x), w) - 0.25).allowsHitTesting(false)
                 }
-                if enabled {
+                if enabled, style != .slim {
                     if style == .line {
                         Circle().fill(Brand.accent).frame(width: 6, height: 6).offset(x: w * f - 3).allowsHitTesting(false)
                     } else {
@@ -202,9 +207,9 @@ struct WaveformScrubber: View {
                     let t = dragging.v ? (m.scrub ?? progress.position) : ScrubMath.time(x: Double(x), width: Double(w), duration: dur)
                     Text(clock(t)).font(Typo.mono(10, .regular))
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Rectangle().fill(Brand.canvas)).overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+                        .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(Brand.panel2))
                         .foregroundStyle(Brand.ink).fixedSize()
-                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: style == .bar ? -(h / 2 + 16) : -(h / 2 + 20))
+                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: style == .bar || style == .slim ? -(h / 2 + 16) : -(h / 2 + 20))
                         .allowsHitTesting(false).transition(.opacity)
                 }
             }
@@ -242,7 +247,7 @@ struct WaveformScrubber: View {
                 return true
             }
         }
-        .frame(height: style == .bar ? 16 : (style == .line ? 40 : 46))
+        .frame(height: style == .bar || style == .slim ? 16 : (style == .line ? 40 : 46))
         .onAppear { prefetch() }
         .onChange(of: path) { _, _ in prefetch() }
         .accessibilityElement()

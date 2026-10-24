@@ -11,8 +11,6 @@ struct ContentView: View {
     @StateObject private var chrome = ChromeState()
     @Namespace private var stageSpace
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    /// The player bar is a plate of glass: pages stop above it, so only the still backdrop is ever behind the glass (never scrolling or animating content).
-    private var barIsGlass: Bool { GlassPolicy.surface(enabled: m.glassAccents, reduceTransparency: reduceTransparency) == .glass }
 
     @MainActor init(stage: StageModel? = nil) { _stage = StateObject(wrappedValue: stage ?? StageModel()) }
 
@@ -21,12 +19,13 @@ struct ContentView: View {
     private func chromeHeight(for tab: Tab) -> CGFloat { ChromeInset.height(hasSubNav: !RailDestination.of(tab).subNav.isEmpty, hasThirdNav: tab == .audio && !m.djMode) }
     /// Atelier → Sound has its own line of tabs under the sub-header.
     private var showsSoundTabs: Bool { m.tab == .audio && !m.djMode }
-    /// Pages that scroll under the bar through `PageScaffold` bring their own inset; the others are kept below it.
+    /// Pages that scroll under the chips through `PageScaffold` bring their own inset; the others are kept below it.
     private func pageKeepsOwnInset(_ tab: Tab) -> Bool { tab != .folders }
+    private var barIsGlass: Bool { false }
 
     var body: some View {
         ZStack {
-            Brand.canvas
+            Brand.window
             if m.djMode {
                 DJView().transition(.opacity)
             } else {
@@ -43,14 +42,6 @@ struct ContentView: View {
                     .background(Slab().fill(.regularMaterial)).overlay(Slab().strokeBorder(Brand.ink.opacity(0.15), lineWidth: 0.8))
                     Spacer()
                 }.padding(.top, 16).transition(.move(edge: .top).combined(with: .opacity)).allowsHitTesting(false)
-            }
-            if m.showQueue && !m.djMode && m.tab != .player {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    QueuePanel()
-                }
-                .padding(.top, WindowChrome.band + 8).padding(.trailing, 16).padding(.bottom, m.tab == .player ? 16 : PlayerBar.reserved + 16)
-                .transition(.opacity.animation(TabMotion.animation))
             }
             if m.showPalette {
                 CommandPaletteView().transition(.opacity)
@@ -99,8 +90,8 @@ struct ContentView: View {
         .environment(\.glassAccents, m.glassAccents)
         .environment(\.pageTransitions, m.pageTransitions)
         .environment(\.glassTint, m.backdrop == .album ? GlassPolicy.tint(for: m.hero.palette.accent) : nil)
-        .background(Brand.canvas)
-        .id(m.theme.id)
+        .background(Brand.window)
+        .id(m.theme.id + "|\(m.lookRevision)")
         .onDrop(of: [.fileURL], isTargeted: Binding(get: { dropping.v }, set: { dropping.v = $0 })) { providers in
             let group = DispatchGroup()
             let urls = DropURLs()
@@ -116,32 +107,58 @@ struct ContentView: View {
         }
     }
 
-    /// The window: the backdrop under everything, the page, the rail on top and (off the Gallery) the player bar below.
+    /// The window: the top bar across it, the rail down the left, the main panel (rounded) and, beside it, the queue; the player bar underneath.
+    /// Now Playing is the whole window: its page fills it, the bar rests and the rail and player bar are away.
     private var shell: some View {
-        ZStack(alignment: .bottom) {
-            StageBackdrop(mode: m.backdrop, theme: m.theme, palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: m.tab == .player, intensity: m.backdropIntensity)
+        ZStack(alignment: .top) {
+            if m.tab == .player {
+                ZStack(alignment: .top) {
+                    StageBackdrop(mode: m.backdrop, theme: m.theme, palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: true, intensity: m.backdropIntensity)
+                    TabSwitcher(tag: m.tab) { tab in page(for: tab).environment(\.chromeInset, 0).frame(maxWidth: .infinity, maxHeight: .infinity).clipped() }
+                }
+                PulseTopBar()
+            } else {
+                VStack(spacing: 0) {
+                    PulseTopBar()
+                    HStack(spacing: 0) {
+                        PulseRail()
+                        mainPanel
+                        if m.showQueue {
+                            QueuePanel().padding(.leading, 8).transition(.opacity.animation(TabMotion.animation))
+                        }
+                    }
+                    .padding(.trailing, 8)
+                    // opacity only: the cover and waveform fly between the bar and Now Playing, and a sliding bar would drag them along
+                    PlayerBar().transition(.opacity)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Brand.window)
+    }
+
+    /// The rounded panel pages live in: the backdrop, the page (scrolling under the chips of its destination) and the chips with their scrim.
+    private var mainPanel: some View {
+        ZStack(alignment: .top) {
+            StageBackdrop(mode: m.backdrop, theme: m.theme, palette: m.hero.palette, image: m.hero.image, token: m.hero.token, stage: false, intensity: m.backdropIntensity)
             // every change of page goes through the one tab container (see `TabSwitcher`): the old page leaves, is not hit-testable at once and is gone when it ends
             TabSwitcher(tag: m.tab) { tab in
                 page(for: tab)
-                    .environment(\.chromeInset, tab == .player || !pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
-                    .padding(.top, tab == .player || pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
+                    .environment(\.chromeInset, pageKeepsOwnInset(tab) ? chromeHeight(for: tab) : 0)
+                    .padding(.top, pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.bottom, tab != .player && barIsGlass ? PlayerBar.height : 0)
                     .clipped()
             }
-            .padding(.trailing, m.showQueue && m.tab != .player ? 362 : 0)
-            // opacity only: the cover and waveform fly between the bar and Now Playing, and a sliding bar would drag them along
-            if m.tab != .player { PlayerBar().transition(.opacity) }
-            VStack(spacing: 0) {
+            if !m.currentDestination.subNav.isEmpty {
                 ChromeBar {
-                    TopRail()
-                    if m.tab != .player, !m.currentDestination.subNav.isEmpty { SubNavBar(destination: m.currentDestination).transition(.opacity) }
-                    if showsSoundTabs { SoundTabBar().transition(.opacity) }
+                    SubNavBar(destination: m.currentDestination).padding(.top, 8).transition(.opacity)
+                    if showsSoundTabs { SoundTabBar().padding(.horizontal, 24).padding(.bottom, 4).transition(.opacity) }
                 }
-                Spacer(minLength: 0)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .background(Brand.canvas)
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.panelRadius, style: .continuous))
     }
 
     @ViewBuilder private func page(for tab: Tab) -> some View {
@@ -195,9 +212,9 @@ struct QueuePanel: View {
     @EnvironmentObject var m: PlayerModel
     var body: some View {
         QueueView(dropping: false, onClose: { m.showQueue = false })
-            .frame(width: 350).frame(maxHeight: .infinity)
-            .background(Rectangle().fill(Brand.sidebar))
-            .overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+            .frame(width: 340).frame(maxHeight: .infinity)
+            .background(Brand.canvas)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.panelRadius, style: .continuous))
     }
 }
 
@@ -393,9 +410,10 @@ struct IconButtonStyle: ButtonStyle {
         @StateObject private var hover = Box(false)
         @Environment(\.isEnabled) private var enabled
         var body: some View {
-            configuration.label.font(Typo.sans(13, .light)).foregroundStyle(enabled ? Brand.ink : Brand.inkTertiary.opacity(0.6))
-                .frame(width: 28, height: 28)
-                .background(Rectangle().fill(Brand.ink.opacity(configuration.isPressed ? 0.12 : (hover.v && enabled ? 0.06 : 0))))
+            configuration.label.font(Typo.sans(15, .regular)).foregroundStyle(enabled ? (hover.v || configuration.isPressed ? Brand.ink : Brand.inkSecondary) : Brand.inkTertiary.opacity(0.6))
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Brand.ink.opacity(configuration.isPressed ? 0.14 : (hover.v && enabled ? 0.08 : 0))))
+                .contentShape(Circle())
                 .animation(Motion.touch, value: hover.v).animation(Motion.touch, value: configuration.isPressed)
                 .onHover { hover.v = $0 }
         }

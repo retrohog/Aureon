@@ -4,7 +4,7 @@ import SwiftUI
 
 nonisolated(unsafe) private var navKeepAlive: [AnyObject] = []
 
-/// The shape of the interface: five destinations on the rail, every old page reachable from them, and the quick-find listing all of it.
+/// The shape of the interface: the top bar (Home, search, Settings), five destinations on the rail, every old page reachable from them, and the quick-find listing all of it.
 struct NavigationTests {
     func everyPageIsReachableFromTheRail() {
         // every page belongs to exactly one destination
@@ -13,7 +13,8 @@ struct NavigationTests {
             for t in d.tabs { expect(seen[t] == nil, "\(t) belongs to two destinations"); seen[t] = d }
         }
         for t in Tab.allCases { expect(seen[t] != nil && RailDestination.of(t) == seen[t], "\(t) has no destination") }
-        expect(RailDestination.allCases.map(\.rawValue) == ["Now Playing", "Collection", "Rooms", "Atelier", "Settings"], "the rail's five destinations, in plain words")
+        expect(RailDestination.rail.map(\.rawValue) == ["Library", "Playlists", "Radio", "Rooms", "Sound"], "the rail's five destinations, in plain words")
+        expect(!RailDestination.rail.contains(.home) && !RailDestination.rail.contains(.listen) && !RailDestination.rail.contains(.settings), "Home, Now Playing and Settings are not on the rail")
         // …and can be reached from it: every page is the destination's home or an item of its one-line sub-header (nothing hides behind a menu)
         for d in RailDestination.allCases {
             let nav = d.subNav
@@ -22,12 +23,13 @@ struct NavigationTests {
             for t in nav { expect(t.destination == d, "\(t.id) sits under the wrong destination") }
             expect(Set(nav.map(\.id)).count == nav.count, "\(d) lists something twice")
         }
-        // the DJ console and the diagnostics belong to the Atelier, and every sub-section of it is in the one line
-        let atelier = RailDestination.atelier.subNav
-        expect(atelier.contains(.dj) && atelier.contains(.settings(.system)), "DJ and diagnostics are in the Atelier")
-        expect(Set(atelier.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test", "Diagnostics"], "\(atelier.map(\.title))")
-        expect(RailDestination.collection.subNav.map(\.title).starts(with: ["Albums", "Artists", "Songs"]), "album-first")
-        expect(RailDestination.collection.subNav.count == 15, "the whole collection is in the line")
+        // the DJ console and the diagnostics belong to Sound, and every sub-section of it is in the one line
+        let sound = RailDestination.sound.subNav
+        expect(sound.contains(.dj) && sound.contains(.settings(.system)), "DJ and diagnostics are in Sound")
+        expect(Set(sound.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test", "Diagnostics"], "\(sound.map(\.title))")
+        expect(RailDestination.library.subNav.map(\.title).starts(with: ["Albums", "Artists", "Songs"]), "album-first")
+        expect(RailDestination.library.subNav.count == 9, "the whole library is in the line")
+        expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked Songs"] && RailDestination.radio.subNav.map(\.title) == ["Radio", "Podcasts"])
         // the rooms page holds what was spread over other pages
         expect(Tab.rooms.rawValue == "Rooms" && RailDestination.of(.rooms) == .rooms)
         // labels are plain words
@@ -39,16 +41,16 @@ struct NavigationTests {
     func theShellGoesWhereItIsAsked() {
         MainActor.assumeIsolated {
             let m = PlayerModel(); navKeepAlive.append(m)
-            expect(m.tab == .player, "the Gallery is home")
+            expect(m.tab == .home, "Home is where it opens")
             for t in PaletteCatalog.destinations {
                 m.go(t)
                 expect(m.isCurrent(t), "went to \(t.id)")
                 if case .tab(let tab) = t, tab != .settings { expect(m.currentDestination == RailDestination.of(tab), "\(t.id): the rail marks \(m.currentDestination)") }
-                if t == .dj { expect(m.currentDestination == .atelier && m.djMode) }
+                if t == .dj { expect(m.currentDestination == .sound && m.djMode) }
             }
-            m.go(.settings(.system)); expect(m.currentDestination == .atelier, "diagnostics are in the Atelier")
+            m.go(.settings(.system)); expect(m.currentDestination == .sound, "diagnostics are in Sound")
             m.go(.settings(.midi)); expect(m.currentDestination == .settings && m.settingsSection == .midi)
-            m.go(.tab(.albums)); expect(!m.djMode && m.currentDestination == .collection && m.lastPage[.collection] == .tab(.albums), "the last page of a destination is remembered")
+            m.go(.tab(.albums)); expect(!m.djMode && m.currentDestination == .library && m.lastPage[.library] == .tab(.albums), "the last page of a destination is remembered")
         }
     }
 
@@ -281,7 +283,7 @@ struct NowPlayingTests {
         expect(ScrimStyle.rule(offset: 0) == 0 && ScrimStyle.rule(offset: -30) == 0 && ScrimStyle.rule(offset: 4) == 0.5 && ScrimStyle.rule(offset: 8) == 1 && ScrimStyle.rule(offset: 400) == 1, "the hairline fades in as content goes under")
         expect(ScrimStyle.visible(scrolledUnder: true) && !ScrimStyle.visible(scrolledUnder: false), "the scrim is there once content is under it")
         // the content starts below the bar
-        expect(ChromeInset.height(hasSubNav: false) == 52 && ChromeInset.height(hasSubNav: true) == 84 && ChromeInset.rail == WindowChrome.band, "the inset is the rail and the sub-header")
+        expect(ChromeInset.height(hasSubNav: false) == ChromeInset.rail && ChromeInset.height(hasSubNav: true) == ChromeInset.rail + ChromeInset.subNav && WindowChrome.band == Metrics.topBarHeight, "the inset is the margin and the chips")
         // text on the scrim, at the worst the scrim can be (92 % theme background over the lightest thing behind it) keeps its contrast
         for t in Theme.all {
             let worst = WCAG.over(t.canvasRGB, alpha: 0.92, t.isLight ? RGB(0, 0, 0) : RGB(1, 1, 1))

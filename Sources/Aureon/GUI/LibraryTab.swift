@@ -49,7 +49,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
                 }
                 content
             }
-            .padding(.horizontal, 40).padding(.top, 8).padding(.bottom, PlayerBar.reserved + 24)
+            .padding(.horizontal, 40).padding(.top, 8).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .underChrome(chrome, inset: inset)

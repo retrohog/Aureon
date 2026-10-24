@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 
 /// Makes the window look like part of the app instead of a title bar: no title, content under the bar, and the three window buttons moved into
-/// the sidebar's header row (centred in a 52-point band, matching `Sidebar`'s header).
+/// the top bar (centred in a 56-point band, matching `PulseTopBar`).
 struct WindowChrome: NSViewRepresentable {
-    static let band: CGFloat = 52
+    static let band: CGFloat = Metrics.topBarHeight
 
     func makeNSView(context: Context) -> NSView { ChromeView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
