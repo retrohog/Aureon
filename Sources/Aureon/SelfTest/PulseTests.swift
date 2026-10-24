@@ -139,6 +139,14 @@ struct PulseTests {
         try? FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
         expect(TypeFace.registerBundled(bundle: Bundle(for: PulseTestsAnchor.self), extraFolders: [empty]) >= 0 && !TypeFace.family.isEmpty, "the font loader copes with no fonts")
         try? FileManager.default.removeItem(at: empty)
+        // the bundled font is found where the build puts it, and carries its licence
+        let fonts = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Packaging/Fonts")
+        if FileManager.default.fileExists(atPath: fonts.path) {
+            let names = ((try? FileManager.default.contentsOfDirectory(atPath: fonts.path)) ?? []).sorted()
+            expect(names.contains { $0.hasPrefix("Figtree") && $0.hasSuffix(".ttf") } && names.contains("OFL.txt"), "Figtree and its licence are bundled together: \(names)")
+            TypeFace.registerBundled(bundle: Bundle(for: PulseTestsAnchor.self), extraFolders: [fonts])
+            expect(TypeFace.hasPreferred && TypeFace.family == "Figtree", "the interface is set in Figtree")
+        }
     }
 }
 
