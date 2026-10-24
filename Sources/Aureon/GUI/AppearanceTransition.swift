@@ -10,9 +10,10 @@ enum AppearanceSwitching {
     /// The mode a tap on the switch goes to: the opposite of what is shown now (also when the mode is Auto).
     static func target(isLight: Bool) -> AppearanceMode { isLight ? .dark : .light }
 
-    /// What the switch says it will do: the theme chosen for the other appearance.
-    static func tooltip(dark: String, light: String, isLight: Bool) -> String {
-        isLight ? "Switch to dark (\(Theme.named(dark).name))" : "Switch to light (\(Theme.named(light).name))"
+    /// What the switch says it will do: the other half of the chosen colour family.
+    static func tooltip(family: String, isLight: Bool) -> String {
+        let name = Theme.families.first { $0.id == family }?.name ?? Theme.families[0].name
+        return isLight ? "Switch to dark (\(name))" : "Switch to light (\(name))"
     }
 }
 
@@ -141,8 +142,8 @@ struct AppearanceSwitch: View {
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
         .background(AnchorReporter { m.switchAnchor = $0 })
-        .help(AppearanceSwitching.tooltip(dark: m.darkThemeID, light: m.lightThemeID, isLight: light))
-        .accessibilityLabel("Appearance").accessibilityValue(light ? "Light" : "Dark").accessibilityHint(AppearanceSwitching.tooltip(dark: m.darkThemeID, light: m.lightThemeID, isLight: light))
+        .help(AppearanceSwitching.tooltip(family: m.themeFamily, isLight: light))
+        .accessibilityLabel("Appearance").accessibilityValue(light ? "Light" : "Dark").accessibilityHint(AppearanceSwitching.tooltip(family: m.themeFamily, isLight: light))
         .accessibilityAddTraits(.isToggle)
     }
 

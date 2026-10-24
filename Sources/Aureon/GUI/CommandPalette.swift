@@ -9,7 +9,7 @@ enum PaletteAction: Hashable {
     case togglePlay, next, previous, toggleQueue, showLyrics, addMusic
     case theme(String), appearance(AppearanceMode), backdrop(BackdropMode)
     case search(String)
-    case sound(SoundSection), intensity(BackdropIntensity), glass(Bool), quickPanel, toggleAppearance, levelSpeakers
+    case sound(SoundSection), intensity(BackdropIntensity), glass(Bool), pureBlack(Bool), quickPanel, toggleAppearance, levelSpeakers
 }
 
 struct PaletteItem: Identifiable, Hashable {
@@ -65,8 +65,10 @@ enum PaletteCatalog {
             PaletteItem(id: "act:lyrics", title: "Lyrics", group: "Playback", icon: "quote.bubble", action: .showLyrics),
             PaletteItem(id: "act:add", title: "Add a music folder", group: "Library", icon: "folder.badge.plus", action: .addMusic, keywords: "import scan"),
         ]
-        out += Theme.all.map { PaletteItem(id: "theme:" + $0.id, title: "Theme · " + $0.name, group: "Appearance", icon: "paintpalette", action: .theme($0.id), keywords: "colour color") }
-        out += AppearanceMode.allCases.map { PaletteItem(id: "appearance:" + $0.rawValue, title: "Appearance · " + $0.title, group: "Appearance", icon: $0.icon, action: .appearance($0), keywords: "dark light day night") }
+        out += Theme.families.map { PaletteItem(id: "theme:" + $0.id, title: "Colour · " + $0.name, group: "Appearance", icon: "paintpalette", action: .theme($0.id), keywords: "colour color theme family " + $0.blurb) }
+        out += [PaletteItem(id: "black:on", title: "Pure black · On", group: "Appearance", icon: "circle.fill", action: .pureBlack(true), keywords: "amoled oled black dark"),
+                PaletteItem(id: "black:off", title: "Pure black · Off", group: "Appearance", icon: "circle", action: .pureBlack(false), keywords: "amoled oled black dark")]
+        out += AppearanceMode.pickerOrder.map { PaletteItem(id: "appearance:" + $0.rawValue, title: "Appearance · " + $0.title, group: "Appearance", icon: $0.icon, action: .appearance($0), keywords: "dark light day night") }
         out += BackdropMode.allCases.map { PaletteItem(id: "backdrop:" + $0.rawValue, title: "Backdrop · " + $0.title, group: "Appearance", icon: "circle.lefthalf.filled", action: .backdrop($0), keywords: "background gradient blur stars") }
         out += SoundSection.allCases.map { PaletteItem(id: "sound:" + $0.rawValue, title: "Sound · " + $0.title, group: "Atelier", icon: $0.icon, action: .sound($0), keywords: "sound audio settings " + $0.blurb) }
         out += BackdropIntensity.allCases.map { PaletteItem(id: "intensity:" + $0.rawValue, title: "Album backdrop · " + $0.title, group: "Appearance", icon: "circle.lefthalf.filled", action: .intensity($0), keywords: "intensity gradient blur colour") }
@@ -191,12 +193,13 @@ enum PaletteRunner {
             p.message = "Choose the folder(s) that contain your music"
             // after the action has returned: a modal loop run inside a SwiftUI action can leave the window unresponsive
             DispatchQueue.main.async { if p.runModal() == .OK { p.urls.forEach { m.library.addFolder($0) } } }
-        case .theme(let id): withAnimation(Motion.glide) { m.choose(theme: Theme.named(id)) }
+        case .theme(let id): withAnimation(Motion.glide) { m.choose(family: id) }
         case .appearance(let mode): withAnimation(Motion.glide) { m.appearance = mode }
         case .backdrop(let mode): m.backdrop = mode
         case .sound(let section): withAnimation(Motion.page) { m.showSound(section) }
         case .intensity(let level): m.backdrop = .album; m.backdropIntensity = level
         case .glass(let on): m.glassAccents = on
+        case .pureBlack(let on): m.look.pureBlack = on
         case .quickPanel: m.quickPanel = .rail
         case .levelSpeakers: m.showLevelSpeakers()
         case .toggleAppearance: m.toggleAppearance(from: nil)

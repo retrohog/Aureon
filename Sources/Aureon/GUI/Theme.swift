@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// A colour theme: the surfaces, the ink drawn on them and the accent. Pulse has nine: six dark (Graphite, AMOLED, Midnight, Forest, Plum, Cocoa)
-/// and three softened light ones (Stone, Sage, Paper). Three surfaces carry the layout: the window behind everything (`sidebarRGB`, also the
+/// A colour theme: the surfaces, the ink drawn on them and the accent. Pulse has five colour families (Graphite, Midnight, Forest, Plum,
+/// Cocoa), each with a dark half and a softened light half, and a pure black version of every dark half. Three surfaces carry the layout: the window behind everything (`sidebarRGB`, also the
 /// colour of the top bar and the rail), the main panel (`canvasRGB`, the page itself and the player bar) and the raised surface (`panel2RGB`: cards,
 /// chips, the selected rail item). Everything the interface paints with comes from here (through `Brand`).
 ///
@@ -233,6 +233,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String { switch self { case .system: "Auto"; case .light: "Light"; case .dark: "Dark" } }
     var icon: String { switch self { case .system: "circle.lefthalf.filled"; case .light: "sun.max"; case .dark: "moon" } }
+    /// The order in the picker.
+    static let pickerOrder: [AppearanceMode] = [.dark, .light, .system]
 }
 
 /// A grid of theme previews to pick from, with the dark / light switch.
@@ -243,14 +245,28 @@ struct ThemePicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 16) {
-                SegmentedChoice(selection: $m.appearance, items: Array(AppearanceMode.allCases), label: { $0.title }, icon: { $0.icon }).frame(width: 264)
-                Text(m.appearance == .system ? "Follows your Mac: your dark theme at night, your light theme by day" : "Pick any of the nine; light themes are soft on purpose").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Mode").microLabel().foregroundStyle(Brand.inkTertiary)
+                HStack(spacing: 16) {
+                    SegmentedChoice(selection: $m.appearance, items: AppearanceMode.pickerOrder, label: { $0.title }, icon: { $0.icon }).frame(width: 264)
+                    Text(modeHint).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                }
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 168), spacing: 14)], alignment: .leading, spacing: 14) {
-                ForEach(Theme.all) { t in swatch(t) }
+            HStack(spacing: 14) {
+                Toggle("", isOn: $m.look.pureBlack).labelsHidden().accessibilityLabel("Pure black").fixedSize()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pure black").font(Typo.sans(13, .medium))
+                    Text(m.appearance == .light ? "For dark mode: a true black window, for OLED screens. Any colour family can use it." : "A true black window for dark mode, for OLED screens. Any colour family can use it.")
+                        .font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                }
             }
-            if m.theme.isLight {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Colour").microLabel().foregroundStyle(Brand.inkTertiary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150, maximum: 196), spacing: 14)], alignment: .leading, spacing: 14) {
+                    ForEach(Theme.families) { f in swatch(f) }
+                }
+            }
+            if m.appearance != .dark {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Light brightness").microLabel().foregroundStyle(Brand.inkTertiary)
                     LookSliderRow(title: "Brightness", hint: "From a quiet grey to paper. The default is easy on the eyes.", value: $m.look.lightBrightness, defaultValue: LookSettings.defaults.lightBrightness, deferred: true)
@@ -319,34 +335,53 @@ struct ThemePicker: View {
         return Binding(get: { (m.look.textScale - r.lowerBound) / (r.upperBound - r.lowerBound) }, set: { m.look.textScale = r.lowerBound + $0 * (r.upperBound - r.lowerBound) })
     }
 
-    private func swatch(_ t: Theme) -> some View {
-        let on = m.theme.id == t.id
-        return Button { withAnimation(.easeOut(duration: 0.2)) { m.choose(theme: t) } } label: {
+    private var modeHint: String {
+        switch m.appearance {
+        case .dark: "Always the dark half of the colour you choose"
+        case .light: "Always the light half; light themes are soft on purpose"
+        case .system: "Follows your Mac: the dark half at night, the light half by day"
+        }
+    }
+
+    /// A miniature of the shell in a theme: rail, panel with a title, a tag, and the player bar.
+    private func miniature(_ t: Theme) -> some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.sidebar)
+            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.panel2).frame(width: 22).padding(8)
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(t.canvas).padding(.leading, 38).padding(.trailing, 8).padding(.top, 8).padding(.bottom, 34)
+            VStack(alignment: .leading, spacing: 6) {
+                Capsule().fill(t.ink).frame(width: 64, height: 8)
+                Capsule().fill(t.ink.opacity(0.7)).frame(width: 90, height: 5)
+                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(t.accent).frame(width: 36, height: 14)
+            }.padding(.leading, 46).padding(.top, 16)
+            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.canvas).frame(height: 20).padding(.leading, 38).padding(.trailing, 8)
+                .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 8)
+            Circle().fill(t.accent).frame(width: 12, height: 12).padding(.leading, 44).frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 12)
+        }
+    }
+
+    /// A family as one tile split in two: its dark half on the left and its light half on the right.
+    private func swatch(_ f: Theme.Family) -> some View {
+        let on = m.themeFamily == f.id
+        let dark = m.look.pureBlack ? f.dark.onPureBlack : f.dark
+        let light = f.light.adjusted(lightBrightness: m.look.lightBrightness)
+        return Button { withAnimation(.easeOut(duration: 0.2)) { m.choose(family: f.id) } } label: {
             VStack(alignment: .leading, spacing: 8) {
-                // a miniature of the shell in this theme: rail, panel with a title, a tag, and the player bar
-                ZStack(alignment: .topLeading) {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.sidebar)
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.panel2).frame(width: 22).padding(8)
-                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(t.canvas).padding(.leading, 38).padding(.trailing, 8).padding(.top, 8).padding(.bottom, 34)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Capsule().fill(t.ink).frame(width: 64, height: 8)
-                        Capsule().fill(t.ink.opacity(0.7)).frame(width: 90, height: 5)
-                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(t.accent).frame(width: 36, height: 14)
-                    }.padding(.leading, 46).padding(.top, 16)
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.canvas).frame(height: 20).padding(.leading, 38).padding(.trailing, 8)
-                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 8)
-                    Circle().fill(t.accent).frame(width: 12, height: 12).padding(.leading, 44).frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 12)
+                ZStack {
+                    miniature(dark)
+                    miniature(light).mask(HStack(spacing: 0) { Color.clear; Rectangle() })
+                    Rectangle().fill(Brand.rule).frame(width: Metrics.hairline)
                 }
-                .frame(height: 92)
+                .frame(height: 92).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Brand.accentText : Brand.rule, lineWidth: on ? 2 : Metrics.hairline))
                 HStack(spacing: 4) {
-                    Text(t.name).font(Typo.sans(13.5, .regular))
+                    Text(f.name).font(Typo.sans(13.5, .regular))
                     if on { Image(systemName: "checkmark").font(Typo.sans(10, .medium)).foregroundStyle(Brand.accentText) }
                 }
             }
             .padding(.vertical, 4).contentShape(Rectangle())
         }.buttonStyle(.plain)
-        .accessibilityLabel(t.name).accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityLabel("\(f.name), dark and light").accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

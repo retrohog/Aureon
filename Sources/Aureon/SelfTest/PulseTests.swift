@@ -285,6 +285,76 @@ nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 private final class KeyableWindow: NSWindow { override var canBecomeKey: Bool { true } }
 
 extension PulseTests {
+    /// What an earlier choice becomes: the family, the mode and the pure black switch.
+    @MainActor func savedThemesAreCarriedOver() {
+        func start(_ values: [String: String]) -> (family: String, mode: AppearanceMode, pureBlack: Bool) {
+            let name = "aureon.test.themes.\(UUID().uuidString)"
+            let d = UserDefaults(suiteName: name)!
+            defer { d.removePersistentDomain(forName: name) }
+            for (k, v) in values { d.set(v, forKey: k) }
+            return PlayerModel.startingTheme(defaults: d, environmentTheme: nil)
+        }
+        func check(_ values: [String: String], _ family: String, _ mode: AppearanceMode, black: Bool = false, _ what: String) {
+            let r = start(values)
+            expect(r.family == family && r.mode == mode && r.pureBlack == black, "\(what): \(r)")
+        }
+        check([:], "graphite", .dark, "a fresh install is Graphite, dark")
+        check(["aureon.appearance": "dark", "aureon.darkTheme": "graphite"], "graphite", .dark, "Graphite")
+        check(["aureon.appearance": "dark", "aureon.darkTheme": "amoled"], "graphite", .dark, black: true, "AMOLED is Graphite on pure black")
+        for f in ["midnight", "forest", "plum", "cocoa"] { check(["aureon.appearance": "dark", "aureon.darkTheme": f], f, .dark, "\(f) keeps its name") }
+        check(["aureon.appearance": "light", "aureon.lightTheme": "stone", "aureon.darkTheme": "plum"], "graphite", .light, "Stone is Graphite, light")
+        check(["aureon.appearance": "light", "aureon.lightTheme": "sage"], "forest", .light, "Sage is Forest, light")
+        check(["aureon.appearance": "light", "aureon.lightTheme": "paper"], "cocoa", .light, "Paper is Cocoa, light")
+        check(["aureon.appearance": "system", "aureon.darkTheme": "plum", "aureon.lightTheme": "sage"], "plum", .system, "Auto keeps the dark choice's family")
+        check(["aureon.theme": "nord"], "midnight", .dark, "the first versions' ids are carried over")
+        check([PlayerModel.familyKey: "cocoa", "aureon.appearance": "system", "aureon.darkTheme": "plum"], "cocoa", .system, "a saved family wins over old keys")
+        check([PlayerModel.familyKey: "nonsense"], "graphite", .dark, "an unknown family falls back")
+        // the environment can name a theme for screenshots
+        expect(PlayerModel.startingTheme(defaults: UserDefaults(suiteName: "aureon.test.themes.env")!, environmentTheme: Theme.named("plum.light")) == ("plum", .light, false), "AUREON_THEME names a family and mode")
+        UserDefaults.standard.removePersistentDomain(forName: "aureon.test.themes.env")
+    }
+
+    /// Family × mode × pure black as the model shows them: the dark half follows pure black, the light half ignores it, Auto follows the system as it changes.
+    @MainActor func modelShowsFamilyInEveryMode() {
+        let ud = UserDefaults.standard
+        let keys = ["aureon.appearance", PlayerModel.familyKey]
+        let saved = keys.map { ud.string(forKey: $0) }
+        defer { for (k, v) in zip(keys, saved) { if let v { ud.set(v, forKey: k) } else { ud.removeObject(forKey: k) } }; Theme.current = Theme.aureon }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        var systemLight = false
+        m.systemIsLight = { systemLight }
+        for f in Theme.families {
+            m.choose(family: f.id)
+            for mode in AppearanceMode.allCases {
+                for black in [false, true] {
+                    m.appearance = mode; m.look.pureBlack = black
+                    systemLight = false; m.resolveTheme(persist: false)
+                    let dark = m.theme
+                    systemLight = true; m.resolveTheme(persist: false)
+                    let day = m.theme
+                    switch mode {
+                    case .dark: expect(dark.family == f.id && !dark.isLight && dark.pureBlack == black && day == dark, "\(f.id) dark, black \(black)")
+                    case .light: expect(dark.isLight && dark == day && !day.pureBlack && day.family == f.id, "\(f.id) light ignores pure black")
+                    case .system: expect(!dark.isLight && dark.pureBlack == black && day.isLight && !day.pureBlack && day.family == f.id, "\(f.id) Auto: dark at night (black \(black)), light by day")
+                    }
+                    expect(Theme.current == m.theme, "\(f.id): the theme in use is the one shown")
+                }
+            }
+        }
+        // the window of the dark half is black when asked, whatever the family
+        m.appearance = .dark; m.look.pureBlack = true; m.choose(family: "midnight")
+        expect(m.theme.sidebarRGB == RGB(0, 0, 0) && m.theme.family == "midnight", "Midnight on pure black")
+        m.look.pureBlack = false
+        expect(m.theme.sidebarRGB != RGB(0, 0, 0), "and off again")
+        // the light half stays dimmed by the brightness slider
+        m.appearance = .light
+        m.look.lightBrightness = 0
+        let dim = WCAG.luminance(m.theme.canvasRGB)
+        m.look.lightBrightness = 1
+        expect(dim < WCAG.luminance(m.theme.canvasRGB), "the light half is brighter at 1 than at 0")
+        m.look.lightBrightness = LookSettings.defaults.lightBrightness
+    }
+
     @MainActor private func popoverShown() -> Bool { NSApp.windows.contains { String(describing: type(of: $0)).contains("Popover") && $0.isVisible } }
 
     @MainActor private func pumpFor(_ secs: Double) {
@@ -705,6 +775,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
