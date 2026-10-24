@@ -85,9 +85,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", sidebar = "Sidebar", connect = "Connect", midi = "MIDI", system = "System"
+    case general = "General", appearance = "Appearance", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -160,8 +160,8 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var theme: Theme = Theme.current
     /// The theme chosen for the dark appearance and the one for the light appearance. Picking a dark theme sets the first, a light theme the second;
     /// `appearance` decides which of the two is shown (Auto follows macOS).
-    @Published var darkThemeID = Theme.aureon.id { didSet { if darkThemeID != oldValue { backdrop = savedBackdrop(for: darkThemeID); resolveTheme() } } }
-    @Published var lightThemeID = Theme.defaultLight.id { didSet { if lightThemeID != oldValue { backdrop = savedBackdrop(for: lightThemeID); resolveTheme() } } }
+    @Published var darkThemeID = Theme.aureon.id { didSet { if darkThemeID != oldValue { resolveTheme() } } }
+    @Published var lightThemeID = Theme.defaultLight.id { didSet { if lightThemeID != oldValue { resolveTheme() } } }
     /// The id of the theme being shown.
     var themeID: String { theme.id }
     /// Chooses a theme from the nine: it becomes the dark or the light one by its kind, and (unless Auto is on) switches the appearance to match.
@@ -183,10 +183,13 @@ final class PlayerModel: ObservableObject {
     /// Counts changes of the look; the root view is rebuilt when it changes, so the type and spacing tokens are read again.
     @Published private(set) var lookRevision = 0
     /// How the page backdrop is painted. Remembered separately for each theme, so Obsidian can stay soft while another theme is flat.
-    @Published var backdrop = BackdropMode.soft { didSet { if backdrop != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdrop.rawValue, forKey: "aureon.backdrop." + theme.id) } } }
+    @Published var backdrop = BackdropMode.soft { didSet { if backdrop != oldValue, !restoringBackdrop, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdrop.rawValue, forKey: "aureon.backdrop." + theme.id) } } }
+    /// While the backdrop is being set to a theme's remembered choice, that is not a new choice and is not saved.
+    private var restoringBackdrop = false
     func savedBackdrop(for family: String) -> BackdropMode {
         if let e = ProcessInfo.processInfo.environment["AUREON_BACKDROP"], let m = BackdropMode(rawValue: e) { return m }
-        return defaults.string(forKey: "aureon.backdrop." + family).flatMap(BackdropMode.init(rawValue:)) ?? .soft
+        // the night themes open on the sky; the day themes on the quiet wash
+        return defaults.string(forKey: "aureon.backdrop." + family).flatMap(BackdropMode.init(rawValue:)) ?? (Theme.named(family).isLight ? .soft : .starlight)
     }
     /// How strong the Album backdrop is (Subtle / Rich / Vivid). One choice for every theme.
     @Published var backdropIntensity: BackdropIntensity = {
@@ -196,7 +199,7 @@ final class PlayerModel: ObservableObject {
     /// Liquid-glass surfaces on the player bar, the Now Playing panels, the palette and the pop-ups. Off: those are flat theme surfaces.
     @Published var glassAccents: Bool = {
         if let e = ProcessInfo.processInfo.environment["AUREON_GLASS"] { return e != "0" }
-        return UserDefaults.standard.object(forKey: "aureon.glassAccents") as? Bool ?? true
+        return UserDefaults.standard.object(forKey: "aureon.glassAccents") as? Bool ?? false
     }() { didSet { if glassAccents != oldValue, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(glassAccents, forKey: "aureon.glassAccents") } } }
     @Published var appearance = AppearanceMode.dark { didSet { if appearance != oldValue { resolveTheme() } } }
 
@@ -227,8 +230,11 @@ final class PlayerModel: ObservableObject {
     func resolveTheme(persist: Bool = true) {
         let systemLight = systemIsLight()
         let light = appearance == .light || (appearance == .system && systemLight)
+        let previous = theme.id
         theme = Look.themed(Theme.resolve(dark: darkThemeID, light: lightThemeID, wantsLight: light), look)
         Theme.current = theme
+        // each theme remembers its own backdrop: switching theme brings its choice back
+        if theme.id != previous { restoringBackdrop = true; backdrop = savedBackdrop(for: theme.id); restoringBackdrop = false }
         if persist, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil {
             defaults.set(darkThemeID, forKey: "aureon.darkTheme"); defaults.set(lightThemeID, forKey: "aureon.lightTheme"); defaults.set(appearance.rawValue, forKey: "aureon.appearance")
         }
@@ -398,9 +404,9 @@ final class PlayerModel: ObservableObject {
         var mode = AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "") ?? .dark
         if let t = envTheme { if t.isLight { light = t; mode = .light } else { dark = t; mode = .dark } }
         darkThemeID = dark.id; lightThemeID = light.id
-        backdrop = savedBackdrop(for: mode == .light ? light.id : dark.id)
         appearance = mode; observeSystemAppearance()
         resolveTheme()
+        restoringBackdrop = true; backdrop = savedBackdrop(for: theme.id); restoringBackdrop = false
         DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if self?.appearance == .system { self?.resolveTheme() } }
         }

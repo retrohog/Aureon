@@ -176,7 +176,7 @@ func qualityTier(_ i: StreamInfo) -> QualityTier {
 
 // MARK: - Artwork
 
-/// Cover art with a quiet placeholder: a flat tone from the album's own colours and a fine note. A hairline frames it, with a barely softened corner.
+/// Cover art with a quiet placeholder: a flat tone from the album's own colours and a fine note. Its corner is as asked for (10 on cards, 6 in lists).
 struct CoverView: View {
     let image: NSImage?
     let palette: ArtPalette
@@ -184,7 +184,7 @@ struct CoverView: View {
     var symbol = "music.note"
 
     var body: some View {
-        let r = min(Metrics.radius(corner), 3)
+        let r = corner < 2.5 ? corner : Metrics.radius(corner)
         GeometryReader { g in
             ZStack {
                 if let image {

@@ -246,6 +246,7 @@ extension DemoData {
     let model = PlayerModel()
     let env = ProcessInfo.processInfo.environment
     if let t = env["AUREON_TAB"], let tab = Tab(rawValue: t) { model.tab = tab }
+    if let s = env["AUREON_SECTION"], let sec = SettingsSection(rawValue: s) { model.settingsSection = sec }
     let files = env["AUREON_DEMO_ART"] != nil && !files.isEmpty ? DemoData.taggedCopies(of: files[0]) : files
     model.add(urls: files.map { URL(fileURLWithPath: $0) })
     if env["AUREON_DEMO_LIB"] != nil, let src = ProcessInfo.processInfo.arguments.dropFirst().last { DemoData.importDemoLibrary(of: src, into: model) }

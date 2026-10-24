@@ -17,7 +17,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
     var back: (() -> Void)? = nil
     var backTitle = "Back"
     /// A hairline under the title; off for pages whose first section brings its own.
-    var ruled = true
+    var ruled = false
     @ViewBuilder var trailing: Trailing
     @ViewBuilder var content: Content
 
@@ -29,19 +29,19 @@ struct PageScaffold<Trailing: View, Content: View>: View {
             VStack(alignment: .leading, spacing: 24) {
                 if title.isEmpty { HStack(spacing: 8) { Spacer(minLength: 0); trailing }.frame(height: 40) }
                 if let back {
-                    Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(Typo.sans(11, .regular)).tracking(1.2).textCase(.uppercase) }
+                    Button(action: back) { Label(backTitle, systemImage: "chevron.left").font(Typo.sans(13, .medium)) }
                         .buttonStyle(.plain).foregroundStyle(Brand.accentText)
                 }
                 if !title.isEmpty {
-                    // the title is set large, with air above it, a small tracked label over it and a hairline under it
+                    // the title is set large, with the explanation under it
                     VStack(alignment: .leading, spacing: 16) {
-                        HStack(alignment: .lastTextBaseline, spacing: 24) {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if let subtitle { Text(subtitle).microLabel().foregroundStyle(Brand.inkTertiary).lineLimit(1) }
-                                Text(title).font(Typo.title(40)).tracking(-0.8).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                            trailing.padding(.bottom, 6)
+                        let heading = VStack(alignment: .leading, spacing: 6) {
+                            Text(title).font(Typo.title(44)).tracking(-0.5).lineLimit(1)
+                            if let subtitle { Text(subtitle).font(Typo.sans(14.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1) }
+                        }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .lastTextBaseline, spacing: 24) { heading; Spacer(minLength: 0); trailing.fixedSize().padding(.bottom, 6) }
+                            VStack(alignment: .leading, spacing: 14) { heading; ScrollView(.horizontal, showsIndicators: false) { trailing.fixedSize() } }
                         }
                         if ruled { Rule() }
                     }
@@ -49,7 +49,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
                 }
                 content
             }
-            .padding(.horizontal, 40).padding(.top, 8).padding(.bottom, 24)
+            .padding(.horizontal, 28).padding(.top, 8).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .underChrome(chrome, inset: inset)
@@ -57,7 +57,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
 }
 
 extension PageScaffold where Trailing == EmptyView {
-    init(title: String, subtitle: String? = nil, back: (() -> Void)? = nil, backTitle: String = "Back", ruled: Bool = true, @ViewBuilder content: () -> Content) {
+    init(title: String, subtitle: String? = nil, back: (() -> Void)? = nil, backTitle: String = "Back", ruled: Bool = false, @ViewBuilder content: () -> Content) {
         self.init(title: title, subtitle: subtitle, back: back, backTitle: backTitle, ruled: ruled, trailing: { EmptyView() }, content: content)
     }
 }
@@ -71,21 +71,20 @@ struct RuleButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let symbol { Image(systemName: symbol).font(Typo.sans(11, .light)) }
-                Text(title).font(Typo.sans(12, .medium)).tracking(0.4)
+                if let symbol { Image(systemName: symbol).font(Typo.sans(13, .regular)) }
+                Text(title).font(Typo.sans(13, .medium))
             }
-            .padding(.horizontal, 16).padding(.vertical, 8)
+            .padding(.horizontal, 16).frame(height: Metrics.pillHeight)
             .foregroundStyle(filled ? Brand.onAccent : Brand.ink)
-            .background(Rectangle().fill(filled ? Brand.accent : Brand.ink.opacity(hover.v ? 0.06 : 0)))
-            .overlay(Rectangle().strokeBorder(filled ? Color.clear : (hover.v ? Brand.coachline : Brand.ink.opacity(0.28)), lineWidth: Metrics.hairline))
+            .background(Capsule().fill(filled ? Brand.accent : (hover.v ? Brand.ink.opacity(0.14) : Brand.panel2)))
             .brightness(filled && hover.v ? 0.05 : 0)
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
     }
 }
 
-/// A compact toolbar control: icon + label, opens a menu.
+/// A toolbar pill: icon and label, opens a menu.
 struct ToolbarMenu<Content: View>: View {
     let label: String
     let icon: String
@@ -93,12 +92,15 @@ struct ToolbarMenu<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         Menu { content } label: {
-            HStack(spacing: 4) { Image(systemName: icon).font(Typo.sans(11, .medium)); Text(label).font(Typo.sans(12, .medium)) }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .overlay(Rectangle().strokeBorder(active ? Brand.coachline : Brand.ink.opacity(0.2), lineWidth: Metrics.hairline))
-                .foregroundStyle(active ? Brand.accentText : Brand.ink)
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(Typo.sans(12, .medium)); Text(label).font(Typo.sans(13, .medium))
+                Image(systemName: "chevron.down").font(Typo.sans(9, .medium)).opacity(0.6)
+            }
+            .padding(.horizontal, 14).frame(height: 34)
+            .background(Capsule().fill(Brand.panel2))
+            .foregroundStyle(active ? Brand.accentText : Brand.ink)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
     }
 }
 
@@ -108,11 +110,11 @@ struct SearchField: View {
     var width: CGFloat = 150
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary)
-            TextField(prompt, text: $text).textFieldStyle(.plain).font(Typo.sans(12)).frame(width: width)
-            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary) }.buttonStyle(.plain) }
+            Image(systemName: "magnifyingglass").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
+            TextField(prompt, text: $text).textFieldStyle(.plain).font(Typo.sans(13)).frame(width: width)
+            if !text.isEmpty { Button { text = "" } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) }.buttonStyle(.plain) }
         }
-        .padding(.horizontal, 8).padding(.vertical, 8).overlay(alignment: .bottom) { Rule() }
+        .padding(.horizontal, 14).frame(height: 34).background(Capsule().fill(Brand.panel2))
     }
 }
 
@@ -138,6 +140,7 @@ struct LibraryPage: View {
 
     private var toolbar: some View {
         HStack(spacing: 8) {
+            Button { chooseFolder() } label: { Label("Add folder", systemImage: "folder.badge.plus") }.buttonStyle(.solid).help("Add music folder…")
             SearchField(prompt: "Filter", text: $lib.search, width: 110)
             let sorts = ViewOptions.available(for: tab)
             ToolbarMenu(label: opts.sort.label, icon: opts.ascending ? "arrow.up" : "arrow.down") {
@@ -152,19 +155,33 @@ struct LibraryPage: View {
                 }
             }
             if tab == .albums || tab == .artists {
-                HStack(spacing: 0) {
-                    Button { update { $0.list = false } } label: { Image(systemName: "square.grid.2x2") }.foregroundStyle(opts.list ? Brand.inkSecondary : Brand.cyan)
-                    Button { update { $0.list = true } } label: { Image(systemName: "list.bullet") }.foregroundStyle(opts.list ? Brand.cyan : Brand.inkSecondary)
-                }.buttonStyle(IconButtonStyle()).overlay(Rectangle().strokeBorder(Brand.ink.opacity(0.2), lineWidth: Metrics.hairline))
+                HStack(spacing: 2) {
+                    viewToggle("square.grid.2x2", on: !opts.list) { update { $0.list = false } }
+                    viewToggle("list.bullet", on: opts.list) { update { $0.list = true } }
+                }.padding(3).background(Capsule().fill(Brand.panel2))
                 if !opts.list {
                     ValueSlider(value: Binding(get: { opts.size }, set: { v in update { $0.size = v } }), in: 0...1).controlSize(.mini).frame(width: 70).help("Cover size")
                 }
             }
             Button { lib.scanDuplicates(prompt: false) } label: { Image(systemName: "square.on.square.dashed") }.buttonStyle(IconButtonStyle()).disabled(lib.scanningDuplicates).help("Find duplicate songs and albums")
-            Button { chooseFolder() } label: { Image(systemName: "folder.badge.plus") }.buttonStyle(IconButtonStyle()).help("Add music folder…")
             Button { lib.rescan() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(IconButtonStyle()).disabled(lib.folders.isEmpty || lib.importing).help("Rescan")
             if lib.importing { ProgressView().controlSize(.small) }
         }
+    }
+
+    private func viewToggle(_ symbol: String, on: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(Typo.sans(13, .regular)).foregroundStyle(on ? Brand.panel : Brand.inkSecondary)
+                .frame(width: 30, height: 28).background(Circle().fill(on ? Brand.ink : Color.clear)).contentShape(Circle())
+        }.buttonStyle(.plain).accessibilityLabel(symbol == "list.bullet" ? "List" : "Grid").accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// "1,284 albums · 48,210 songs · 4 folders" (or the import's progress while it runs).
+    private var libraryLine: String {
+        if lib.importing { return lib.importProgress }
+        let n = NumberFormatter(); n.numberStyle = .decimal
+        func f(_ v: Int) -> String { n.string(from: NSNumber(value: v)) ?? "\(v)" }
+        return "\(f(lib.stats.releases)) albums · \(f(lib.stats.tracks)) songs · \(lib.folders.count) folder\(lib.folders.count == 1 ? "" : "s")"
     }
 
     private var subtitle: String {
@@ -192,11 +209,11 @@ struct LibraryPage: View {
     // MARK: list level
 
     @ViewBuilder private var listPage: some View {
-        PageScaffold(title: tab.rawValue, subtitle: subtitle, trailing: { toolbar }) {
+        PageScaffold(title: "Library", subtitle: libraryLine, trailing: { toolbar }) {
             DuplicateBanner(lib: lib)
             switch tab {
             case .albums:
-                PagedAlbums(pager: lib.pager, query: AlbumQuery(opts, search: lib.search), list: opts.list, minimum: 168 + CGFloat(opts.size) * 120, open: { lib.selectedID = $0.id })
+                PagedAlbums(pager: lib.pager, query: AlbumQuery(opts, search: lib.search), list: opts.list, minimum: (168 + CGFloat(opts.size) * 120) * Look.current.density.cover, open: { lib.selectedID = $0.id })
             case .songs: SongList(tracks: lib.orderedSongs(opts), numbered: false, letters: opts.letters && opts.sort == .title, sortHeader: true)
             case .artists: ArtistsView(rows: LibraryOrdering.rows(lib.rows, opts), opts: opts, open: { lib.selectedID = $0 })
             default: rowList
@@ -581,20 +598,20 @@ struct AlbumCard: View {
 
     var body: some View {
         let info = art.info[album.id]
-        VStack(alignment: .leading, spacing: 12) {
-            ZStack(alignment: .bottomLeading) {
-                CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 0, symbol: "music.note")
-                    .hoverLift(hover.v, radius: 0)
+        let compact = Look.current.density == .compact
+        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
+            ZStack(alignment: .bottomTrailing) {
+                CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 10, symbol: "music.note")
                 if hover.v {
-                    Button { play() } label: { Image(systemName: "play.fill").font(Typo.sans(12, .regular)).foregroundStyle(Brand.onAccent).frame(width: 40, height: 40)
-                        .background(Rectangle().fill(Brand.accent)) }
-                        .buttonStyle(.plain).padding(12).transition(.opacity)
+                    Button { play() } label: { Image(systemName: "play.fill").font(Typo.sans(14, .regular)).foregroundStyle(Brand.onAccent).frame(width: 42, height: 42)
+                        .background(Circle().fill(Brand.accent)) }
+                        .buttonStyle(.plain).padding(10).transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(album.title).font(Typo.serif(15, .regular)).tracking(-0.1).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(album.title).font(Typo.sans(14, .regular)).lineLimit(1)
                 HStack(spacing: 8) {
-                    Text(([album.artistNames.first].compactMap { $0 } + [album.year.map(String.init)].compactMap { $0 }).joined(separator: " · ")).font(Typo.sans(11)).tracking(0.3).foregroundStyle(Brand.inkSecondary).lineLimit(1)
+                    Text(([album.artistNames.first].compactMap { $0 } + [album.year.map(String.init)].compactMap { $0 }).joined(separator: " · ")).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
                     Spacer(minLength: 0)
                     if album.isHiRes || info?.hd == true { HDMark() }
                 }
@@ -616,6 +633,7 @@ struct AlbumCard: View {
 struct AlbumDetail: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var art: AlbumArt
+    @EnvironmentObject var c: CollectionsModel
     let album: ReleaseDTO
     let tracks: [TrackDTO]
     let back: () -> Void
@@ -623,39 +641,74 @@ struct AlbumDetail: View {
     var body: some View {
         let info = art.info[album.id]
         PageScaffold(title: "", back: back, backTitle: "Albums") {
-            VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .bottom, spacing: 24) {
-                    CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 14).frame(width: 200, height: 200)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("ALBUM").microLabel().foregroundStyle(Brand.cyan)
-                        Text(album.title).font(Typo.serif(28, .regular)).tracking(-0.5).lineLimit(3)
-                        Text(album.artistNames.prefix(3).joined(separator: ", ")).font(Typo.sans(17, .medium)).foregroundStyle(Brand.accent).lineLimit(2)
-                        Text(meta).microLabel().foregroundStyle(Brand.inkSecondary).padding(.top, 2)
-                        if let best = tracks.first(where: { isHiRes($0) }) ?? tracks.first {
-                            HStack(spacing: 8) {
-                                if isHiRes(best) { HiResMark(compact: true) }
-                                HWBadge(text: trackQuality(best).uppercased(), tone: isHiRes(best) ? .amber : .green, compact: true)
-                            }.padding(.top, 4)
+            HStack(alignment: .top, spacing: 32) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .bottom, spacing: 26) {
+                        CoverView(image: info?.image, palette: ArtPalette.fallback(seed: album.title), corner: 14).frame(width: 176, height: 176)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Album").font(Typo.sans(12, .medium)).foregroundStyle(Brand.inkSecondary)
+                            Text(album.title).font(Typo.title(44)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.6)
+                            HStack(spacing: 6) {
+                                Text(album.artistNames.prefix(3).joined(separator: ", ")).font(Typo.sans(16, .medium)).lineLimit(1)
+                                Text("· " + meta).font(Typo.sans(14.5)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
+                            }
+                            if let best = best { FormatTagStrip(tags: FormatTagBuilder.rowTags(codec: best.codec, bits: best.bitDepth, rate: best.sampleRate), compact: false, alignment: .leading, separators: false).frame(maxWidth: 420) }
                         }
-                        HStack(spacing: 8) {
-                            RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(tracks) }
-                            RuleButton(title: "Shuffle", symbol: "shuffle") { m.library.onReplace?(tracks.shuffled()) }
-                            RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(tracks, false) }
-                        }.padding(.top, 12)
                     }
-                    Spacer(minLength: 0)
+                    actions
+                    SongList(tracks: tracks, showArtist: Set(tracks.map(\.artistLine)).count > 1, numbered: true)
                 }
-                SongList(tracks: tracks, showArtist: Set(tracks.map(\.artistLine)).count > 1, numbered: true)
-                AlbumPersonnel(tracks: tracks)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                side.frame(width: 300)
             }
         }
     }
 
+    private var best: TrackDTO? { tracks.first(where: { isHiRes($0) }) ?? tracks.first }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            Button { m.library.onReplace?(tracks) } label: { Image(systemName: "play.fill").font(Typo.sans(20)) }
+                .buttonStyle(PlayKeyStyle(size: 52)).help("Play").accessibilityLabel("Play")
+            Button { m.library.onReplace?(tracks.shuffled()) } label: { Image(systemName: "shuffle") }.buttonStyle(RoundIconStyle(size: 44)).help("Shuffle").accessibilityLabel("Shuffle")
+            Button { m.library.onAdd?(tracks, false) } label: { Image(systemName: "text.badge.plus") }.buttonStyle(RoundIconStyle(size: 44)).help("Add to queue").accessibilityLabel("Add to queue")
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Credits, the signal path as it would be played now, and where the files are.
+    private var side: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            AlbumPersonnel(tracks: tracks)
+            if let best {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Signal path").font(Typo.serif(16, .medium))
+                    VStack(spacing: 10) {
+                        line("File", "\(best.codec) \(best.bitDepth)/\(rate(best.sampleRate))", Brand.inkSecondary)
+                        line("Processing", m.settings.dsp.enabled ? "On" : "Off", Brand.inkSecondary)
+                        line("Output", (m.exclusive ? "Exclusive" : "Shared") + (m.followRate ? " · follows the file" : ""), Brand.inkSecondary)
+                        line("Device", m.selectedDevice.map { QuickDevices.shortName($0.name) } ?? "No device", Brand.accentText)
+                    }
+                }
+                if let path = tracks.first?.path {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Source").font(Typo.serif(16, .medium))
+                        Text((path as NSString).deletingLastPathComponent).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary).textSelection(.enabled).lineLimit(3).truncationMode(.middle)
+                    }
+                }
+            }
+        }
+    }
+
+    private func line(_ k: String, _ v: String, _ colour: Color) -> some View {
+        HStack { Text(k).font(Typo.sans(14.5, .medium)); Spacer(minLength: 8); Text(v).font(Typo.sans(14.5)).foregroundStyle(colour).lineLimit(1) }
+    }
+    private func rate(_ hz: Double) -> String { hz.truncatingRemainder(dividingBy: 1000) == 0 ? "\(Int(hz / 1000))" : String(format: "%.1f", hz / 1000) }
+
     private var meta: String {
-        let genres = tracks.first?.genres.first
         let total = tracks.reduce(0) { $0 + $1.duration }
-        let length = total < 60 ? "\(Int(total.rounded())) seconds" : "\(Int((total / 60).rounded())) minutes"
-        return [genres, album.year.map(String.init), "\(tracks.count) song\(tracks.count == 1 ? "" : "s"), \(length)"].compactMap { $0 }.joined(separator: " · ")
+        let length = total < 60 ? "\(Int(total.rounded())) sec" : "\(Int((total / 60).rounded())) min"
+        return [album.year.map(String.init), "\(tracks.count) song\(tracks.count == 1 ? "" : "s"), \(length)"].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -718,10 +771,10 @@ struct SongList: View {
                 var n = o; if n.sort == key { n.ascending.toggle() } else { n.sort = key; n.ascending = true }; m.setOptions(n, for: .songs)
             } label: {
                 HStack(spacing: 3) {
-                    Text(title).microLabel()
+                    Text(title).font(Typo.sans(12, .medium))
                     if o.sort == key { Image(systemName: o.ascending ? "chevron.up" : "chevron.down").font(Typo.sans(8, .bold)) }
                 }
-                .foregroundStyle(o.sort == key ? Brand.cyan : Brand.inkSecondary)
+                .foregroundStyle(o.sort == key ? Brand.accentText : Brand.inkSecondary)
                 .frame(maxWidth: width == nil ? .infinity : width, alignment: trailing ? .trailing : .leading)
             }.buttonStyle(.plain)
         }
@@ -735,7 +788,7 @@ struct SongList: View {
             col("Time", .duration, width: 46, trailing: true)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .overlay(alignment: .bottom) { Rule() }
+        .overlay(alignment: .bottom) { Rule(strength: 0.6) }
     }
 }
 
@@ -756,34 +809,31 @@ struct SongRow: View {
             ZStack {
                 if hover.v && !playing { Image(systemName: "play.fill").font(Typo.sans(11)).foregroundStyle(.primary).transition(.scale.combined(with: .opacity)) }
                 else if playing { EqualizerBars(active: m.status.state == .playing, color: Brand.accent).frame(width: 12, height: 10) }
-                else { Text(numbered ? "\(track.trackNumber ?? index)" : "").font(Typo.mono(11.5)).foregroundStyle(Brand.inkSecondary) }
+                else { Text(numbered ? "\(track.trackNumber ?? index)" : "").font(Typo.sans(13, .medium)).monospacedDigit().foregroundStyle(Brand.inkSecondary) }
             }
             .frame(width: 26)
-            Text(track.title).font(Typo.sans(12.5, playing ? .semibold : .regular)).foregroundStyle(playing ? Brand.accent : .primary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            Text(track.title).font(Typo.sans(14, playing ? .medium : .regular)).foregroundStyle(playing ? Brand.accentText : Brand.ink).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             if showArtist && !numbered {
-                Text(track.artistLine).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                Text(track.releaseTitle ?? "").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.artistLine).font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.releaseTitle ?? "").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             } else if showArtist {
-                Text(track.artistLine).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(track.artistLine).font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             HeartButton(path: track.path, size: 12, alwaysVisible: false).opacity(hover.v || playing ? 1 : 0.0001).overlay { }.frame(width: 24)
             HStack(spacing: 8) {
                 // Hi-Res and Lossless carry the small plate; other formats keep their plain line
                 if QualityMark.make(track: track) != nil { TinyQualityMark(track: track) }
-                else { Text(trackQuality(track)).font(Typo.mono(10.5)).foregroundStyle(Brand.inkTertiary).lineLimit(1) }
+                else { Text(trackQuality(track)).font(Typo.sans(12)).foregroundStyle(Brand.inkTertiary).lineLimit(1) }
             }.frame(width: 150, alignment: .trailing)
-            Text(fmtDuration(track.duration)).font(Typo.mono(12)).foregroundStyle(Brand.inkSecondary).frame(width: 46, alignment: .trailing)
+            Text(fmtDuration(track.duration)).font(Typo.sans(13, .medium)).monospacedDigit().foregroundStyle(Brand.inkSecondary).frame(width: 46, alignment: .trailing)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 12).frame(height: Look.current.density.rowHeight)
         .background {
             ZStack {
-                Rectangle().fill(Brand.ink.opacity(hover.v ? 0.05 : 0))
-                if playing { Rectangle().fill(Brand.accent.opacity(0.07)) }
-                Rectangle().fill(Brand.accent.opacity(0.22 * flash.v))
+                RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.ink.opacity(hover.v ? 0.07 : 0))
+                RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.accent.opacity(0.22 * flash.v))
             }
         }
-        .overlay(alignment: .bottom) { Rule(strength: 0.5) }
-        .overlay(alignment: .leading) { if playing { Rectangle().fill(Brand.gradientVertical).frame(width: 2).transition(.opacity) } }
         .contentShape(Rectangle())
         .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover.v = h } }
         .onTapGesture {

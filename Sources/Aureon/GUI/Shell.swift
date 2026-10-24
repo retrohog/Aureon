@@ -20,7 +20,7 @@ struct ContentView: View {
     /// Atelier → Sound has its own line of tabs under the sub-header.
     private var showsSoundTabs: Bool { m.tab == .audio && !m.djMode }
     /// Pages that scroll under the chips through `PageScaffold` bring their own inset; the others are kept below it.
-    private func pageKeepsOwnInset(_ tab: Tab) -> Bool { tab != .folders }
+    private func pageKeepsOwnInset(_ tab: Tab) -> Bool { true }
     private var barIsGlass: Bool { false }
 
     var body: some View {
@@ -175,7 +175,7 @@ struct ContentView: View {
         case .rip: RipPage()
         case .convert: ConvertPage()
         case .cloud: CloudPage()
-        case .folders: FolderBrowserPage()
+        case .folders: LibraryFoldersPage()
         case .abx: ABXPage()
         case .intelligence: PageScaffold(title: "Intelligence", subtitle: "Smart features, models and providers", ruled: false) { IntelligenceTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins", ruled: false) { DSPTab() }

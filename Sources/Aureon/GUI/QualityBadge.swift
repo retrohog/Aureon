@@ -125,18 +125,16 @@ struct QualityBadge: View {
     private var oneLine: Bool { short || size == .tiny }
 
     private var plate: some View {
-        let titleSize: CGFloat = size == .large ? 11 : (size == .regular ? 10 : (size == .compact ? 9 : 8))
+        let titleSize: CGFloat = size == .large ? 12 : (size == .regular ? 11 : (size == .compact ? 10 : 10))
         let specSize: CGFloat = size == .large ? 12 : (size == .regular ? 11 : 10)
         let h: CGFloat = size == .large ? 14 : (size == .regular ? 10 : (size == .compact ? 8 : 5))
-        let v: CGFloat = size == .large ? 8 : (size == .regular ? 5 : (size == .compact ? 4 : 2))
+        let v: CGFloat = size == .large ? 8 : (size == .regular ? 5 : (size == .compact ? 4 : 3))
         return VStack(spacing: size == .large ? 4 : 2) {
-            Text(mark.title).font(Typo.sans(titleSize, .medium)).tracking(size == .tiny ? 1.4 : 2.4).foregroundStyle(ink).lineLimit(1)
+            Text(mark.title).font(Typo.sans(titleSize, .medium)).tracking(size == .tiny ? 0.6 : 1.2).foregroundStyle(ink).lineLimit(1)
             if !oneLine { Text(mark.spec).font(Typo.mono(specSize, .regular)).foregroundStyle(gold ? ink : Brand.inkSecondary).lineLimit(1) }
         }
         .padding(.horizontal, h).padding(.vertical, v)
-        .overlay(RoundedRectangle(cornerRadius: 2, style: .continuous).strokeBorder(ink.opacity(gold ? 0.9 : 0.55), lineWidth: 0.75))
-        // a second fine line inside the gold plate, like a coachline
-        .overlay { if gold && size != .tiny { RoundedRectangle(cornerRadius: 1, style: .continuous).strokeBorder(ink.opacity(0.35), lineWidth: Metrics.hairline).padding(2.5) } }
+        .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(gold ? ink.opacity(0.16) : Brand.ink.opacity(0.08)))
         // bit-perfect: a small gold dot at the corner
         .overlay(alignment: .topTrailing) { if mark.bitPerfect && size != .tiny { Circle().fill(Brand.accent).frame(width: size == .large ? 5 : 4, height: size == .large ? 5 : 4).padding(size == .large ? 5 : 4) } }
     }

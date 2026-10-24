@@ -5,6 +5,7 @@ func extraTests() -> [(String, TestFn)] {
     t += naturalPlaylistTests()
     t += lyricsTests()
     t += stageInteractionTests()
+    t += pulseTests()
     t += navigationTests()
     t += controlTests()
     t += nowPlayingTests()

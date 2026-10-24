@@ -72,7 +72,7 @@ struct BackdropGlassTests {
         expect(GlassPolicy.radius >= 10 && GlassPolicy.radius <= 14 && GlassPolicy.popoverRadius >= 10 && GlassPolicy.flatRadius <= Metrics.panelRadius, "glass stays within the shell's radii")
         MainActor.assumeIsolated {
             let m = PlayerModel(); v5KeepAlive.append(m)
-            expect(m.glassAccents || ProcessInfo.processInfo.environment["AUREON_GLASS"] == "0", "on by default")
+            expect(!m.glassAccents || ProcessInfo.processInfo.environment["AUREON_GLASS"] != nil, "off by default: Pulse is flat")
         }
     }
 
