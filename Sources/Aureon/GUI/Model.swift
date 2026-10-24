@@ -109,7 +109,7 @@ final class PlayerModel: ObservableObject {
     @Published var showPalette = false
     /// The page of each destination that was open last, so choosing the destination again returns to it.
     var lastPage: [RailDestination: NavTarget] = [:]
-    @Published var tab: Tab = .player {
+    @Published var tab: Tab = .home {
         didSet {
             // leaving the DSP page with unsaved changes asks first
             if oldValue == .dsp, tab != .dsp, dspModel.needsPrompt, !djMode {

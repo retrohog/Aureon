@@ -1,70 +1,52 @@
 import SwiftUI
 
-/// The player at the bottom of every page: what is playing on the left, the transport and the waveform in the middle, the format readout and the
-/// volume knob on the right. It is one flat band in the sidebar's colour, edged by a hairline and a single champagne pinstripe inset below it;
-/// the pinstripe fills along its length as the song plays, so it is the progress rule too.
+/// The player at the bottom of every page, in three columns: what is playing on the left (cover, title, heart, add to playlist, artist and the format tags),
+/// the transport with the position slider in the middle, and lyrics, queue, output and volume on the right. It sits on the window's colour, with no frame.
 struct PlayerBar: View {
-    static let height: CGFloat = 96
+    static let height: CGFloat = Metrics.playerBarHeight
     static let bottomInset: CGFloat = 0
     /// The space the bar takes at the bottom of the window, for panels that have to stop above it.
     static var reserved: CGFloat { height + bottomInset }
 
     @EnvironmentObject var m: PlayerModel
-    @Environment(\.glassAccents) private var glassOn
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-    /// The width of each side column: as much as the window allows up to a comfortable size, leaving the middle at least `centreMinimum`.
-    static let centreMinimum: CGFloat = 300
-    static func sideWidth(window w: CGFloat) -> CGFloat { min(260, max(150, (w - 96 - centreMinimum) / 2)) }
-    /// The gap around the floating glass plate.
-    static let plateInset = EdgeInsets(top: 4, leading: 12, bottom: 8, trailing: 12)
+    /// The middle column: as wide as the window allows up to 560, leaving the sides at least `sideMinimum` each.
+    static let sideMinimum: CGFloat = 170
+    static func centreWidth(window w: CGFloat) -> CGFloat { min(560, max(260, w - 48 - 48 - 2 * sideMinimum)) }
+    /// The width of each side column.
+    static func sideWidth(window w: CGFloat) -> CGFloat { max(sideMinimum, (w - 48 - 48 - centreWidth(window: w)) / 2) }
 
     var body: some View {
-        if GlassPolicy.surface(enabled: glassOn, reduceTransparency: reduceTransparency) == .glass {
-            // a floating plate of glass over the backdrop; the bar still takes its 96 points, so no page is covered
-            content(top: 4)
-                .frame(height: Self.height - Self.plateInset.top - Self.plateInset.bottom)
-                .glassAccent()
-                .overlay(alignment: .top) { BarPinstripe(inset: 24, showsRule: false) }
-                .padding(Self.plateInset)
-                .frame(height: Self.height)
-        } else {
-            content(top: 8)
-                .frame(height: Self.height)
-                .background(Brand.sidebar)
-                .overlay(alignment: .top) { BarPinstripe() }
-        }
-    }
-
-    private func content(top: CGFloat) -> some View {
         GeometryReader { g in
-            let side = Self.sideWidth(window: g.size.width)
+            let centre = Self.centreWidth(window: g.size.width), side = Self.sideWidth(window: g.size.width)
             HStack(spacing: 24) {
                 NowPlayingSummary().frame(width: side, alignment: .leading)
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     transport
                     BarScrubberRow()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(width: centre)
                 BarRightColumn().frame(width: side, alignment: .trailing)
             }
-            .padding(.horizontal, 24).padding(.top, top).frame(width: g.size.width, height: g.size.height)
+            .padding(.horizontal, 24).frame(width: g.size.width, height: g.size.height)
         }
+        .frame(height: Self.height)
+        .background(Brand.window)
     }
 
     private var transport: some View {
-        HStack(spacing: 8) {
-            ShuffleButton(size: 12, tint: Brand.inkSecondary)
-            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 14) }
+        HStack(spacing: 12) {
+            ShuffleButton(size: 15, tint: Brand.inkSecondary)
+            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 15) }
                 .keyboardShortcut(.leftArrow, modifiers: .command).help("Previous").accessibilityLabel("Previous")
             Button { m.togglePlay() } label: {
-                TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: 16)
+                TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: 17)
             }
-            .buttonStyle(PlayKeyStyle(size: 40)).padding(.horizontal, 8)
+            .buttonStyle(PlayKeyStyle(size: 46))
             .keyboardShortcut(.space, modifiers: []).help("Play / pause").accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
-            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 14) }
+            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 15) }
                 .keyboardShortcut(.rightArrow, modifiers: .command).help("Next").accessibilityLabel("Next")
-            RepeatButton(size: 12, tint: Brand.inkSecondary)
+            RepeatButton(size: 15, tint: Brand.inkSecondary)
         }
         .buttonStyle(TransportButtonStyle(size: 12, ink: Brand.ink)).disabled(m.items.isEmpty)
     }
@@ -95,8 +77,7 @@ struct BarPinstripe: View {
     }
 }
 
-/// The right of the bar: the quality hallmark, and under it the volume and the lyrics and queue buttons. As the window narrows, the hallmark takes its
-/// short form first, then the volume slider shrinks, then goes; the buttons stay.
+/// The right of the bar: lyrics, queue and output, then the volume. As the window narrows the volume slider shrinks, then goes; the buttons stay.
 struct BarRightColumn: View {
     @EnvironmentObject var m: PlayerModel
 
@@ -108,14 +89,11 @@ struct BarRightColumn: View {
     var body: some View {
         GeometryReader { g in
             let p = Self.plan(width: g.size.width)
-            VStack(alignment: .trailing, spacing: 8) {
-                BarBadge(short: p.shortBadge).frame(height: 28, alignment: .trailing)
-                HStack(spacing: 4) {
-                    if let vw = p.volumeWidth { VolumeControl(width: vw, readout: vw >= 84) }
-                    QuickPanelButton(anchor: .bar)
-                    LyricsButton(size: 12)
-                    QueueButton(ink: Brand.ink)
-                }
+            HStack(spacing: 2) {
+                LyricsButton(size: 15)
+                QueueButton(ink: Brand.ink)
+                QuickPanelButton(anchor: .bar)
+                if let vw = p.volumeWidth { Color.clear.frame(width: 6); VolumeControl(width: vw + 12, readout: false) }
             }
             .frame(width: g.size.width, height: g.size.height, alignment: .trailing)
         }
@@ -131,7 +109,8 @@ struct BarBadge: View {
     }
 }
 
-/// The cover and the names: the cover opens Now Playing; the title is set in the serif, the artist small beneath it.
+/// The cover and the names: the cover opens Now Playing; the title in medium with the heart and the playlist button beside it, the artist under it and the
+/// format tags under that.
 struct NowPlayingSummary: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var stage: StageModel
@@ -141,17 +120,25 @@ struct NowPlayingSummary: View {
         let item = m.focusItem, d = m.focusDisplay
         HStack(spacing: 16) {
             Button { stage.open(m, reduceMotion: reduceMotion) } label: {
-                CoverView(image: m.hero.image ?? item?.thumb, palette: m.hero.palette, corner: 2, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
+                CoverView(image: m.hero.image ?? item?.thumb, palette: m.hero.palette, corner: 10, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
                     .stageMatched(.cover)
-                    .frame(width: 56, height: 56)
+                    .frame(width: 68, height: 68)
             }
             .buttonStyle(.plain).disabled(item == nil).help("Open Now Playing")
             .accessibilityLabel("Open Now Playing")
-            VStack(alignment: .leading, spacing: 4) {
-                Text(d?.title ?? "Not playing").font(Typo.serif(17, .regular)).foregroundStyle(HWPanel.readout).lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(d?.title ?? "Not playing").font(Typo.serif(16, .medium)).foregroundStyle(HWPanel.readout).lineLimit(1)
+                    if let item, !item.isStream {
+                        HeartButton(path: item.path, size: 14)
+                        AddToPlaylistButton(path: item.path, size: 14)
+                    }
+                }
                 Text(d.map { $0.artist.isEmpty ? (item?.album ?? "") : $0.artist } ?? "Add music or tune a station")
-                    .font(Typo.sans(11)).tracking(0.2).foregroundStyle(HWPanel.readoutDim).lineLimit(1)
+                    .font(Typo.sans(14, .medium)).foregroundStyle(HWPanel.readoutDim).lineLimit(1)
+                NowPlayingTags(place: .bar).padding(.top, 5)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -163,7 +150,7 @@ struct BarScrubberRow: View {
     var body: some View {
         HStack(spacing: 12) {
             BarTime(remaining: false)
-            WaveformScrubber(style: .bar, tint: Brand.accent).stageMatched(.waveform)
+            WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform)
             BarTime(remaining: true)
         }
     }
@@ -182,7 +169,7 @@ struct BarTime: View {
             if live { Text(remaining ? "" : "ON AIR").foregroundStyle(HWPanel.readoutDim) }
             else { Text(remaining ? clock(dur) : clock(pos)).foregroundStyle(remaining ? HWPanel.readoutDim : HWPanel.readout) }
         }
-        .font(Typo.mono(11, .regular)).fixedSize().frame(minWidth: 36, alignment: remaining ? .leading : .trailing)
+        .font(Typo.sans(12.5, .medium)).monospacedDigit().fixedSize().frame(minWidth: 36, alignment: remaining ? .leading : .trailing)
         .accessibilityHidden(true)
     }
 }

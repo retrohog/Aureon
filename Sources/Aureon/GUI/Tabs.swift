@@ -7,46 +7,47 @@ struct TabLineItem<ID: Hashable>: Identifiable {
     let title: String
 }
 
-struct TabLine<ID: Hashable>: View {
-    let items: [TabLineItem<ID>]
-    @Binding var selection: ID
-    var tracking: CGFloat = 2
-    var spacing: CGFloat = 28
+/// A chip: a pill with a title, filled with the ink when it is the chosen one. Used for the pages of a destination, filters and tabs.
+struct PillChip: View {
+    let title: String
+    var on: Bool
     var height: CGFloat = 32
-    var labelPrefix = "Tab"
-    @Namespace private var line
-
-    var body: some View {
-        HStack(spacing: spacing) {
-            ForEach(items) { item in TabLineButton(item: item, on: item.id == selection, tracking: tracking, line: line, labelPrefix: labelPrefix) { selection = item.id } }
-        }
-        .fixedSize()
-        .frame(height: height)
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct TabLineButton<ID: Hashable>: View {
-    let item: TabLineItem<ID>
-    let on: Bool
-    let tracking: CGFloat
-    let line: Namespace.ID
-    let labelPrefix: String
-    let action: () -> Void
+    var action: () -> Void
     @StateObject private var hover = Box(false)
 
     var body: some View {
         Button(action: action) {
-            Text(item.title).font(Typo.sans(10, on ? .medium : .regular)).tracking(tracking).textCase(.uppercase)
-                .foregroundStyle(on ? Brand.ink : (hover.v ? Brand.inkSecondary : Brand.inkTertiary))
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) { if on { Rectangle().fill(Brand.gradient).frame(height: 1).matchedGeometryEffect(id: "tabline.underline", in: line) } }
-                .contentShape(Rectangle())
+            Text(title).font(Typo.sans(13, on ? .medium : .regular)).lineLimit(1)
+                .foregroundStyle(on ? Brand.panel : Brand.ink)
+                .padding(.horizontal, 14).frame(height: height)
+                .background(Capsule().fill(on ? Brand.ink : (hover.v ? Brand.ink.opacity(0.14) : Brand.panel2)))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .animation(Motion.touch, value: hover.v)
-        .accessibilityLabel("\(labelPrefix) \(item.title)")
+        .accessibilityLabel(title)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+struct TabLine<ID: Hashable>: View {
+    let items: [TabLineItem<ID>]
+    @Binding var selection: ID
+    var tracking: CGFloat = 2
+    var spacing: CGFloat = 8
+    var height: CGFloat = 32
+    var labelPrefix = "Tab"
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(items) { item in
+                PillChip(title: item.title, on: item.id == selection, height: height - 4) { selection = item.id }
+                    .accessibilityLabel("\(labelPrefix) \(item.title)")
+            }
+        }
+        .fixedSize()
+        .frame(height: height)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

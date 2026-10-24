@@ -38,7 +38,7 @@ struct TransportGlyph: View {
     }
 }
 
-/// The play key: a square with a champagne hairline, the glyph in ink; the accent washes in under the pointer.
+/// The play key: a filled accent circle with the glyph in the label colour; it brightens under the pointer.
 struct PlayKeyStyle: ButtonStyle {
     var size: CGFloat = 48
     func makeBody(configuration: Configuration) -> some View { Inner(configuration: configuration, size: size) }
@@ -49,11 +49,13 @@ struct PlayKeyStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         var body: some View {
             configuration.label
-                .foregroundStyle(Brand.ink.opacity(enabled ? 1 : 0.35))
+                .foregroundStyle(Brand.onAccent)
                 .frame(width: size, height: size)
-                .background(Rectangle().fill(Brand.accent.opacity(configuration.isPressed ? 0.22 : (hover.v && enabled ? 0.12 : 0))))
-                .overlay(Rectangle().strokeBorder(Brand.coachline.opacity(enabled ? 1 : 0.4), lineWidth: Metrics.hairline))
-                .contentShape(Rectangle())
+                .background(Circle().fill(Brand.accent))
+                .brightness(configuration.isPressed ? -0.08 : (hover.v && enabled ? 0.06 : 0))
+                .opacity(enabled ? 1 : 0.4)
+                .scaleEffect(hover.v && enabled && !configuration.isPressed ? 1.04 : 1)
+                .contentShape(Circle())
                 .animation(Motion.touch, value: hover.v)
                 .animation(Motion.touch, value: configuration.isPressed)
                 .onHover { hover.v = $0 }

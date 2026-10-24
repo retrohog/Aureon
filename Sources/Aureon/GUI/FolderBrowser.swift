@@ -247,7 +247,7 @@ struct FolderBrowserPage: View {
                 Spacer()
             }
         }
-        .padding(.horizontal, 24).padding(.top, WindowChrome.band - 6).padding(.bottom, 96)
+        .padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 24)
         .onAppear { model.bootstrap(libraryFolders: m.library.folders) }
     }
 

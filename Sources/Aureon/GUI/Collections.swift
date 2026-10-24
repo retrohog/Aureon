@@ -93,7 +93,7 @@ struct HeartButton: View {
     var body: some View {
         let on = path.map { c.isLiked($0) } ?? false
         Button { if let path { c.toggleLike(path: path) } } label: {
-            Image(systemName: on ? "heart.fill" : "heart").font(Typo.sans(size, .light))
+            Image(systemName: on ? "heart.fill" : "heart").font(Typo.sans(size, .regular))
                 .foregroundStyle(on ? AnyShapeStyle(Brand.accent) : AnyShapeStyle((ink ?? Brand.ink).opacity(hover.v ? 0.95 : 0.7)))
                 
                 .frame(width: size + 10, height: size + 10).contentShape(Rectangle())

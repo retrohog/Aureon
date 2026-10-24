@@ -81,11 +81,11 @@ struct VolumeSlider: View {
             let w = max(1, g.size.width), active = enabled && (hover.v || dragging.v || focused)
             let f = CGFloat(min(1, max(0, value)))
             ZStack(alignment: .leading) {
-                Rectangle().fill(Brand.ink.opacity(enabled ? 0.24 : 0.12)).frame(height: active ? 2 : 1)
-                if limit < 1 { Rectangle().fill(Brand.ink.opacity(0.5)).frame(width: 1, height: 8).offset(x: CGFloat(limit) * w - 1) }   // the safety limit
-                Rectangle().fill(enabled ? Brand.accent : Brand.ink.opacity(0.3)).frame(width: max(1, w * f), height: active ? 2 : 1.5)
-                Rectangle().fill(enabled ? Brand.accent : Brand.ink.opacity(0.3)).frame(width: 3, height: 16)
-                    .offset(x: min(max(0, w * f - 1.5), w - 3))
+                Capsule().fill(Brand.ink.opacity(enabled ? 0.18 : 0.1)).frame(height: 5)
+                if limit < 1 { Capsule().fill(Brand.ink.opacity(0.5)).frame(width: 2, height: 9).offset(x: CGFloat(limit) * w - 1) }   // the safety limit
+                Capsule().fill(enabled ? (active ? Brand.accent : Brand.ink.opacity(0.9)) : Brand.ink.opacity(0.3)).frame(width: max(5, w * f), height: 5)
+                Circle().fill(enabled ? Brand.ink : Brand.ink.opacity(0.3)).frame(width: 13, height: 13)
+                    .offset(x: min(max(0, w * f - 6.5), w - 13)).opacity(active ? 1 : 0)
             }
             .frame(width: w, height: g.size.height, alignment: .leading)
             .contentShape(Rectangle())
