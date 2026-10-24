@@ -126,6 +126,8 @@ struct LookSettings: Codable, Equatable {
     var showSignalTags = true
     /// The mini player and the menu bar item.
     var mini = MiniSettings()
+    /// What is remembered between launches, and what happens to playback when Aureon opens.
+    var memory = MemorySettings()
 
     static let defaults = LookSettings()
     static let textScaleRange = 0.85...1.3
@@ -154,8 +156,9 @@ struct LookSettings: Codable, Equatable {
         showCredits = try c.decodeIfPresent(Bool.self, forKey: .showCredits) ?? d.showCredits
         showSignalTags = try c.decodeIfPresent(Bool.self, forKey: .showSignalTags) ?? d.showSignalTags
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
+        memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini }
+    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -198,6 +201,7 @@ struct LookSettings: Codable, Equatable {
             case "mini": if let x = MiniLayout(rawValue: kv[1]) { mini.layout = x }
             case "minibg": if let x = MiniBackground(rawValue: kv[1]) { mini.background = x }
             case "menubar": mini.menuBar.show = kv[1] != "0"
+            case "resume": if let x = ResumeMode(rawValue: kv[1]) { memory.resume = x }
             default: break
             }
         }

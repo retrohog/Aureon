@@ -43,6 +43,9 @@ struct ContentView: View {
                     Spacer()
                 }.padding(.top, 16).transition(.move(edge: .top).combined(with: .opacity)).allowsHitTesting(false)
             }
+            if let offer = m.resumeOffer, !m.djMode {
+                VStack { Spacer(); ResumeOfferCard(offer: offer) }.frame(maxWidth: .infinity, maxHeight: .infinity).transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if m.showPalette {
                 CommandPaletteView().transition(.opacity)
             }
@@ -144,6 +147,7 @@ struct ContentView: View {
             // every change of page goes through the one tab container (see `TabSwitcher`): the old page leaves, is not hit-testable at once and is gone when it ends
             TabSwitcher(tag: m.tab) { tab in
                 page(for: tab)
+                    .environment(\.scrollKey, "\(tab.rawValue)|\(m.library.selectedID ?? "")|\(tab == .settings ? m.settingsSection.rawValue : "")")
                     .environment(\.chromeInset, pageKeepsOwnInset(tab) ? chromeHeight(for: tab) : 0)
                     .padding(.top, pageKeepsOwnInset(tab) ? 0 : chromeHeight(for: tab))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

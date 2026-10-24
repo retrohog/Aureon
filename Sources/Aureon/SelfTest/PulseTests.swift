@@ -275,6 +275,128 @@ extension PulseTests {
 nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 
 extension PulseTests {
+    private func record(_ n: Int = 5, current: Int? = 2, position: Double = 72, duration: Double = 278) -> SessionRecord {
+        SessionRecord(queue: (0..<n).map { "/m/song\($0).flac" }, current: current, position: position, duration: duration, tab: Tab.albums.rawValue, settingsSection: SettingsSection.appearance.rawValue,
+                      selectedID: "album-1", deviceUID: "dac-uid", savedAt: 1, scroll: ["Albums||": 640])
+    }
+
+    func theLastSessionIsPlannedFromTheSettings() {
+        let all: (String) -> Bool = { _ in true }
+        var mem = MemorySettings()
+        expect(mem.resume == .paused && mem.rememberQueue && mem.rememberPage && mem.rememberWindow && mem.rememberOutput, "defaults: paused, everything remembered")
+        let paused = SessionPlan.restore(record(), memory: mem, exists: all)
+        expect(paused?.paths.count == 5 && paused?.current == 2 && paused?.position == 72 && paused?.autoplay == false && paused?.offer == false && paused?.tab == .albums && paused?.selectedID == "album-1" && paused?.deviceUID == "dac-uid", "paused: the song waits where it was left")
+        expect(paused?.scroll["Albums||"] == 640 && paused?.section == .appearance, "the page and how far it was scrolled")
+        mem.resume = .playing
+        expect(SessionPlan.restore(record(), memory: mem, exists: all)?.autoplay == true, "playing: it carries on")
+        mem.resume = .ask
+        let ask = SessionPlan.restore(record(), memory: mem, exists: all)
+        expect(ask?.offer == true && ask?.autoplay == false, "ask: an offer, nothing plays")
+        mem.resume = .fresh
+        let fresh = SessionPlan.restore(record(), memory: mem, exists: all)
+        expect(fresh?.paths.isEmpty == true && fresh?.current == nil && fresh?.autoplay == false && fresh?.offer == false && fresh?.tab == .albums, "fresh: no queue, but the page is still remembered")
+        mem.resume = .paused; mem.rememberQueue = false; mem.rememberPage = false; mem.rememberOutput = false
+        let none = SessionPlan.restore(record(), memory: mem, exists: all)
+        expect(none?.paths.isEmpty == true && none?.tab == nil && none?.selectedID == nil && none?.deviceUID == nil && none?.scroll.isEmpty == true, "each thing can be switched off")
+        expect(SessionPlan.restore(nil, memory: MemorySettings(), exists: all) == nil, "nothing saved, nothing to do")
+        // songs whose files are gone are left out, and the current one follows
+        let gone = SessionPlan.restore(record(), memory: MemorySettings(), exists: { $0 != "/m/song0.flac" && $0 != "/m/song3.flac" })
+        expect(gone?.paths == ["/m/song1.flac", "/m/song2.flac", "/m/song4.flac"] && gone?.current == 1 && gone?.position == 72, "a missing file drops out and the index follows: \(String(describing: gone?.current))")
+        let lost = SessionPlan.restore(record(), memory: MemorySettings(), exists: { $0 != "/m/song2.flac" })
+        expect(lost?.current == 0 && lost?.position == 0, "the current song is gone: the first one waits from its start")
+        expect(SessionPlan.restore(record(), memory: MemorySettings(), exists: { _ in false })?.paths.isEmpty == true, "no file left: no queue")
+        let end = SessionPlan.restore(record(position: 277.5), memory: MemorySettings(), exists: all)
+        expect(end?.position == 0, "a song that was at its very end starts again")
+        expect(SessionPlan.restore(record(), memory: MemorySettings(), exists: all)?.duration == 278, "the length comes with it")
+    }
+
+    func theSessionRecordIsWrittenSmallAndReadBack() {
+        let items = (0..<2000).map { (path: "/m/\($0).flac", isStream: $0 % 100 == 7) }
+        let r = SessionRecord.make(items: items, currentID: 1000, position: 12.5, duration: 200, tab: .songs, section: .general, selectedID: nil, deviceUID: nil, now: 5)
+        expect(r.queue.count == SessionRecord.queueLimit && !r.queue.contains { $0.hasSuffix("/7.flac") || $0.hasSuffix("/107.flac") }, "radio is not written, the queue is cut to the limit around the song")
+        expect(r.current.map { r.queue[$0] } == "/m/1000.flac", "and the current song is still found in it: \(String(describing: r.current))")
+        let first = SessionRecord.make(items: items, currentID: 0, position: 0, duration: 0, tab: .home, section: .general, selectedID: nil, deviceUID: nil, now: 5)
+        expect(first.queue.first == "/m/0.flac" && first.current == 0, "from the start of the queue")
+        let last = SessionRecord.make(items: items, currentID: 1999, position: 0, duration: 0, tab: .home, section: .general, selectedID: nil, deviceUID: nil, now: 5)
+        expect(last.queue.last == "/m/1999.flac" && last.current.map { last.queue[$0] } == "/m/1999.flac", "from the end of it")
+        let radio = SessionRecord.make(items: [("http://radio/stream", true)], currentID: 0, position: 3, duration: 0, tab: .radio, section: .general, selectedID: nil, deviceUID: nil, now: 5)
+        expect(radio.queue.isEmpty && radio.current == nil, "a radio station alone is not a session to resume")
+        let bad = SessionRecord.make(items: [("/m/a.flac", false)], currentID: 0, position: .nan, duration: .infinity, tab: .home, section: .general, selectedID: nil, deviceUID: nil, now: 1)
+        expect(bad.position == 0 && bad.duration == 0, "numbers that are not numbers are written as zero")
+        let suite = UserDefaults(suiteName: "aureon.test.session.\(UUID().uuidString)")!
+        let rec = record(); rec.save(suite)
+        expect(SessionRecord.load(suite) == rec, "the record comes back whole")
+        suite.set(Data("nonsense".utf8), forKey: SessionRecord.storageKey)
+        expect(SessionRecord.load(suite) == nil, "an unreadable one is nothing")
+        rec.save(suite); SessionRecord.forget(suite)
+        expect(SessionRecord.load(suite) == nil, "forgetting forgets")
+        var mem = MemorySettings(); mem.resume = .ask; mem.rememberWindow = false
+        var look = LookSettings(); look.memory = mem
+        let s2 = UserDefaults(suiteName: "aureon.test.memlook.\(UUID().uuidString)")!; look.save(s2)
+        expect(LookSettings.load(s2, environment: [:]).memory == mem, "the settings come back")
+        s2.set(Data(#"{"memory":{"resume":"playing"}}"#.utf8), forKey: LookSettings.storageKey)
+        expect(LookSettings.load(s2, environment: [:]).memory.resume == .playing && LookSettings.load(s2, environment: [:]).memory.rememberQueue, "an older record reads with defaults")
+    }
+
+    func theWindowComesBackToItsDisplay() {
+        var w = WindowMemory()
+        let a = CGRect(x: 0, y: 0, width: 1440, height: 875), b = CGRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let screens = ["A": a, "B": b], min = CGSize(width: 860, height: 540)
+        expect(w.frame(display: "A", visible: screens, minimum: min) == nil, "nothing remembered yet")
+        w.record(CGRect(x: 100, y: 80, width: 1100, height: 720), display: "A")
+        w.record(CGRect(x: 1700, y: 120, width: 1500, height: 900), display: "B")
+        expect(w.frame(display: "A", visible: screens, minimum: min) == CGRect(x: 100, y: 80, width: 1100, height: 720), "each display has its own place")
+        expect(w.frame(display: "B", visible: screens, minimum: min) == CGRect(x: 1700, y: 120, width: 1500, height: 900), "…and size")
+        expect(w.frame(display: "C", visible: screens, minimum: min) == CGRect(x: 1700, y: 120, width: 1500, height: 900), "an unknown display: the one used last")
+        expect(w.frame(display: nil, visible: screens, minimum: min)?.width == 1500, "no display given: the last one")
+        // the second display is gone: the window comes back onto the first, no larger than it
+        let back = w.frame(display: "B", visible: ["A": a], minimum: min)
+        expect(back != nil && a.contains(back!), "the display is gone: it comes back onto a screen that is there: \(String(describing: back))")
+        w.record(CGRect(x: 0, y: 0, width: 5000, height: 4000), display: "A")
+        let big = w.frame(display: "A", visible: screens, minimum: min)
+        expect(big != nil && big!.width <= a.width && big!.height <= a.height, "larger than its screen: brought down to it")
+        w.record(CGRect(x: 10, y: 10, width: 300, height: 200), display: "A")
+        expect(w.frame(display: "A", visible: screens, minimum: min)?.size == min, "never smaller than the window may be")
+        let suite = UserDefaults(suiteName: "aureon.test.windows.\(UUID().uuidString)")!
+        w.save(suite)
+        expect(WindowMemory.load(suite) == w, "it is written and read back")
+        WindowMemory.forget(suite)
+        expect(WindowMemory.load(suite) == WindowMemory(), "and forgotten")
+    }
+
+    @MainActor func theQueueComesBackReadyToPlay() {
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let dir = tempDir("resume")
+        var files: [String] = []
+        for i in 0..<3 { let u = dir.appendingPathComponent("Song \(i).wav"); writeWAV(u, rate: 8000, bits: 16, frames: 8000) { f, _ in Int(3000 * sin(Double(f) * 0.2)) }; files.append(u.path) }
+        let plan = SessionRestore(paths: files, current: 1, position: 40, duration: 100, autoplay: false, offer: true, tab: .albums, section: .appearance, selectedID: nil, deviceUID: nil, scroll: ["Songs||": 300])
+        m.apply(plan)
+        expect(m.items.count == 3 && m.items.map(\.title) == ["Song 0", "Song 1", "Song 2"], "the queue is back, in order: \(m.items.map(\.title))")
+        expect(m.tab == .albums && m.settingsSection == .appearance && ScrollMemory.shared.offset("Songs||") == 300, "the page, the settings page and the scroll are back")
+        expect(m.pendingResume?.id == m.items[1].id && m.pendingResume?.position == 40 && m.focusItem?.id == m.items[1].id, "the song is in focus, ready at 40 s")
+        expect(m.resumeOffer != nil && !m.isActive, "the offer is shown and nothing plays")
+        expect(abs(m.progress.position - 40) < 0.001 && m.progress.duration == 100, "the bar shows where it stopped")
+        let rec = m.currentSessionRecord()
+        expect(rec.queue == files && rec.current == 1 && rec.position == 40 && rec.duration == 100 && rec.tab == Tab.albums.rawValue, "and what is saved next is the same: \(rec.current ?? -1) \(rec.position)")
+        m.declineResumeOffer()
+        expect(m.items.isEmpty && m.pendingResume == nil && m.resumeOffer == nil, "Start fresh puts the queue away")
+        ScrollMemory.shared.all = [:]
+    }
+
+    func scrollMemoryKeepsWhereEachPageWas() {
+        let sm = ScrollMemory()
+        sm.set("Albums||", 640); sm.set("Songs||", 0.5); sm.set("Home||", 120)
+        expect(sm.offset("Albums||") == 640 && sm.offset("Songs||") == nil && sm.offset("Home||") == 120 && sm.offset("nope") == nil, "pages at their top are not kept")
+        sm.set("Albums||", 0)
+        expect(sm.offset("Albums||") == nil, "back at the top: forgotten")
+        var many: [String: Double] = [:]
+        for i in 0..<100 { many["page\(i)"] = Double(i + 10) }
+        sm.all = many
+        expect(sm.all.count == ScrollMemory.limit, "no more pages are kept than the limit")
+    }
+}
+
+extension PulseTests {
     /// Each mini layout drawn as the real view (a development aid: `AUREON_MINI_SHOTS=/folder` writes a PNG of each; without it nothing is written).
     @MainActor func theMiniLayoutsDrawWithoutTrouble() {
         guard !NSScreen.screens.isEmpty else { return }
@@ -308,5 +430,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
