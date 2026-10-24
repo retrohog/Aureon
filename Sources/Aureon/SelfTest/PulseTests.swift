@@ -285,6 +285,48 @@ nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 private final class KeyableWindow: NSWindow { override var canBecomeKey: Bool { true } }
 
 extension PulseTests {
+    /// The history behind the queue panel's History tab.
+    @MainActor func playedHistoryKeepsTheOrder() {
+        var log = PlayedLog()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        log.note(path: "/a.flac", title: "A", artist: "x", album: "y", at: t0)
+        log.note(path: "/b.flac", title: "B", artist: "", album: "", at: t0.addingTimeInterval(60))
+        log.note(path: "/b.flac", title: "B", artist: "", album: "", at: t0.addingTimeInterval(61))
+        expect(log.entries.map(\.title) == ["B", "A"], "newest first, a repeat straight away is not listed twice: \(log.entries.map(\.title))")
+        log.note(path: "/a.flac", title: "A", artist: "x", album: "y", at: t0.addingTimeInterval(120))
+        expect(log.entries.map(\.title) == ["A", "B", "A"], "a song heard again later is listed again")
+        for i in 0..<300 { log.note(path: "/s\(i).flac", title: "S\(i)", artist: "", album: "") }
+        expect(log.entries.count == PlayedLog.limit && log.entries.first?.title == "S299", "the log is bounded and keeps the newest: \(log.entries.count)")
+        log.clear()
+        expect(log.entries.isEmpty, "clearing empties it")
+        let now = Date()
+        expect(PlayedLog.age(now, now: now) == "just now" && PlayedLog.age(now.addingTimeInterval(-300), now: now) == "5 min ago" && PlayedLog.age(now.addingTimeInterval(-7200), now: now) == "2 h ago" && PlayedLog.age(now.addingTimeInterval(-100_000), now: now) == "yesterday", "ages read plainly")
+        expect(QueueTab.allCases.map(\.rawValue) == ["Queue", "History", "Output"], "three tabs")
+    }
+
+    /// Playing songs fills the history, and a click in it plays the song again.
+    @MainActor func playingFillsTheHistory() {
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("nphist")
+        var urls: [URL] = []
+        for i in 0..<3 {
+            let u = dir.appendingPathComponent("Hist \(i).wav")
+            _ = writeWAV(u, rate: 8000, bits: 16, frames: 8000 * 20) { f, _ in Int(2000 * sin(Double(f) * 0.1)) }
+            urls.append(u)
+        }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        defer { m.clear() }
+        m.add(urls: urls, play: false)
+        guard m.items.count == 3 else { expect(false, "three songs are queued"); return }
+        m.play(m.items[0].id); pumpFor(0.8)
+        m.play(m.items[2].id); pumpFor(0.8)
+        expect(m.playedLog.entries.map(\.path) == [m.items[2].path, m.items[0].path], "the two songs played are listed, newest first: \(m.playedLog.entries.map(\.title))")
+        m.playAgain(path: m.items[0].path); pumpFor(0.8)
+        expect(m.status.trackID == m.items[0].id && m.playedLog.entries.first?.path == m.items[0].path, "a click in the history plays the song again")
+        m.clearPlayedLog()
+        expect(m.playedLog.entries.isEmpty, "and Clear empties it")
+    }
+
     /// What an earlier choice becomes: the family, the mode and the pure black switch.
     @MainActor func savedThemesAreCarriedOver() {
         func start(_ values: [String: String]) -> (family: String, mode: AppearanceMode, pureBlack: Bool) {
@@ -775,6 +817,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
