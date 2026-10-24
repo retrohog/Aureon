@@ -71,19 +71,19 @@ final class SplashScene {
         root.cornerRadius = 12
         root.masksToBounds = true
         root.contentsScale = scale
-        root.backgroundColor = Theme.named("obsidian").canvasRGB.cg
+        root.backgroundColor = Theme.named("graphite").canvasRGB.cg
 
         // the faint starlight behind everything
         let stars = CALayer()
         stars.frame = root.bounds
-        stars.contents = BackdropRenderer.stars(width: 1040, height: 640, count: 70, seed: 11, ink: Theme.named("obsidian").inkRGB, accent: Theme.named("obsidian").accentRGB)
+        stars.contents = BackdropRenderer.stars(width: 1040, height: 640, count: 70, seed: 11, ink: Theme.named("graphite").inkRGB, accent: Theme.named("graphite").accentRGB)
         stars.contentsGravity = .resizeAspectFill
         stars.opacity = 0.5
         root.addSublayer(stars)
         let wash = CAGradientLayer()
         wash.frame = root.bounds
         wash.type = .radial
-        wash.colors = [Theme.named("obsidian").canvasRGB.mixed(with: Theme.named("obsidian").accentRGB, 0.10).cg, Theme.named("obsidian").canvasRGB.cg]
+        wash.colors = [Theme.named("graphite").canvasRGB.mixed(with: Theme.named("graphite").accentRGB, 0.10).cg, Theme.named("graphite").canvasRGB.cg]
         wash.startPoint = CGPoint(x: 0.4, y: 0.5); wash.endPoint = CGPoint(x: 1.05, y: 1.1)
         wash.opacity = 0.9
         root.insertSublayer(wash, below: stars)

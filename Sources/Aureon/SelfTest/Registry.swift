@@ -146,8 +146,8 @@ func extraTests() -> [(String, TestFn)] {
           ("ui.waveformCache", hw.waveformCacheRoundTrip), ("ui.waveformColumns", hw.waveformColumnsAndEdgeCases), ("ui.scrubMath", hw.scrubberMath),
           ("ui.backdropBlur", hw.backdropImageIsSmallAndBlurred), ("ui.stageNavigation", hw.stageOpensAndReturns), ("ui.lyricsButton", hw.lyricsButtonOpensTheLyrics)]
     let ds = DesignSystemTests()
-    t += [("ui.themeContrast", ds.everyThemeMeetsContrast), ("ui.defaultThemes", ds.defaultThemesAreObsidianAndIvory), ("ui.typography", ds.typographyTokensArePresent),
-          ("ui.noScatteredFonts", ds.noScatteredFontsOrSprings), ("ui.metrics", ds.metricsStayOnTheGridAndSquare), ("ui.accentPair", ds.accentPairStaysInOneColourFamily),
+    t += [("ui.themeContrast", ds.everyThemeMeetsContrast), ("ui.defaultThemes", ds.defaultThemesAreGraphiteAndStone), ("ui.typography", ds.typographyTokensArePresent),
+          ("ui.noScatteredFonts", ds.noScatteredFontsOrSprings), ("ui.metrics", ds.metricsStayOnTheGridAndRound), ("ui.accentPair", ds.accentPairStaysInOneColourFamily),
           ("ui.softBackdrop", ds.softBackdropNeverCostsTextItsContrast), ("ui.albumBackdrop", ds.albumBackdropIsHeldToTheSameLimit), ("ui.backdropModes", ds.backdropModesAreNamed), ("ui.backdropView", ds.backdropViewDrawsTheWash)]
     let ui = InterfaceTests()
     t += [("ui.palette", ui.paletteFollowsTheCover), ("ui.paletteEdge", ui.greyAndTinyImagesAreSafe), ("ui.signalPath", ui.signalPathStations), ("ui.quality", ui.qualityTiers), ("ui.navigation", ui.navigationStructure), ("ui.liveSignal", ui.liveStationsInTheSignalPath), ("ui.history", ui.navigationHistory), ("ui.republish", ui.playheadChangesDoNotRepublish), ("ui.ordering", ui.sortingFilteringAndGrouping), ("ui.volumeSafety", ui.volumeSliderCannotJump), ("ui.scrollSteps", ui.scrollWheelSteps)]

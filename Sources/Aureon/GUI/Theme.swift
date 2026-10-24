@@ -1,25 +1,27 @@
 import SwiftUI
 
-/// A colour theme: the surfaces, the ink drawn on them and the accent pair. Chrome is neutral (warm graphite by night, bone paper by day);
-/// colour comes from the accent alone, which drives the few gradients of the interface (Now Playing, waveform fill, active indicators, the
-/// progress rule). Everything the interface paints with comes from here (through `Brand`). Every family has a dark and a light variant.
+/// A colour theme: the surfaces, the ink drawn on them and the accent. Pulse has nine: six dark (Graphite, AMOLED, Midnight, Forest, Plum, Cocoa)
+/// and three softened light ones (Stone, Sage, Paper). Three surfaces carry the layout: the window behind everything (`sidebarRGB`, also the
+/// colour of the top bar and the rail), the main panel (`canvasRGB`, the page itself and the player bar) and the raised surface (`panel2RGB`: cards,
+/// chips, the selected rail item). Everything the interface paints with comes from here (through `Brand`).
 ///
 /// The values are stored as `RGB` so contrast can be computed on them: `ink`, its two lighter steps and the accent are all held to WCAG AA
-/// against both surfaces, for every theme.
+/// against every surface, for every theme.
 struct Theme: Identifiable, Equatable {
     let id: String
-    let family: String
     let name: String
     let blurb: String
     var isLight = false
-    var canvasRGB: RGB            // page background
-    var sidebarRGB: RGB           // the sidebar and the player bar
-    var inkRGB: RGB               // text and hairlines: bone on dark themes, near-black on light ones
+    var canvasRGB: RGB            // the main panel: pages and the player bar
+    var sidebarRGB: RGB           // the window behind the panels: top bar and rail
+    var panel2RGB: RGB            // raised surfaces: cards, chips, the selected rail item
+    var inkRGB: RGB               // text and hairlines: warm white on dark themes, near-black on light ones
     var accentRGB: RGB
     var accent2RGB: RGB           // the other end of the accent gradient: a neighbouring hue, never a complementary one
 
     var canvas: Color { canvasRGB.color }
     var sidebar: Color { sidebarRGB.color }
+    var panel2: Color { panel2RGB.color }
     var ink: Color { inkRGB.color }
     var accent: Color { accentRGB.color }
     var accent2: Color { accent2RGB.color }
@@ -29,7 +31,7 @@ struct Theme: Identifiable, Equatable {
     var backdropLimitRGB: RGB { canvasRGB.mixed(with: isLight ? RGB(0, 0, 0) : RGB(1, 1, 1), isLight ? 0.08 : 0.14) }
 
     /// The surfaces text has to be legible on.
-    var surfaces: [RGB] { [canvasRGB, sidebarRGB, backdropLimitRGB] }
+    var surfaces: [RGB] { [canvasRGB, sidebarRGB, panel2RGB, backdropLimitRGB] }
 
     /// Ink at the lowest opacity that still gives `target`:1 on every surface, as an opaque colour over the canvas.
     private func inkStep(target: Double) -> RGB {
@@ -51,15 +53,15 @@ struct Theme: Identifiable, Equatable {
 
     nonisolated(unsafe) private static var stepCache: [String: RGB] = [:]
     private static func cachedStep(_ t: Theme, _ target: Double) -> RGB {
-        let key = "\(t.id)|\(t.inkRGB.r)|\(t.canvasRGB.r)|\(target)"
+        let key = "\(t.id)|\(t.inkRGB.r)|\(t.canvasRGB.r)|\(t.panel2RGB.r)|\(t.sidebarRGB.r)|\(target)"
         if let c = stepCache[key] { return c }
         let v = t.inkStep(target: target)
         stepCache[key] = v
         return v
     }
 
-    /// The accent as small text: nudged until it reads at 4.5:1 on both surfaces.
-    var accentTextRGB: RGB { surfaces.reduce(accentRGB) { WCAG.fit($0, against: $1, minimum: 4.5) } }
+    /// The accent as small text: nudged until it reads at 4.5:1 on every surface.
+    var accentTextRGB: RGB { surfaces.reduce(accentRGB) { WCAG.fit($0, against: $1, minimum: 4.5, towardWhite: !isLight) } }
     var accentText: Color { accentTextRGB.color }
     /// The label colour on a solid accent fill.
     var onAccentRGB: RGB { WCAG.onColor(accentRGB) }
@@ -68,48 +70,78 @@ struct Theme: Identifiable, Equatable {
     static func rgbValue(_ hex: UInt32) -> RGB { RGB(Double((hex >> 16) & 255) / 255, Double((hex >> 8) & 255) / 255, Double(hex & 255) / 255) }
     static func rgb(_ hex: UInt32) -> Color { rgbValue(hex).color }
 
-    typealias Palette = (canvas: UInt32, sidebar: UInt32, ink: UInt32, accent: UInt32, accent2: UInt32)
+    /// window, panel, raised surface, ink, accent
+    typealias Palette = (window: UInt32, panel: UInt32, panel2: UInt32, ink: UInt32, accent: UInt32)
 
-    private static func make(_ family: String, _ name: String, _ blurb: String, dark d: Palette, light l: Palette) -> (dark: Theme, light: Theme) {
-        func theme(_ p: Palette, light: Bool) -> Theme {
-            Theme(id: light ? family + ".light" : family, family: family, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(p.canvas), sidebarRGB: rgbValue(p.sidebar),
-                  inkRGB: rgbValue(p.ink), accentRGB: rgbValue(p.accent), accent2RGB: rgbValue(p.accent2))
-        }
-        return (theme(d, light: false), theme(l, light: true))
+    private static func make(_ id: String, _ name: String, _ blurb: String, light: Bool, _ p: Palette) -> Theme {
+        let accent = rgbValue(p.accent)
+        return Theme(id: id, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(p.panel), sidebarRGB: rgbValue(p.window), panel2RGB: rgbValue(p.panel2),
+                     inkRGB: rgbValue(p.ink), accentRGB: accent, accent2RGB: companion(of: accent))
     }
 
-    /// Obsidian: near-black with a faint blue cast, ivory ink, champagne gold. Ivory is its day version: bone paper, warm black ink, deep brass.
-    static let obsidian: Palette = (0x0D0E11, 0x090A0C, 0xEFEAE0, 0xC9A96E, 0xA68A52)
-    static let ivory: Palette = (0xF5F1E8, 0xECE7DB, 0x1A1814, 0x7F6228, 0x8F7438)
+    /// The second end of an accent gradient: the same colour family, a few degrees along the wheel and a little deeper.
+    static func companion(of accent: RGB) -> RGB {
+        let h = accent.hsb
+        let shift: Double = h.h >= 0.5 && h.h < 0.75 ? -0.04 : 0.04
+        return accent.hueShifted(shift).with(saturation: min(1, h.s * 1.05), brightness: h.v * 0.86)
+    }
 
-    static let families: [(id: String, name: String, blurb: String, dark: Theme, light: Theme)] = {
-        let defs: [(String, String, String, Palette, Palette)] = [
-            ("obsidian", "Obsidian", "Midnight black and ivory, with champagne gold; Ivory by day", obsidian, ivory),
-            ("bespoke", "Bespoke", "Deep green-black and pale stone, with the same gold", (0x0B1210, 0x070C0B, 0xE9E7DC, 0xC9A96E, 0xA68A52), (0xEFEFE6, 0xE4E5DA, 0x16201B, 0x7F6228, 0x8F7438)),
-            ("aureon", "Graphite", "Warm graphite and bone, with brass", (0x1A1917, 0x131210, 0xEDE9E2, 0xC9A96E, 0xA68A52), (0xF3EFE7, 0xE9E4D9, 0x1C1A17, 0x7F6228, 0x8F7438)),
-            ("evergreen", "Evergreen", "Forest at night, morning meadow by day", (0x131A16, 0x0E1411, 0xE6EDE7, 0x8FBF7A, 0xC9B458), (0xF1F3EC, 0xE6E9DF, 0x182019, 0x3F7A3A, 0x8A7A1C)),
-            ("nord", "Nord", "Arctic, muted blues", (0x2E3440, 0x272C36, 0xECEFF4, 0x88C0D0, 0xA3BE8C), (0xECEFF4, 0xE0E5EC, 0x2E3440, 0x4A6C8F, 0x5E8A6E)),
-            ("gruvbox", "Gruvbox", "Retro warm browns and amber", (0x282828, 0x1D2021, 0xEBDBB2, 0xFABD2F, 0xFE8019), (0xFBF1C7, 0xEBDBB2, 0x3C3836, 0x9A5B0C, 0xAF3A03)),
-        ]
-        return defs.map { d in
-            let pair = make(d.0, d.1, d.2, dark: d.3, light: d.4)
-            return (d.0, d.1, d.2, pair.dark, pair.light)
-        }
-    }()
+    /// The nine themes, dark ones first. The light ones are muted on purpose: panels sit a step darker than paper white (see `Look.lightBrightness`).
+    static let all: [Theme] = [
+        make("graphite", "Graphite", "Warm charcoal with amber", light: false, (0x0C0C0E, 0x161619, 0x222227, 0xF6F3EC, 0xF2B84B)),
+        make("amoled", "AMOLED", "True black, for OLED screens", light: false, (0x000000, 0x0A0A0A, 0x171717, 0xF4F1EA, 0xF2B84B)),
+        make("midnight", "Midnight", "Deep navy with a clear blue", light: false, (0x080B14, 0x0F1424, 0x1A2036, 0xEEF2FF, 0x7FA6FF)),
+        make("forest", "Forest", "Green-black with soft leaf green", light: false, (0x0A110D, 0x111B15, 0x1B2A21, 0xEEF4EA, 0x9ED38A)),
+        make("plum", "Plum", "Aubergine with rose", light: false, (0x100A12, 0x1A1220, 0x28192F, 0xF7EEF6, 0xF09AD0)),
+        make("cocoa", "Cocoa", "Dark roast with apricot", light: false, (0x120D0A, 0x1D1511, 0x2B201A, 0xF6EEE6, 0xF0A36B)),
+        make("stone", "Stone", "Soft grey day theme with bronze", light: true, (0xC0BEB6, 0xCBC9C1, 0xB5B3AA, 0x201D18, 0x6A4300)),
+        make("sage", "Sage", "Muted green day theme", light: true, (0xB9C0B2, 0xC5CCBE, 0xABB3A3, 0x181D16, 0x2B5436)),
+        make("paper", "Paper", "Warm paper with rust", light: true, (0xCAC0AC, 0xD4CBB8, 0xBDB39E, 0x1E1913, 0x7E3418)),
+    ]
+    static let dark: [Theme] = all.filter { !$0.isLight }
+    static let light: [Theme] = all.filter { $0.isLight }
 
-    /// The theme used before anything is chosen and when an id is unknown (themes that were removed, such as the old "album" colours): Obsidian.
-    static let aureon = families[0].dark
-    static let all: [Theme] = families.flatMap { [$0.dark, $0.light] }
+    /// The theme used before anything is chosen and when an id is unknown: Graphite.
+    static let aureon = all[0]
+    static let defaultLight = all.first { $0.id == "stone" }!
 
-    /// "obsidian", "obsidian.light" (or the old plain "light", which was the light default).
+    /// Ids of earlier versions and what they became.
+    static let legacy: [String: String] = [
+        "obsidian": "graphite", "aureon": "graphite", "bespoke": "forest", "evergreen": "forest", "nord": "midnight", "gruvbox": "cocoa",
+        "obsidian.light": "stone", "light": "stone", "aureon.light": "stone", "bespoke.light": "sage", "evergreen.light": "sage",
+        "nord.light": "stone", "gruvbox.light": "paper",
+    ]
+
+    /// A theme by id (earlier ids are carried over; anything else is Graphite).
     static func named(_ id: String?) -> Theme {
-        if id == "light" { return families[0].light }
-        return all.first { $0.id == id } ?? .aureon
+        guard let id else { return .aureon }
+        let key = legacy[id] ?? id
+        return all.first { $0.id == key } ?? .aureon
     }
 
-    static func resolve(family: String, light: Bool) -> Theme {
-        let f = families.first { $0.id == family } ?? families[0]
-        return light ? f.light : f.dark
+    /// The theme to show for the chosen dark and light themes and whether the day one is wanted.
+    static func resolve(dark: String, light: String, wantsLight: Bool) -> Theme {
+        if wantsLight { let t = named(light); return t.isLight ? t : defaultLight }
+        let t = named(dark); return t.isLight ? .aureon : t
+    }
+
+    /// The light themes at a brightness between 0 and 1 (0.35 is the designed tone): towards a quieter grey below it, towards paper above it.
+    /// Dark themes are returned as they are.
+    func adjusted(lightBrightness b: Double) -> Theme {
+        guard isLight else { return self }
+        let d = min(1, max(0, b)) - 0.35
+        func tone(_ c: RGB) -> RGB { d >= 0 ? c.mixed(with: RGB(1, 1, 1), d * 0.55) : c.mixed(with: RGB(0, 0, 0), -d * 0.2) }
+        var t = self
+        t.canvasRGB = tone(canvasRGB); t.sidebarRGB = tone(sidebarRGB); t.panel2RGB = tone(panel2RGB)
+        return t
+    }
+
+    /// The same theme with another accent colour (the accent picker). The label on it and its text colour are derived again.
+    func withAccent(_ c: RGB?) -> Theme {
+        guard let c else { return self }
+        var t = self
+        t.accentRGB = c; t.accent2RGB = Theme.companion(of: c)
+        return t
     }
 
     /// The theme in use. Set on the main thread when the user picks one; read by `Brand` while views are built.
@@ -177,10 +209,35 @@ struct ThemePicker: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
                 SegmentedChoice(selection: $m.appearance, items: Array(AppearanceMode.allCases), label: { $0.title }, icon: { $0.icon }).frame(width: 264)
-                Text(m.appearance == .system ? "Follows your Mac's appearance" : "Every theme has a dark and a light version").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                Text(m.appearance == .system ? "Follows your Mac: your dark theme at night, your light theme by day" : "Pick any of the nine; light themes are soft on purpose").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
             }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 16)], alignment: .leading, spacing: 16) {
-                ForEach(Theme.families, id: \.id) { f in swatch(f.id, f.name, f.blurb) }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 168), spacing: 14)], alignment: .leading, spacing: 14) {
+                ForEach(Theme.all) { t in swatch(t) }
+            }
+            if m.theme.isLight {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Light brightness").microLabel().foregroundStyle(Brand.inkTertiary)
+                    LookSliderRow(title: "Brightness", hint: "From a quiet grey to paper. The default is easy on the eyes.", value: $m.look.lightBrightness, defaultValue: LookSettings.defaults.lightBrightness, deferred: true)
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Accent").microLabel().foregroundStyle(Brand.inkTertiary)
+                AccentPicker()
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Density").microLabel().foregroundStyle(Brand.inkTertiary)
+                HStack(spacing: 16) {
+                    SegmentedChoice(selection: $m.look.density, items: UIDensity.allCases, label: { $0.title }).frame(width: 264)
+                    Text(m.look.density.hint).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Font").microLabel().foregroundStyle(Brand.inkTertiary)
+                HStack(spacing: 16) {
+                    SegmentedChoice(selection: $m.look.weight, items: TypeWeight.allCases, label: { $0.title }).frame(width: 264)
+                    Text(TypeFace.hasPreferred ? "Figtree, Regular by default" : "Avenir Next stands in until Figtree is installed").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                }
+                LookSliderRow(title: "Text size", hint: "Scales every size in the interface.", value: textScaleBinding, defaultValue: (1 - LookSettings.textScaleRange.lowerBound) / (LookSettings.textScaleRange.upperBound - LookSettings.textScaleRange.lowerBound), deferred: true, format: { "\(Int((Look.lerp(LookSettings.textScaleRange.lowerBound, LookSettings.textScaleRange.upperBound, $0) * 100).rounded()))%" })
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Backdrop").microLabel().foregroundStyle(Brand.inkTertiary)
@@ -227,40 +284,109 @@ struct ThemePicker: View {
         }
     }
 
-    private func swatch(_ id: String, _ name: String, _ blurb: String) -> some View {
-        let t = Theme.resolve(family: id, light: m.theme.isLight)
-        let on = m.themeFamily == id
-        return Button { withAnimation(.easeOut(duration: 0.2)) { m.themeFamily = id } } label: {
+    /// The text size as a 0…1 position on its range.
+    private var textScaleBinding: Binding<Double> {
+        let r = LookSettings.textScaleRange
+        return Binding(get: { (m.look.textScale - r.lowerBound) / (r.upperBound - r.lowerBound) }, set: { m.look.textScale = r.lowerBound + $0 * (r.upperBound - r.lowerBound) })
+    }
+
+    private func swatch(_ t: Theme) -> some View {
+        let on = m.theme.id == t.id
+        return Button { withAnimation(.easeOut(duration: 0.2)) { m.choose(theme: t) } } label: {
             VStack(alignment: .leading, spacing: 8) {
-                // a miniature of the interface in this theme: sidebar, a title line, a rule, the accent gradient
+                // a miniature of the shell in this theme: rail, panel with a title, a tag, and the player bar
                 ZStack(alignment: .topLeading) {
-                    Rectangle().fill(t.canvas)
-                    HStack(spacing: 0) {
-                        Rectangle().fill(t.sidebar).frame(width: 32)
-                        Rectangle().fill(t.ink.opacity(0.14)).frame(width: Metrics.hairline)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Rectangle().fill(t.ink.opacity(0.85)).frame(width: 48, height: 4)
-                            Rectangle().fill(t.ink.opacity(0.14)).frame(height: Metrics.hairline)
-                            Rectangle().fill(t.ink.opacity(0.4)).frame(width: 64, height: 3)
-                            Rectangle().fill(LinearGradient(colors: [t.accent, t.accent2], startPoint: .leading, endPoint: .trailing)).frame(width: 56, height: 2)
-                        }.padding(8)
-                    }
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(0..<3, id: \.self) { i in Rectangle().fill(i == 0 ? t.accent : t.ink.opacity(0.4)).frame(width: i == 0 ? 20 : 22, height: 2) }
-                    }.padding(.leading, 6).padding(.top, 8)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.sidebar)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.panel2).frame(width: 22).padding(8)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(t.canvas).padding(.leading, 38).padding(.trailing, 8).padding(.top, 8).padding(.bottom, 34)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Capsule().fill(t.ink).frame(width: 64, height: 8)
+                        Capsule().fill(t.ink.opacity(0.7)).frame(width: 90, height: 5)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(t.accent).frame(width: 36, height: 14)
+                    }.padding(.leading, 46).padding(.top, 16)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(t.canvas).frame(height: 20).padding(.leading, 38).padding(.trailing, 8)
+                        .frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 8)
+                    Circle().fill(t.accent).frame(width: 12, height: 12).padding(.leading, 44).frame(maxHeight: .infinity, alignment: .bottom).padding(.bottom, 12)
                 }
-                .frame(height: 64).clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 3, style: .continuous).strokeBorder(on ? t.accentText : Brand.rule, lineWidth: on ? 1.5 : Metrics.hairline))
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 4) {
-                        Text(name).font(Typo.serif(15, .medium))
-                        if on { Image(systemName: "checkmark").font(Typo.sans(10, .medium)).foregroundStyle(t.accentText) }
-                    }
-                    Text(blurb).font(Typo.caption).foregroundStyle(Brand.inkSecondary).lineLimit(2).frame(height: 28, alignment: .topLeading)
+                .frame(height: 92)
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Brand.accentText : Brand.rule, lineWidth: on ? 2 : Metrics.hairline))
+                HStack(spacing: 4) {
+                    Text(t.name).font(Typo.sans(13.5, .regular))
+                    if on { Image(systemName: "checkmark").font(Typo.sans(10, .medium)).foregroundStyle(Brand.accentText) }
                 }
             }
-            .padding(.vertical, 8).contentShape(Rectangle())
+            .padding(.vertical, 4).contentShape(Rectangle())
         }.buttonStyle(.plain)
+        .accessibilityLabel(t.name).accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
+/// The accent colour: the theme's own, six presets, or any colour from the system's picker. A chosen colour is kept readable by the theme (text
+/// uses a fitted version of it; labels on it flip between black and white).
+struct AccentPicker: View {
+    @EnvironmentObject var m: PlayerModel
+    static let presets: [(String, String)] = [("F2B84B", "Amber"), ("7FA6FF", "Blue"), ("9ED38A", "Leaf"), ("F09AD0", "Rose"), ("F0A36B", "Apricot"), ("5FD1C9", "Teal")]
+
+    private var custom: Binding<Color> {
+        Binding(get: { (m.look.accentHex.flatMap(Look.color(hex:)) ?? Theme.current.accentRGB).color },
+                set: { c in if let rgb = NSColor(c).usingColorSpace(.sRGB) { m.look.accentHex = Look.hex(RGB(Double(rgb.redComponent), Double(rgb.greenComponent), Double(rgb.blueComponent))) } })
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button { m.look.accentHex = nil } label: {
+                Text("Theme").font(Typo.sans(12.5, m.look.accentHex == nil ? .medium : .regular))
+                    .padding(.horizontal, 12).frame(height: 28)
+                    .foregroundStyle(m.look.accentHex == nil ? Brand.panel : Brand.ink)
+                    .background(Capsule().fill(m.look.accentHex == nil ? Brand.ink : Brand.panel2))
+            }.buttonStyle(.plain).accessibilityLabel("Use each theme's own accent")
+            ForEach(Self.presets, id: \.0) { p in
+                let on = m.look.accentHex == p.0
+                Button { m.look.accentHex = p.0 } label: {
+                    Circle().fill(Theme.rgb(UInt32(p.0, radix: 16) ?? 0)).frame(width: 24, height: 24)
+                        .overlay(Circle().strokeBorder(Brand.ink, lineWidth: on ? 2 : 0).padding(-3))
+                }.buttonStyle(.plain).accessibilityLabel(p.1).accessibilityAddTraits(on ? .isSelected : [])
+            }
+            ColorPicker("Any colour", selection: custom, supportsOpacity: false).labelsHidden().accessibilityLabel("Choose any accent colour")
+            Text(m.look.accentHex.map { "#" + $0 } ?? "Each theme's own").font(Typo.mono(11)).foregroundStyle(Brand.inkSecondary)
+        }
+    }
+}
+
+/// A row with a slider in the Appearance groups: what it changes, the value, a reset, the slider and a line of explanation. `deferred` is for the values
+/// that re-colour or re-size the whole interface (light brightness, text size): the slider moves freely and the change is applied when it pauses, so the
+/// control being dragged is not rebuilt under the pointer.
+struct LookSliderRow: View {
+    let title: String
+    var hint: String = ""
+    @Binding var value: Double
+    let defaultValue: Double
+    var deferred = false
+    var format: (Double) -> String = { "\(Int(($0 * 100).rounded()))" }
+    @StateObject private var draft = Box<Double?>(nil)
+    @StateObject private var pending = Box<Task<Void, Never>?>(nil)
+
+    private var shown: Double { draft.v ?? value }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(title).font(Typo.sans(13, .medium))
+                Spacer(minLength: 8)
+                Text(format(shown)).font(Typo.mono(11)).foregroundStyle(Brand.inkSecondary).frame(minWidth: 32, alignment: .trailing)
+                Button("Reset") { draft.v = nil; pending.v?.cancel(); value = defaultValue }.buttonStyle(.rule).controlSize(.mini).disabled(abs(shown - defaultValue) < 0.005)
+            }
+            ValueSlider(value: Binding(get: { shown }, set: { new in
+                if deferred {
+                    draft.v = new
+                    pending.v?.cancel()
+                    pending.v = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 450_000_000)
+                        guard !Task.isCancelled else { return }
+                        value = new; draft.v = nil
+                    }
+                } else { value = new }
+            }), in: 0...1)
+            if !hint.isEmpty { Text(hint).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true) }
+        }
+    }
+}
