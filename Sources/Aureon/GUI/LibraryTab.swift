@@ -201,6 +201,13 @@ struct LibraryPage: View {
                 Text("Add a folder of FLAC, ALAC, WAV or AIFF files. Aureon reads multiple artists per track and classical tags — composer, conductor, ensemble, soloists, work, movement and opus. Audio files are never modified.")
                     .multilineTextAlignment(.center).foregroundStyle(Brand.inkSecondary).frame(maxWidth: 420).font(Typo.callout)
                 RuleButton(title: "Add Music Folder…", symbol: "folder.badge.plus", filled: true) { chooseFolder() }
+                if !lib.folders.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Library folders").microLabel().foregroundStyle(Brand.inkTertiary)
+                        LibraryFolderList(lib: lib)
+                    }
+                    .frame(maxWidth: 420).padding(.top, 16)
+                }
             }
             .frame(maxWidth: .infinity).padding(.top, 72)
         }

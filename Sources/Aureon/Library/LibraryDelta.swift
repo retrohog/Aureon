@@ -178,6 +178,15 @@ final class LibraryWatcher: @unchecked Sendable {
         return now.timeIntervalSince1970 - st.reconciledAt > Self.reconcileInterval
     }
 
+    /// Stops watching a folder that is no longer part of the library and drops what was remembered about it (adding it again starts from a full comparison).
+    func forget(root: String) {
+        queue.sync {
+            stopLocked(root)
+            guard states.removeValue(forKey: root) != nil else { return }
+            persistLocked()
+        }
+    }
+
     func stop(root: String) { queue.sync { stopLocked(root) } }
     func stopAll() { queue.sync { for r in Array(streams.keys) { stopLocked(r) } } }
 

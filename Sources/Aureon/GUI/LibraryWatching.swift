@@ -54,6 +54,34 @@ extension LibraryModel {
 
     func stopWatching() { watcher?.stopAll() }
 
+    /// Takes a folder out of the library: it is no longer scanned or watched, and its songs (and what only they supported) leave the library. The files
+    /// on disk are not touched. A song that another remaining library folder still covers stays. `done` gets the number of songs removed.
+    func removeFolder(_ path: String, done: ((Int) -> Void)? = nil) {
+        let root = realPath(URL(fileURLWithPath: path)).path
+        let remaining = folders.filter { $0 != path && realPath(URL(fileURLWithPath: $0)).path != root }
+        guard !importing, remaining.count < folders.count else { return }
+        folders = remaining
+        let keep = remaining.map { realPath(URL(fileURLWithPath: $0)).path }
+        let watching = watcher
+        let store = store
+        // on the delta queue, so a batch still being applied cannot bring a removed song back
+        Self.deltaQueue.async { [weak self] in
+            watching?.forget(root: root)
+            let removed = store?.removeFolderTracks(root: root, keeping: keep) ?? 0
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.importProgress = removed == 1 ? "1 song removed" : "\(removed) songs removed"
+                    self.selectedID = nil
+                    self.refresh()
+                    FolderBrowserModel.shared.libraryFoldersChanged(self.folders)
+                    self.onLibraryChanged?()
+                    done?(removed)
+                }
+            }
+        }
+    }
+
     /// A background update finished: refresh what is on screen only if something changed.
     func deltaApplied(_ r: ImportReport) {
         guard r.added + r.updated + r.removed > 0 else { return }

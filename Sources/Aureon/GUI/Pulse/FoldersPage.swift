@@ -134,13 +134,23 @@ struct FolderCard: View {
                 Text(songs.map { "\($0.formatted()) songs" } ?? "—").font(Typo.sans(15))
                 Text(status.detail).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary)
             }
-            Button(status == .missing ? "Reconnect" : "Rescan") { if status == .missing { reconnect() } else { lib.rescan(path) } }
-                .buttonStyle(.rule).controlSize(.small).disabled(lib.importing && status != .missing)
+            HStack(spacing: 8) {
+                Button(status == .missing ? "Reconnect" : "Rescan") { if status == .missing { reconnect() } else { lib.rescan(path) } }
+                    .buttonStyle(.rule).controlSize(.small).disabled(lib.importing && status != .missing)
+                Button("Remove") { removeIt() }.buttonStyle(.rule).controlSize(.small).disabled(lib.importing)
+                    .accessibilityLabel("Remove \((path as NSString).lastPathComponent) from the library")
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 14)
         .background(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).fill(hover.v ? Brand.ink.opacity(0.1) : Brand.panel2))
         .onHover { hover.v = $0 }
         .contextMenu { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }.disabled(!exists) }
+    }
+
+    /// Asks first (the files stay where they are), then takes the folder and its songs out of the library.
+    private func removeIt() {
+        guard confirmRemoveLibraryFolder(path) else { return }
+        lib.removeFolder(path) { _ in }
     }
 
     private func reconnect() {
