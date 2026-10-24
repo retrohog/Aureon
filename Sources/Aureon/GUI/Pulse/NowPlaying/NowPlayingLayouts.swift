@@ -48,7 +48,7 @@ struct NPDock<Left: View, Right: View>: View {
             NPDockRow(left: { left }, right: { right }).padding(.horizontal, c.margin).frame(minHeight: rowHeight * c.s)
         }
         .padding(.bottom, 14 * c.s)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock").layoutProbe("dock")
     }
 }
 
@@ -426,11 +426,12 @@ struct NPLumen: View {
 
     private func body(_ size: CGSize) -> some View {
         let s = c.s
-        let text: CGFloat = 190 * s                                                  // title, credits, tags and the buttons under the cover
+        let credits = size.height > 500
+        let text: CGFloat = (credits ? 250 : 170) * s                               // title, credits, tags and the buttons under the cover
         let side = max(100, min(420 * s, size.height - text - 20, size.width * 0.34))
         let queueWidth: CGFloat = size.width > 980 ? 272 * s : 0
         return HStack(alignment: .top, spacing: 40 * s) {
-            left(side).frame(width: side, alignment: .topLeading)
+            left(side, credits: credits).frame(width: side, alignment: .topLeading)
             middle.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             if queueWidth > 0 {
                 VStack(alignment: .leading, spacing: 10) {
@@ -448,11 +449,11 @@ struct NPLumen: View {
         return n == 0 ? "" : "\(n) queued"
     }
 
-    private func left(_ side: CGFloat) -> some View {
+    private func left(_ side: CGFloat, credits: Bool) -> some View {
         let s = c.s
         return VStack(alignment: .leading, spacing: 0) {
             NPCover(side: side, radius: 38)
-            NPTitleBlock(titleSize: 42, artistSize: 18, credits: true, tags: true).padding(.top, 16 * s)
+            NPTitleBlock(titleSize: 42, artistSize: 18, credits: credits, tags: true).fixedSize(horizontal: false, vertical: true).padding(.top, 16 * s)
             NPActions(size: 44).padding(.top, 6 * s).padding(.leading, -8)
         }
     }
@@ -482,9 +483,12 @@ struct NPLumen: View {
     private var dock: some View {
         let s = c.s
         return HStack(spacing: 14 * s) {
-            BarTime(remaining: false)
-            WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform).frame(minWidth: 60)
-            BarTime(remaining: true)
+            HStack(spacing: 14 * s) {
+                BarTime(remaining: false)
+                WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform).frame(minWidth: 60)
+                BarTime(remaining: true)
+            }
+            .layoutProbe("seek")
             NPTransport().fixedSize()
             NPCluster(showsChip: true, volumeWidth: 84).layoutPriority(0)
         }
@@ -492,7 +496,7 @@ struct NPLumen: View {
         .background(RoundedRectangle(cornerRadius: 32 * s, style: .continuous).fill(Brand.panel2))
         .padding(.horizontal, c.margin).padding(.bottom, 20 * s).padding(.top, 8 * s)
         .opacity(idle.awake ? 1 : 0.0001).animation(Motion.carpet, value: idle.awake)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock").layoutProbe("dock")
     }
 }
 
