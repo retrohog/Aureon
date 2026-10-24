@@ -213,7 +213,7 @@ struct HardwareUITests {
             let host = StageTestHost(), stage = StageModel()
             stage.showLyrics(host, reduceMotion: true)
             expect(host.tab == .player && stage.immersive, "from another page the button opens Now Playing")
-            expect(stage.lyricsPending, "and asks it to scroll to the lyrics")
+            expect(stage.lyricsPending && stage.npTab == .lyrics && stage.panel == nil, "and asks it to show the lyrics tab")
             expect(ud.bool(forKey: "aureon.lyrics.show") && ud.bool(forKey: "aureon.lyrics.expanded"), "hidden or collapsed lyrics come back")
             // already on Now Playing beside the sidebar: stays there
             stage.lyricsPending = false; stage.immersive = false

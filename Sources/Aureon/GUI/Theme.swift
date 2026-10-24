@@ -270,7 +270,7 @@ struct ThemePicker: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Launch").microLabel().foregroundStyle(Brand.inkTertiary)
                 HStack(spacing: 16) {
-                    Toggle("Launch animation", isOn: $m.launchAnimation).labelsHidden().accessibilityLabel("Launch animation")
+                    Toggle("", isOn: $m.launchAnimation).accessibilityLabel("Launch animation").fixedSize()
                     Text("A short animation of the mark before the window opens. A click or a key skips it.").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
             }

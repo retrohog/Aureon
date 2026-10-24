@@ -85,9 +85,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
+    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.

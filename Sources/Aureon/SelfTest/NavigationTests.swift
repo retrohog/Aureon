@@ -203,11 +203,12 @@ struct NowPlayingTests {
         stage.toggle(.signal); expect(stage.panel == nil, "clicking again closes")
         for p in GalleryPanel.allCases { stage.toggle(p); expect(stage.panel == p); stage.toggle(p); expect(stage.panel == nil) }
         expect(GalleryPanel.allCases.map(\.title) == ["Lyrics", "Queue", "Signal path", "Analyser", "Booklet"] && GalleryPanel.allCases.allSatisfy { !$0.icon.isEmpty })
-        // the Lyrics button opens the lyrics panel, from any page, and replaces another panel
+        // the Lyrics button opens Now Playing at the words, from any page, and closes a panel that was open over it
         let host = StageTestHost(); host.tab = .albums
         stage.toggle(.queue)
+        stage.npTab = .credits
         stage.showLyrics(host, reduceMotion: true)
-        expect(stage.panel == .lyrics && host.tab == .player, "the lyrics button opens the lyrics beside the cover")
+        expect(stage.panel == nil && stage.npTab == .lyrics && host.tab == .player, "the lyrics button opens Now Playing at the lyrics")
     }
 
     func lyricsTimingUsesTheOffsetAndTheLatency() {
