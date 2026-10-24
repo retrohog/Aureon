@@ -2,7 +2,11 @@ import SwiftUI
 import AppKit
 
 // The six layouts of Now Playing. Each is its own view and decides only where the shared pieces (NowPlayingParts) go; lyrics on or off changes what the
-// middle shows. They are drawn for 1440 × 900 and scaled to the window (`npScale`), with the top bar above and nothing below the dock.
+// middle shows. They are drawn for 1440 × 900 and scaled to the window (`npScale`).
+//
+// Every layout is built the same way (`NPFrame`): the top bar's space, then a body that is given exactly the room left, then the dock (seek, transport,
+// the cluster). The dock is never inside the body, so it is always whole and visible; the body sizes its covers from the room it has and is clipped to it,
+// so nothing in it can reach the dock or the top bar, and what does not fit (the lyrics, the queue) shrinks instead of overlapping.
 
 /// What every layout needs to know about the window.
 struct NPCanvas {
@@ -28,6 +32,43 @@ struct NPDockRow<Left: View, Right: View>: View {
     }
 }
 
+/// Seek line above the dock row, with the bottom margin.
+struct NPDock<Left: View, Right: View>: View {
+    let c: NPCanvas
+    var seek = NPSeek.Style.waveform
+    var rowHeight: CGFloat = 84
+    let left: Left
+    let right: Right
+    init(_ c: NPCanvas, seek: NPSeek.Style = .waveform, rowHeight: CGFloat = 84, @ViewBuilder left: () -> Left, @ViewBuilder right: () -> Right) {
+        self.c = c; self.seek = seek; self.rowHeight = rowHeight; self.left = left(); self.right = right()
+    }
+    var body: some View {
+        VStack(spacing: 6 * c.s) {
+            NPSeek(style: seek).padding(.horizontal, c.margin)
+            NPDockRow(left: { left }, right: { right }).padding(.horizontal, c.margin).frame(minHeight: rowHeight * c.s)
+        }
+        .padding(.bottom, 14 * c.s)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock")
+    }
+}
+
+/// The frame every layout sits in: the top bar's space, the body (given the room that is left, and clipped to it) and the dock at its natural height.
+struct NPFrame<Content: View, Dock: View>: View {
+    let c: NPCanvas
+    let content: (CGSize) -> Content
+    let dock: Dock
+    init(_ c: NPCanvas, @ViewBuilder content: @escaping (CGSize) -> Content, @ViewBuilder dock: () -> Dock) { self.c = c; self.content = content; self.dock = dock() }
+    var body: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: c.top)
+            GeometryReader { g in
+                content(g.size).frame(width: g.size.width, height: g.size.height, alignment: .top).clipped()
+            }
+            dock.fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 // MARK: - Stage
 
 struct NPStage: View {
@@ -37,21 +78,18 @@ struct NPStage: View {
     @EnvironmentObject var stage: StageModel
 
     var body: some View {
-        let s = c.s
-        VStack(spacing: 0) {
-            Color.clear.frame(height: c.top)
+        NPFrame(c, content: { size in
             if m.look.showLyrics {
-                NPTabs(selection: $stage.npTab).padding(.top, 6 * s)
-                middle.padding(.top, 8 * s).frame(maxHeight: .infinity)
+                VStack(spacing: 8 * c.s) {
+                    NPTabs(selection: $stage.npTab).padding(.top, 6 * c.s)
+                    middle.frame(maxHeight: .infinity)
+                }
             } else {
-                off.padding(.horizontal, c.margin).padding(.top, 24 * s).frame(maxHeight: .infinity, alignment: .top)
+                off(size).padding(.horizontal, c.margin).padding(.top, 20 * c.s)
             }
-            VStack(spacing: 6 * s) {
-                NPSeek().padding(.horizontal, c.margin)
-                NPDockRow(left: { dockLeft }, right: { NPCluster() }).padding(.horizontal, c.margin).frame(height: 120 * s)
-            }
-            .padding(.bottom, 14 * s)
-        }
+        }, dock: {
+            NPDock(c, rowHeight: m.look.showLyrics ? 120 : 96, left: { dockLeft }, right: { NPCluster() })
+        })
     }
 
     @ViewBuilder private var middle: some View {
@@ -59,37 +97,48 @@ struct NPStage: View {
         case .lyrics:
             GeometryReader { g in NPLyrics(style: LyricStyle(size: 46, centered: true, gap: 22, rest: 0.42), height: g.size.height).padding(.horizontal, max(c.margin, 160 * c.s)) }
         case .upNext:
-            NPUpNext(limit: 8, cover: 52).frame(maxWidth: 560).frame(maxWidth: .infinity, alignment: .top).padding(.top, 16)
+            ScrollView(showsIndicators: false) { NPUpNext(limit: 10, cover: 52).frame(maxWidth: 560).frame(maxWidth: .infinity) }.padding(.top, 12)
         case .credits:
-            Group { if info.credits.isEmpty { NPNoCredits() } else { NPCreditsGrid(lines: info.credits, columns: 3, gap: 22) } }
-                .frame(maxWidth: 820).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 24).padding(.horizontal, c.margin)
+            ScrollView(showsIndicators: false) {
+                Group { if info.credits.isEmpty { NPNoCredits() } else { NPCreditsGrid(lines: info.credits, columns: 3, gap: 22) } }
+                    .frame(maxWidth: 820).frame(maxWidth: .infinity).padding(.top, 16).padding(.horizontal, c.margin)
+            }
         case .signal:
-            NPSignalSteps().frame(maxWidth: 560).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top).padding(.top, 24)
+            ScrollView(showsIndicators: false) { NPSignalSteps().frame(maxWidth: 560).frame(maxWidth: .infinity).padding(.top, 16) }
         }
     }
 
-    /// Lyrics off: the credits on the left, the cover and its names in the middle, the queue on the right.
-    private var off: some View {
+    /// Lyrics off: the credits on the left, the cover and its names in the middle, the queue on the right (the sides give way in a narrow window).
+    private func off(_ size: CGSize) -> some View {
         let s = c.s
+        let names: CGFloat = 96 * s                                                  // the title, the artist line and the gaps under the cover
+        let side = max(100, min(420 * s, size.height - names - 40 * s, size.width * 0.34))
+        let column = min(340 * s, (size.width - 2 * c.margin - side - 80 * s) / 2)
         return HStack(alignment: .top, spacing: 40 * s) {
-            VStack(alignment: .leading, spacing: 16 * s) {
-                Text("Credits").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                if info.credits.isEmpty { NPNoCredits() }
-                ForEach(info.credits.prefix(7)) { l in
-                    VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(2) }
+            if column >= 170 {
+                VStack(alignment: .leading, spacing: 14 * s) {
+                    Text("Credits").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
+                    if info.credits.isEmpty { NPNoCredits() }
+                    ForEach(info.credits.prefix(6)) { l in
+                        VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(2) }
+                    }
+                    Spacer(minLength: 0)
                 }
+                .frame(width: column, alignment: .topLeading)
             }
-            .frame(width: 340 * s, alignment: .topLeading)
-            VStack(spacing: 22 * s) {
-                NPCover(side: 420 * s, radius: 16)
+            VStack(spacing: 16 * s) {
+                NPCover(side: side, radius: 16)
                 NPTitleBlock(titleSize: 44, artistSize: 20, showsAlbumYear: true, credits: false, tags: false, centered: true)
             }
             .frame(maxWidth: .infinity)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                NPUpNext(limit: 6, cover: 44)
+            if column >= 170 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
+                    NPUpNext(limit: 5, cover: 44)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: column, alignment: .topLeading)
             }
-            .frame(width: 340 * s, alignment: .topLeading)
         }
     }
 
@@ -119,29 +168,26 @@ struct NPClassic: View {
     @EnvironmentObject var stage: StageModel
 
     var body: some View {
-        let s = c.s
-        VStack(spacing: 0) {
-            Color.clear.frame(height: c.top)
-            Group { if m.look.showLyrics { on } else { off } }
-                .padding(.horizontal, c.margin).padding(.top, 24 * s).frame(maxHeight: .infinity, alignment: .top)
-            VStack(spacing: 6 * s) {
-                NPSeek().padding(.horizontal, c.margin)
-                NPDockRow(left: { OutputChip() }, right: { NPCluster(showsChip: false) }).padding(.horizontal, c.margin).frame(height: 84 * s)
-            }
-            .padding(.bottom, 14 * s)
-        }
+        NPFrame(c, content: { size in
+            Group { if m.look.showLyrics { on(size) } else { off(size) } }
+                .padding(.horizontal, c.margin).padding(.top, 20 * c.s)
+        }, dock: {
+            NPDock(c, left: { OutputChip(anchor: .stage) }, right: { NPCluster(showsChip: false) })
+        })
     }
 
-    private var on: some View {
+    private func on(_ size: CGSize) -> some View {
         let s = c.s
-        return HStack(alignment: .top, spacing: 76 * s) {
-            VStack(alignment: .leading, spacing: 18 * s) {
-                NPCover(side: 500 * s, radius: 16)
-                NPCreditsGrid(lines: Array(info.credits.prefix(3)), columns: 3, gap: 12)
+        let below: CGFloat = 96 * s                                                  // the credits and the tags under the cover
+        let side = max(120, min(500 * s, size.height - below - 20 * s, size.width * 0.38))
+        return HStack(alignment: .top, spacing: 60 * s) {
+            VStack(alignment: .leading, spacing: 14 * s) {
+                NPCover(side: side, radius: 16)
+                NPCreditsGrid(lines: Array(info.credits.prefix(3)), columns: 3, gap: 10)
                 NPTags()
             }
-            .frame(width: 500 * s, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 14 * s) {
+            .frame(width: side, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 12 * s) {
                 NPTitleBlock(titleSize: 54, artistSize: 21, credits: false, tags: false, actions: 44)
                 NPTabs(selection: $stage.npTab, centered: false)
                 tabContent.frame(maxHeight: .infinity)
@@ -159,19 +205,20 @@ struct NPClassic: View {
         }
     }
 
-    private var off: some View {
+    private func off(_ size: CGSize) -> some View {
         let s = c.s
-        return HStack(alignment: .top, spacing: 68 * s) {
-            VStack(alignment: .leading, spacing: 20 * s) {
-                NPCover(side: 580 * s, radius: 18)
+        let side = max(120, min(580 * s, size.height - 50 * s, size.width * 0.4))
+        return HStack(alignment: .top, spacing: 60 * s) {
+            VStack(alignment: .leading, spacing: 14 * s) {
+                NPCover(side: side, radius: 18)
                 NPSignalLine()
             }
-            .frame(width: 580 * s, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 20 * s) {
+            .frame(width: side, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 16 * s) {
                 NPTitleBlock(titleSize: 60, artistSize: 22, showsAlbumYear: true, credits: false, tags: false, actions: 44)
                 NPTags()
-                NPCreditsGrid(lines: Array(info.credits.prefix(6)), columns: 3, gap: 14)
-                HStack { Text("Up next").npFont(19, .medium); Spacer() }.padding(.top, 6)
+                NPCreditsGrid(lines: Array(info.credits.prefix(6)), columns: 3, gap: 12)
+                HStack { Text("Up next").npFont(19, .medium); Spacer() }.padding(.top, 4)
                 NPUpNext(limit: 4, cover: 44)
                 Spacer(minLength: 0)
             }
@@ -187,20 +234,14 @@ struct NPFullBleed: View {
     @EnvironmentObject var info: NPTrackInfo
 
     var body: some View {
-        let s = c.s
         ZStack {
             backdrop
-            VStack(spacing: 0) {
-                Color.clear.frame(height: c.top)
-                Group { if m.look.showLyrics { on } else { off } }
-                    .padding(.horizontal, c.margin).padding(.top, 20 * s).frame(maxHeight: .infinity, alignment: .top)
-                VStack(spacing: 6 * s) {
-                    NPSeek().padding(.horizontal, c.margin)
-                    NPDockRow(left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip().padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
-                        .padding(.horizontal, c.margin).frame(height: 84 * s)
-                }
-                .padding(.bottom, 14 * s)
-            }
+            NPFrame(c, content: { size in
+                Group { if m.look.showLyrics { on(size) } else { off(size) } }
+                    .padding(.horizontal, c.margin).padding(.top, 16 * c.s)
+            }, dock: {
+                NPDock(c, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+            })
         }
     }
 
@@ -216,39 +257,44 @@ struct NPFullBleed: View {
         .ignoresSafeArea().allowsHitTesting(false)
     }
 
-    private var on: some View {
+    private func on(_ size: CGSize) -> some View {
         let s = c.s
         return HStack(alignment: .top, spacing: 40 * s) {
-            VStack(alignment: .leading, spacing: 18 * s) {
+            VStack(alignment: .leading, spacing: 14 * s) {
                 playingFrom
                 NPTitleBlock(titleSize: 58, artistSize: 22, credits: false, tags: true)
                 GeometryReader { g in NPLyrics(style: LyricStyle(size: 42, centered: false, gap: 14, rest: 0.3), height: g.size.height) }.frame(maxHeight: .infinity)
             }
-            VStack(alignment: .leading, spacing: 12 * s) {
-                Spacer(minLength: 0)
-                ForEach(info.credits.prefix(3)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(2) } }
+            if size.width > 900 {
+                VStack(alignment: .leading, spacing: 12 * s) {
+                    Spacer(minLength: 0)
+                    ForEach(info.credits.prefix(3)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(2) } }
+                }
+                .frame(width: 240 * s, alignment: .bottomLeading).padding(.bottom, 12 * s)
             }
-            .frame(width: 260 * s, alignment: .bottomLeading).padding(.bottom, 12 * s)
         }
     }
 
-    private var off: some View {
+    private func off(_ size: CGSize) -> some View {
         let s = c.s
+        let title = max(48, min(108, (size.height - 150 * s) * 0.46 / max(s, 0.6)))
         return HStack(alignment: .bottom, spacing: 40 * s) {
-            VStack(alignment: .leading, spacing: 12 * s) {
+            VStack(alignment: .leading, spacing: 10 * s) {
                 Spacer(minLength: 0)
                 playingFrom
-                NPTitleBlock(titleSize: 108, artistSize: 28, showsAlbumYear: true, credits: false, tags: true)
-                HStack(alignment: .top, spacing: 40 * s) {
+                NPTitleBlock(titleSize: title, artistSize: 28, showsAlbumYear: true, credits: false, tags: true)
+                HStack(alignment: .top, spacing: 36 * s) {
                     ForEach(info.credits.prefix(4)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(2) } }
-                }.padding(.top, 8)
+                }.padding(.top, 6)
             }
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                NPUpNext(limit: 6, cover: 44)
-                Spacer(minLength: 0)
+            if size.width > 900 {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
+                    NPUpNext(limit: 5, cover: 44)
+                    Spacer(minLength: 0)
+                }
+                .frame(width: 340 * s, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
             }
-            .frame(width: 360 * s, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -274,18 +320,12 @@ struct NPCarousel: View {
     }
 
     var body: some View {
-        let s = c.s
-        VStack(spacing: 0) {
-            Color.clear.frame(height: c.top)
-            Group { if m.look.showLyrics { on } else { off } }
-                .padding(.horizontal, c.margin).padding(.top, 16 * s).frame(maxHeight: .infinity, alignment: .top)
-            VStack(spacing: 8 * s) {
-                NPSeek(style: .slim).padding(.horizontal, c.margin)
-                NPDockRow(left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip().padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
-                    .padding(.horizontal, c.margin).frame(height: 84 * s)
-            }
-            .padding(.bottom, 14 * s)
-        }
+        NPFrame(c, content: { size in
+            Group { if m.look.showLyrics { on(size) } else { off(size) } }
+                .padding(.horizontal, c.margin).padding(.top, 14 * c.s)
+        }, dock: {
+            NPDock(c, seek: .slim, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+        })
     }
 
     private func cover(_ item: QueueItem?, _ side: CGFloat, _ radius: CGFloat, _ action: @escaping () -> Void) -> some View {
@@ -294,44 +334,49 @@ struct NPCarousel: View {
                 Button(action: action) {
                     CoverView(image: item.thumb, palette: ArtPalette.fallback(seed: item.album.isEmpty ? item.title : item.album), corner: radius, symbol: "music.note")
                         .frame(width: side, height: side).opacity(0.78)
-                }.buttonStyle(.plain).accessibilityLabel("Play \(item.title)")
+                }.buttonStyle(.plain).onAppear { m.requestMetadata(item.id) }.accessibilityLabel("Play \(item.title)")
             } else { Color.clear.frame(width: side, height: side) }
         }
     }
 
-    private func row(centre: CGFloat, near: CGFloat, far: CGFloat, radius: CGFloat) -> some View {
+    private func row(centre: CGFloat, near: CGFloat, far: CGFloat, radius: CGFloat, width: CGFloat) -> some View {
         let r = ring
+        let narrow = width < centre + 2 * near + 2 * far + 80
         return HStack(alignment: .center, spacing: 18 * c.s) {
-            cover(r.p2, far, radius - 2) { if let it = r.p2 { m.play(it.id) } }
+            if !narrow { cover(r.p2, far, radius - 2) { if let it = r.p2 { m.play(it.id) } } }
             cover(r.p1, near, radius) { m.player.send(.previous) }
             NPCover(side: centre, radius: radius + 4)
             cover(r.n1, near, radius) { m.player.send(.next) }
-            cover(r.n2, far, radius - 2) { if let it = r.n2 { m.play(it.id) } }
+            if !narrow { cover(r.n2, far, radius - 2) { if let it = r.n2 { m.play(it.id) } } }
         }
         .frame(maxWidth: .infinity)
     }
 
-    private var on: some View {
+    private func on(_ size: CGSize) -> some View {
         let s = c.s
-        return VStack(spacing: 14 * s) {
-            row(centre: 200 * s, near: 140 * s, far: 100 * s, radius: 12)
+        let text: CGFloat = 150 * s                                                  // the names, the credits and the tags under the covers
+        let centre = max(80, min(200 * s, size.height - text - 90))
+        return VStack(spacing: 12 * s) {
+            row(centre: centre, near: centre * 0.7, far: centre * 0.5, radius: 12, width: size.width - 2 * c.margin)
             NPTitleBlock(titleSize: 36, artistSize: 19, credits: true, tags: true, centered: true)
             GeometryReader { g in NPLyrics(style: LyricStyle(size: 30, centered: true, gap: 12, rest: 0.4), height: g.size.height).padding(.horizontal, max(0, 200 * s - c.margin)) }.frame(maxHeight: .infinity)
         }
     }
 
-    private var off: some View {
+    private func off(_ size: CGSize) -> some View {
         let s = c.s, r = ring
-        return VStack(spacing: 14 * s) {
-            row(centre: 400 * s, near: 280 * s, far: 190 * s, radius: 14)
+        let text: CGFloat = 190 * s
+        let centre = max(100, min(400 * s, size.height - text - 40))
+        return VStack(spacing: 12 * s) {
+            row(centre: centre, near: centre * 0.7, far: centre * 0.475, radius: 14, width: size.width - 2 * c.margin)
             HStack(alignment: .top) {
-                caption("Previous", r.p1).frame(width: 280 * s, alignment: .center)
+                caption("Previous", r.p1).frame(width: centre * 0.7, alignment: .center)
                 Spacer()
-                caption("Next", r.n1).frame(width: 280 * s, alignment: .center)
-            }.frame(height: 30 * s).padding(.horizontal, 20 * s)
+                caption("Next", r.n1).frame(width: centre * 0.7, alignment: .center)
+            }.frame(height: 30 * s)
             NPTitleBlock(titleSize: 44, artistSize: 20, showsAlbumYear: true, credits: false, tags: false, centered: true)
-            HStack(alignment: .top, spacing: 42 * s) { ForEach(info.credits.prefix(4)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(1) } } }
-            AddToChips()
+            HStack(alignment: .top, spacing: 36 * s) { ForEach(info.credits.prefix(4)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(1) } } }
+            if size.height > 560 { AddToChips() }
             Spacer(minLength: 0)
         }
     }
@@ -374,21 +419,27 @@ struct NPLumen: View {
     @EnvironmentObject var idle: IdleTracker
 
     var body: some View {
+        NPFrame(c, content: { size in
+            body(size).padding(.horizontal, c.margin).padding(.top, 14 * c.s)
+        }, dock: { dock })
+    }
+
+    private func body(_ size: CGSize) -> some View {
         let s = c.s
-        VStack(spacing: 0) {
-            Color.clear.frame(height: c.top)
-            HStack(alignment: .top, spacing: 44 * s) {
-                left.frame(width: 420 * s, alignment: .topLeading)
-                middle.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        let text: CGFloat = 190 * s                                                  // title, credits, tags and the buttons under the cover
+        let side = max(100, min(420 * s, size.height - text - 20, size.width * 0.34))
+        let queueWidth: CGFloat = size.width > 980 ? 272 * s : 0
+        return HStack(alignment: .top, spacing: 40 * s) {
+            left(side).frame(width: side, alignment: .topLeading)
+            middle.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if queueWidth > 0 {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack { Text("Up next").npFont(19, .medium); Spacer(); Text(queueNote).npFont(12.5).foregroundStyle(Brand.inkSecondary) }
-                    NPUpNext(limit: 7, cover: 44, titleSize: 15)
+                    NPUpNext(limit: 6, cover: 44, titleSize: 15)
                     Spacer(minLength: 0)
                 }
-                .frame(width: 272 * s, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
+                .frame(width: queueWidth, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
             }
-            .padding(.horizontal, c.margin).padding(.top, 16 * s)
-            dock
         }
     }
 
@@ -397,31 +448,33 @@ struct NPLumen: View {
         return n == 0 ? "" : "\(n) queued"
     }
 
-    private var left: some View {
+    private func left(_ side: CGFloat) -> some View {
         let s = c.s
         return VStack(alignment: .leading, spacing: 0) {
-            NPCover(side: 420 * s, radius: 38)
-            NPTitleBlock(titleSize: 42, artistSize: 18, credits: true, tags: true).padding(.top, 20 * s)
-            NPActions(size: 44).padding(.top, 8 * s).padding(.leading, -8)
+            NPCover(side: side, radius: 38)
+            NPTitleBlock(titleSize: 42, artistSize: 18, credits: true, tags: true).padding(.top, 16 * s)
+            NPActions(size: 44).padding(.top, 6 * s).padding(.leading, -8)
         }
     }
 
     @ViewBuilder private var middle: some View {
         let s = c.s
         if m.look.showLyrics {
-            GeometryReader { g in NPLyrics(style: LyricStyle(size: 40, centered: false, gap: 22, rest: 0.4), height: g.size.height) }.frame(maxWidth: 520 * s + 120)
+            GeometryReader { g in NPLyrics(style: LyricStyle(size: 40, centered: false, gap: 22, rest: 0.4), height: g.size.height) }
         } else {
-            VStack(alignment: .leading, spacing: 40 * s) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Credits").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                    if info.credits.isEmpty { NPNoCredits() } else { NPCreditsGrid(lines: info.credits, columns: 2, gap: 18) }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 32 * s) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Credits").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
+                        if info.credits.isEmpty { NPNoCredits() } else { NPCreditsGrid(lines: info.credits, columns: 2, gap: 18) }
+                    }
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Signal path").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
+                        NPSignalSteps()
+                    }
                 }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Signal path").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                    NPSignalSteps()
-                }
+                .frame(maxWidth: 600, alignment: .topLeading).padding(.top, 6)
             }
-            .frame(maxWidth: 520 * s + 120, alignment: .topLeading).padding(.top, 8)
         }
     }
 
@@ -430,17 +483,16 @@ struct NPLumen: View {
         let s = c.s
         return HStack(spacing: 14 * s) {
             BarTime(remaining: false)
-            WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform)
+            WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform).frame(minWidth: 60)
             BarTime(remaining: true)
-            Color.clear.frame(width: 8)
             NPTransport().fixedSize()
-            Color.clear.frame(width: 8)
-            NPCluster(showsChip: true, volumeWidth: 84).fixedSize()
+            NPCluster(showsChip: true, volumeWidth: 84).layoutPriority(0)
         }
-        .padding(.horizontal, 26 * s).frame(height: 96 * s)
+        .padding(.horizontal, 24 * s).frame(minHeight: 88 * s)
         .background(RoundedRectangle(cornerRadius: 32 * s, style: .continuous).fill(Brand.panel2))
-        .padding(.horizontal, c.margin).padding(.bottom, 24 * s).padding(.top, 8 * s)
+        .padding(.horizontal, c.margin).padding(.bottom, 20 * s).padding(.top, 8 * s)
         .opacity(idle.awake ? 1 : 0.0001).animation(Motion.carpet, value: idle.awake)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock")
     }
 }
 
@@ -452,38 +504,42 @@ struct NPChillax: View {
     @EnvironmentObject var info: NPTrackInfo
 
     var body: some View {
+        NPFrame(c, content: { size in
+            body(size).padding(.horizontal, c.margin).padding(.top, 14 * c.s)
+        }, dock: {
+            NPDock(c, seek: .slim, rowHeight: 70, left: { OutputChip(anchor: .stage) }, right: { NPCluster(showsChip: false) })
+        })
+    }
+
+    private func body(_ size: CGSize) -> some View {
         let s = c.s
-        VStack(spacing: 0) {
-            Color.clear.frame(height: c.top)
-            HStack(alignment: .top, spacing: 64 * s) {
-                NPCover(side: 540 * s, radius: 30)
-                VStack(alignment: .leading, spacing: 18 * s) {
+        let shelfHeight: CGFloat = size.height > 470 ? 96 * s : 0                    // the shelf is dropped when the window is too short for it
+        let side = max(100, min(540 * s, size.height - shelfHeight - 24, size.width * 0.38))
+        return VStack(alignment: .leading, spacing: 12 * s) {
+            HStack(alignment: .top, spacing: 56 * s) {
+                NPCover(side: side, radius: 30)
+                VStack(alignment: .leading, spacing: 14 * s) {
                     NPTitleBlock(titleSize: 76, artistSize: 22, showsAlbumYear: true, credits: true, tags: true, actions: 44)
                     if m.look.showLyrics {
                         GeometryReader { g in NPLyrics(style: LyricStyle(size: 32, centered: false, gap: 12, rest: 0.34), height: g.size.height) }.frame(maxHeight: .infinity)
                     } else {
-                        NPCreditsGrid(lines: Array(info.credits.prefix(6)), columns: 3, gap: 16)
-                        VStack(alignment: .leading, spacing: 12) {
+                        NPCreditsGrid(lines: Array(info.credits.prefix(6)), columns: 3, gap: 14)
+                        VStack(alignment: .leading, spacing: 10) {
                             Text("Signal path").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
                             NPSignalLine()
-                        }.padding(.top, 14)
+                        }.padding(.top, 10)
                         Spacer(minLength: 0)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .padding(.horizontal, c.margin).padding(.top, 16 * s).frame(maxHeight: 560 * s + 20)
-            VStack(alignment: .leading, spacing: 10) {
-                HStack { Text("Up next").npFont(19, .medium); Text(note).npFont(13).foregroundStyle(Brand.inkSecondary).padding(.leading, 8); Spacer() }
-                NPShelf(limit: 5)
+            .frame(height: side)
+            if shelfHeight > 0 {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack { Text("Up next").npFont(19, .medium); Text(note).npFont(13).foregroundStyle(Brand.inkSecondary).padding(.leading, 8); Spacer() }
+                    NPShelf(limit: size.width > 1100 ? 5 : 3)
+                }
             }
-            .padding(.horizontal, c.margin).padding(.top, 8 * s)
-            Spacer(minLength: 0)
-            VStack(spacing: 10 * s) {
-                NPSeek(style: .slim).padding(.horizontal, c.margin)
-                NPDockRow(left: { OutputChip() }, right: { NPCluster(showsChip: false) }).padding(.horizontal, c.margin).frame(height: 70 * s)
-            }
-            .padding(.bottom, 14 * s)
         }
     }
 

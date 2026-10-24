@@ -188,6 +188,8 @@ struct TopSearchField: View {
 /// The output and its rate, as a chip: a dot in the accent, the device, the rate it runs at. It opens the quick controls.
 struct OutputChip: View {
     @EnvironmentObject var m: PlayerModel
+    /// The top bar's chip is `.rail`; the chip in the controls of Now Playing is `.stage`.
+    var anchor: QuickPanelAnchor = .rail
     @StateObject private var hover = Box(false)
 
     private var text: String {
@@ -197,20 +199,20 @@ struct OutputChip: View {
     }
 
     var body: some View {
-        Button { withAnimation(Motion.glide) { m.toggleQuickPanel(.rail) } } label: {
+        Button { withAnimation(Motion.glide) { m.toggleQuickPanel(anchor) } } label: {
             HStack(spacing: 8) {
                 Circle().fill(Brand.accent).frame(width: 8, height: 8)
                 Text(text).font(Typo.sans(13, .medium)).lineLimit(1)
             }
-            .foregroundStyle(m.quickPanel == .rail || hover.v ? Brand.ink : Brand.inkSecondary)
+            .foregroundStyle(m.quickPanel == anchor || hover.v ? Brand.ink : Brand.inkSecondary)
             .padding(.horizontal, 14).frame(height: Metrics.pillHeight)
-            .background(Capsule().fill(Brand.ink.opacity(m.quickPanel == .rail ? 0.1 : (hover.v ? 0.06 : 0))))
+            .background(Capsule().fill(Brand.ink.opacity(m.quickPanel == anchor ? 0.1 : (hover.v ? 0.06 : 0))))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
         .help("Output: \(m.selectedDevice?.name ?? "none"). Quick controls (⌥⌘D)")
         .accessibilityLabel("Output").accessibilityValue(text)
-        .popover(isPresented: Binding(get: { m.quickPanel == .rail }, set: { if !$0, m.quickPanel == .rail { m.quickPanel = nil } }), arrowEdge: .bottom) {
+        .popover(isPresented: Binding(get: { m.quickPanel == anchor }, set: { if !$0, m.quickPanel == anchor { m.quickPanel = nil } }), arrowEdge: anchor == .rail ? .bottom : .top) {
             QuickPanelView().environmentObject(m)
         }
     }

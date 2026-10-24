@@ -46,8 +46,9 @@ struct NowPlayingView: View {
             .task(id: LyricsDriver.trigger(for: m, show: wantsLyrics)) { await LyricsDriver.ask(m, show: wantsLyrics) }
         }
         .environmentObject(info)
-        .onAppear { info.load(path: songPath, store: m.library.store) }
-        .onChange(of: songPath) { _, p in info.load(path: p, store: m.library.store) }
+        .onAppear { info.load(path: songPath, store: m.library.store); m.prefetchUpcomingArtwork() }
+        .onChange(of: songPath) { _, p in info.load(path: p, store: m.library.store); m.prefetchUpcomingArtwork() }
+        .onChange(of: m.items.count) { _, _ in m.prefetchUpcomingArtwork() }
         // Escape closes an open panel, and otherwise leaves for the page Now Playing was opened from
         .background(Button("") { if stage.panel != nil { stage.panel = nil } else { stage.close(m, reduceMotion: reduceMotion) } }
             .keyboardShortcut(.escape, modifiers: []).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))

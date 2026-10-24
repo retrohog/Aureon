@@ -125,6 +125,15 @@ struct LyricsSection: View {
         .animation(Motion.glide, value: service.phase)
     }
 
+    /// How tall the words are: what is left of the panel under its header (with the frame) or under the thin row of controls (without it). It never exceeds
+    /// the room it was given, so the controls above can never reach into whatever sits above the lyrics.
+    static func stageHeight(available: CGFloat, chrome: Bool) -> CGFloat {
+        chrome ? max(200, available - 150) : max(40, available - Self.bareHeaderHeight - Self.bareSpacing)
+    }
+    static let bareHeaderHeight: CGFloat = 24
+    static let bareSpacing: CGFloat = 12
+    private var stageHeight: CGFloat { Self.stageHeight(available: availableHeight, chrome: chrome) }
+
     /// Without the frame: a thin row at the corner with the timing of the words and the options.
     private var bareHeader: some View {
         HStack(spacing: 10) {
@@ -133,7 +142,7 @@ struct LyricsSection: View {
             if service.upgrading { ProgressView().controlSize(.mini) }
             menu
         }
-        .frame(height: 24).opacity(0.7).foregroundStyle(Brand.ink)
+        .frame(height: Self.bareHeaderHeight).opacity(0.7).foregroundStyle(Brand.ink)
     }
 
     // MARK: header
@@ -217,8 +226,8 @@ struct LyricsSection: View {
             status(spinner: true, msg)
         case .ready:
             if let l = service.lyrics {
-                if l.synced { LyricsStage(lyrics: l, accent: accent, height: max(200, availableHeight - 150)) }
-                else { PlainLyrics(lyrics: l, height: max(200, availableHeight - 150)) }
+                if l.synced { LyricsStage(lyrics: l, accent: accent, height: stageHeight) }
+                else { PlainLyrics(lyrics: l, height: stageHeight) }
                 footer
             }
         case .instrumental:

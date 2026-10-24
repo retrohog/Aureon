@@ -776,7 +776,7 @@ final class PlayerModel: ObservableObject {
         refreshHero()
         countPlay()
         rememberSessionIfChanged()
-        if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { requestMetadata(id, urgent: true); for k in 1...2 where i + k < items.count { requestMetadata(items[i + k].id) } } }
+        if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { requestMetadata(id, urgent: true); for k in 1...Self.artworkLookahead where i + k < items.count { requestMetadata(items[i + k].id) } } }
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }
         if started && s.trackID != lastDeepDiveID && tab == .deepDive { loadDeepDiveForCurrent() }
         let playing = started && s.state == .playing
@@ -908,7 +908,7 @@ final class PlayerModel: ObservableObject {
             let first = items[start].id
             if shuffle != .off { reshuffle(keeping: first) }
             requestMetadata(first, urgent: true)
-            for k in 1...2 where start + k < items.count { requestMetadata(items[start + k].id) }
+            for k in 1...Self.artworkLookahead where start + k < items.count { requestMetadata(items[start + k].id) }
             return
         }
         clear()
@@ -924,6 +924,18 @@ final class PlayerModel: ObservableObject {
     // MARK: lazy tags and covers
 
     /// Reads a queued song's tags and cover when it is about to matter (playing soon, or its row is on screen), at most three at a time.
+    /// How many of the songs after the current one have their tags and cover read ahead of time (one at a time, off the main thread, three at once at most).
+    nonisolated static let artworkLookahead = 10
+
+    /// Asks for the tags and covers of the songs that come next, so the lists on Now Playing (Up next, the neighbours of the carousel, the shelf) have
+    /// their pictures by the time they are drawn. Cheap to call again: a song already asked for is not asked twice.
+    func prefetchUpcomingArtwork(limit: Int = PlayerModel.artworkLookahead) {
+        for it in NPQueue.upNext(items, current: current?.id ?? focusItem?.id, limit: limit) { requestMetadata(it.id) }
+    }
+
+    /// Which songs have been asked for (for tests).
+    var artworkRequested: Set<UUID> { metaSeen }
+
     func requestMetadata(_ id: UUID, urgent: Bool = false) {
         guard let i = items.firstIndex(where: { $0.id == id }), items[i].artSource == .unknown, !items[i].locked, !items[i].isStream else { return }
         if metaSeen.contains(id) {
