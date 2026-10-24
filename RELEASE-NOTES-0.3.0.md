@@ -51,7 +51,7 @@ always shows which state you are in.
 - Lyrics follow the sung line closely; the lag is gone.
 - The shuffle menu lists its choices and they can be selected.
 - Scrolling over a wide volume bar no longer changes the volume by accident.
-- The Ambience speaker keeps the beat: it plays the low notes like the stereo speakers and sits 6 dB behind the music.
+- The Ambience speaker now carries the low notes with the stereo pair and sits 6 dB behind the music.
 - The first-launch password prompt caused by reading saved credentials from the Keychain is gone.
 - Page titles and lists stay clear of the top bar when you scroll.
 - Lists and the queue keep a fixed height and scroll inside themselves, so nothing else moves when the queue grows.

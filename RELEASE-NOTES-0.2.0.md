@@ -19,19 +19,19 @@ crossfades, DSD conversion, Intelligence features) is opt-in, and the signal-pat
 
 | | | |
 |:--|:--|:--|
-| 🎤 **Lyrics**<br/>Time-synced, word by word | 🎛 **MIDI controllers**<br/>Learn, 14-bit, presets | 🔊 **Oversampling filters**<br/>Four designs, switch live |
-| 🌀 **PCM → DSD**<br/>DSD64 to DSD512 over DoP | 🔀 **Transitions**<br/>Crossfade and smart, albums stay gapless | 🧠 **Intelligence**<br/>One master switch, all on device |
-| 🏷 **Tag editor**<br/>FLAC, ALAC/AAC, MP3 | 📁 **Folders**<br/>Browse the disk as it is | 👂 **ABX testing**<br/>Blind trials with a p-value |
+| **Lyrics**<br/>Time-synced, word by word | **MIDI controllers**<br/>Learn, 14-bit, presets | **Oversampling filters**<br/>Four designs, switch live |
+| **PCM → DSD**<br/>DSD64 to DSD512 over DoP | **Transitions**<br/>Crossfade and smart, albums stay gapless | **Intelligence**<br/>One master switch, all on device |
+| **Tag editor**<br/>FLAC, ALAC/AAC, MP3 | **Folders**<br/>Browse the disk as it is | **ABX testing**<br/>Blind trials with a p-value |
 
 ## What's new
 
-### 🎤 Lyrics
+### Lyrics
 
 - A **Lyrics** button and a sing-along panel on Now Playing, with time-synced highlighting.
 - Lyrics are found in this order: an `.lrc` file next to the song, the lyrics in the file's tags, then LRCLIB. Only the title, artist, album and length are sent, and results are cached.
 - Optional on-device lyrics generation for songs that have none (experimental), and optional write-back to the file's tags.
 
-### 🔊 Sound
+### Sound
 
 | | |
 |:--|:--|
@@ -41,7 +41,7 @@ crossfades, DSD conversion, Intelligence features) is opt-in, and the signal-pat
 | **ABX testing** | Sample-aligned, loudness-matched, double-blind trials scored with a p-value. |
 | **MIDI controllers** | MIDI Learn, 14-bit and relative controls, soft takeover. Presets for the Pioneer DDJ-400 and Korg nanoKONTROL2, built from the published maps and not yet tried on the real devices. |
 
-### 🧠 Intelligence (optional)
+### Intelligence (optional)
 
 - One **Intelligence** tab: a master switch for every smart feature, a switch per feature, a hardware indicator, a local model loader and optional API settings. Switching the master off unloads the models at once and every feature falls back to its classic behaviour.
 - **On by default on Apple Silicon, off by default on Intel Macs**, where turning it on first shows a warning.
@@ -50,7 +50,7 @@ crossfades, DSD conversion, Intelligence features) is opt-in, and the signal-pat
 - Only text is ever sent to an API, and only if you set one up. Audio never leaves your Mac.
 - Experimental: the audio enhancer for lossy streams and on-device lyrics generation.
 
-### 📚 Library
+### Library
 
 - **Folders tab:** browse your disk as it is, no import needed.
 - **Tag editor** for FLAC, ALAC/AAC and MP3 with bulk editing. Writes are atomic and never touch a file that is playing.
@@ -59,7 +59,7 @@ crossfades, DSD conversion, Intelligence features) is opt-in, and the signal-pat
 - **Digital booklets:** PDFs next to an album open in a booklet viewer.
 - The library stays current through file-system events instead of rescanning at start-up.
 
-### ✨ Interface and performance
+### Interface and performance
 
 - A hardware-style player bar with LED lamps and a waveform scrubber.
 - A redesigned Now Playing page with a backdrop taken from the cover.

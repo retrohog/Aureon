@@ -14,10 +14,10 @@
 
 </div>
 
-**Aureon is a native macOS music player for people who care about what leaves the machine.** Files are decoded at their own
-sample rate and bit depth into 32-bit integers, a lock-free ring buffer feeds the DAC callback, and the signal-path view
-shows what is in the chain. Processing (upsampling, EQ, crossfeed, room correction, DSD) is there when you want it. Every
-stage is opt-in and truly bypassed when off, not merely set to neutral.
+**Aureon is a native macOS music player that does not touch your files on the way to the DAC.** Tracks are decoded at
+their own sample rate and bit depth into 32-bit integers, a lock-free ring buffer feeds the DAC callback, and the
+signal-path view shows every stage in the chain. Upsampling, EQ, crossfeed, room correction and DSD are there when you
+switch them on; when they are off they are out of the path, not set to neutral.
 
 > **Status: early (0.3).** What could not be verified without
 > special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
@@ -31,8 +31,8 @@ stage is opt-in and truly bypassed when off, not merely set to neutral.
 
 |  |  |  |
 |:--|:--|:--|
-| 🎯 **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | 🔊 **Opt-in sound shaping**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | 🧭 **Always honest**<br/>The signal path turns orange at the first stage that changes a sample. |
-| 🎨 **A new design**<br/>Obsidian and Ivory, album-colour backdrops, glass accents, Focus mode and a quick control panel. | 🔈 **Several speakers, one level**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | 🎚 **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
+| **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | **Sound shaping, opt-in**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | **Signal path**<br/>Shows every stage, and marks the first one that changes a sample. |
+| **New interface**<br/>Obsidian and Ivory, album-colour backdrops, glass accents, Focus mode and a quick control panel. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
 
 <br/>
 
@@ -51,7 +51,7 @@ The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.3.0.md).
 
 <br/>
 
-## A look inside
+## Screenshots
 
 <table>
 <tr>
@@ -60,7 +60,7 @@ The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.3.0.md).
 </tr>
 <tr>
 <td width="50%"><img src="Docs/images/signal-path.png" alt="The signal path panel" /><br/><sub><b>Signal path.</b> Source, output and every stage.</sub></td>
-<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums with their quality at a glance.</sub></td>
+<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums with their quality shown on the cover.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="Docs/images/atelier-sound.png" alt="Atelier, Sound, Output tab" /><br/><sub><b>Atelier → Sound.</b> Output settings, in five tabs.</sub></td>
@@ -112,7 +112,7 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 
 | | |
 |:--|:--|
-| **One rail** | Now Playing, Collection, Rooms and Atelier across the top, with a quiet line of tabs under each. **⌘K** reaches every page, Sound tab and main action by name. |
+| **One rail** | Now Playing, Collection, Rooms and Atelier across the top, with a row of tabs under each. **⌘K** reaches every page, Sound tab and main action by name. |
 | **Now Playing** | Cover, title, artist and a quality plate: Hi-Res with bit depth and rate, Lossless, or the codec for lossy files. Panels open beside the cover. |
 | **Focus mode** | Press **F** to keep only the cover, names, progress and transport, with the cover as large as the window allows. The choice is remembered. |
 | **Themes** | Six families, each in dark and light: Obsidian (with Ivory as its light twin), Bespoke, Graphite, Evergreen, Nord and Gruvbox. |
@@ -224,14 +224,14 @@ swift build -c release
 
 | | |
 |:--|:--|
-| 🍎 **Intel hardware checks** | Run the universal build on real Intel Macs and tune the rate planner for older models. |
-| 🪟 **Windows** | A Windows 11 port built on the headless daemon. |
-| 🛠 **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
-| 🔌 **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
-| ✅ **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
-| 🧩 **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
-| 🎨 **More themes and layouts** | More colour families and layout presets. |
-| 🔀 **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
+| **Intel hardware checks** | Run the universal build on real Intel Macs and tune the rate planner for older models. |
+| **Windows** | A Windows 11 port built on the headless daemon. |
+| **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
+| **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
+| **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
+| **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
+| **More themes and layouts** | More colour families and layout presets. |
+| **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 
 <br/>
 
