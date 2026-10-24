@@ -86,6 +86,8 @@ struct MiniSettings: Codable, Equatable {
     var rememberPosition = true
     /// The floating player stays open when the popover closes.
     var keepFloating = true
+    /// While a floating mini player is open the Aureon window is put away (the way other players do it); closing or expanding the mini player brings it back.
+    var hideMainWindow = true
     var menuBar = MenuBarSettings()
 
     init() {}
@@ -100,9 +102,10 @@ struct MiniSettings: Codable, Equatable {
         onEveryDesktop = try c.decodeIfPresent(Bool.self, forKey: .onEveryDesktop) ?? d.onEveryDesktop
         rememberPosition = try c.decodeIfPresent(Bool.self, forKey: .rememberPosition) ?? d.rememberPosition
         keepFloating = try c.decodeIfPresent(Bool.self, forKey: .keepFloating) ?? d.keepFloating
+        hideMainWindow = try c.decodeIfPresent(Bool.self, forKey: .hideMainWindow) ?? d.hideMainWindow
         menuBar = try c.decodeIfPresent(MenuBarSettings.self, forKey: .menuBar) ?? d.menuBar
     }
-    private enum Keys: String, CodingKey { case layout, background, strength, opacity, alwaysOnTop, formatTags, onEveryDesktop, rememberPosition, keepFloating, menuBar }
+    private enum Keys: String, CodingKey { case layout, background, strength, opacity, alwaysOnTop, formatTags, onEveryDesktop, rememberPosition, keepFloating, hideMainWindow, menuBar }
 
     /// The window opacity kept where it can still be seen.
     var clampedOpacity: Double { min(1, max(0.4, opacity)) }

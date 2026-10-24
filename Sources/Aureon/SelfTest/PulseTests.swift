@@ -283,6 +283,70 @@ extension PulseTests {
 nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 
 extension PulseTests {
+    /// The mini player is dragged by its body (a real window, real mouse events), its controls still answer, and it swaps places with the Aureon window.
+    @MainActor func theMiniPlayerDragsAndSwapsWithTheMainWindow() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let ud = UserDefaults.standard
+        let savedOrigin = ud.object(forKey: "aureon.mini.origin"), savedHeight = ud.object(forKey: "aureon.mini.height")
+        let main = NSWindow(contentRect: NSRect(x: 220, y: 240, width: 900, height: 600), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        main.orderFront(nil)
+        defer {
+            m.mini.shutDown(); main.orderOut(nil); main.contentView = nil
+            if let savedOrigin { ud.set(savedOrigin, forKey: "aureon.mini.origin") } else { ud.removeObject(forKey: "aureon.mini.origin") }
+            if let savedHeight { ud.set(savedHeight, forKey: "aureon.mini.height") } else { ud.removeObject(forKey: "aureon.mini.height") }
+        }
+        let mainFrame = main.frame
+        m.mini.mainWindowProvider = { main }
+        m.look.mini.layout = .bar; m.look.mini.rememberPosition = false; m.look.mini.hideMainWindow = true
+        m.mini.showFloating()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        expect(m.mini.isFloatingOpen && !main.isVisible && m.mini.mainIsHidden, "opening the mini player puts the Aureon window away")
+        guard let win = m.mini.floatingWindow else { expect(false, "there is a window"); return }
+        func event(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
+        }
+        func send(_ type: NSEvent.EventType, _ p: NSPoint) { if let e = event(type, p) { win.sendEvent(e) }; RunLoop.current.run(until: Date().addingTimeInterval(0.06)) }
+        // a drag that begins on the body (the bar's middle, away from every control)
+        let before = win.frame.origin
+        send(.leftMouseDown, NSPoint(x: 300, y: 40))
+        send(.leftMouseDragged, NSPoint(x: 340, y: 25))             // 40 right, 15 down: the window follows…
+        send(.leftMouseDragged, NSPoint(x: 310, y: 35))             // …so the pointer is back near the grab point; 10 more right and 5 down
+        send(.leftMouseUp, NSPoint(x: 310, y: 35))
+        let moved = win.frame.origin
+        expect(abs((moved.x - before.x) - 50) < 1.5 && abs((moved.y - before.y) + 20) < 1.5, "dragging the body moves the window: from \(before) to \(moved)")
+        // a control still answers a click and does not drag: the pin button at the top right
+        let pinned = m.look.mini.alwaysOnTop, at = win.frame.origin
+        send(.leftMouseDown, NSPoint(x: 469, y: 77)); send(.leftMouseUp, NSPoint(x: 469, y: 77))
+        expect(m.look.mini.alwaysOnTop != pinned && win.frame.origin == at, "the pin button answers the click and the window stays")
+        // let go far outside every screen: it comes back
+        send(.leftMouseDown, NSPoint(x: 300, y: 40))
+        send(.leftMouseDragged, NSPoint(x: 300 + 9000, y: 40 - 6000))
+        send(.leftMouseUp, NSPoint(x: 300 + 9000, y: 40 - 6000))
+        let seen = NSScreen.screens.map(\.visibleFrame).contains { $0.intersects(win.frame) }
+        expect(seen, "a window dropped far off every screen is brought back: \(win.frame)")
+        // closing it brings the Aureon window back where it was
+        m.mini.closeFloating()
+        expect(!m.mini.isFloatingOpen && main.isVisible && main.frame == mainFrame && !m.mini.mainIsHidden, "closing the mini player brings the Aureon window back exactly where it was")
+        // the expand button and the Dock icon do the same
+        m.mini.showFloating()
+        expect(!main.isVisible, "hidden again")
+        m.mini.openApp()
+        expect(!m.mini.isFloatingOpen && main.isVisible && main.frame == mainFrame, "Open Aureon: the app comes back and the mini player goes")
+        m.mini.showFloating()
+        m.mini.appReopened()
+        expect(!m.mini.isFloatingOpen && main.isVisible, "the Dock icon with only the mini player showing brings the app back")
+        // the old way, both on screen, is a setting
+        m.look.mini.hideMainWindow = false
+        m.mini.showFloating()
+        expect(m.mini.isFloatingOpen && main.isVisible && !m.mini.mainIsHidden, "with the setting off both stay")
+        m.mini.closeFloating()
+        expect(main.isVisible && main.frame == mainFrame, "and closing leaves the app alone")
+        expect(MiniSettings().hideMainWindow, "the default is to put the app away")
+    }
+}
+
+extension PulseTests {
     private func record(_ n: Int = 5, current: Int? = 2, position: Double = 72, duration: Double = 278) -> SessionRecord {
         SessionRecord(queue: (0..<n).map { "/m/song\($0).flac" }, current: current, position: position, duration: duration, tab: Tab.albums.rawValue, settingsSection: SettingsSection.appearance.rawValue,
                       selectedID: "album-1", deviceUID: "dac-uid", savedAt: 1, scroll: ["Albums||": 640])
@@ -438,6 +502,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

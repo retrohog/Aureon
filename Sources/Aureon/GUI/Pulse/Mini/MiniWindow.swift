@@ -28,6 +28,8 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
     private weak var model: PlayerModel?
     private var panel: MiniPanel?
     private var shownLayout: MiniLayout?
+    /// The Aureon window while it is put away behind a floating mini player.
+    private weak var hiddenMain: NSWindow?
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var titleTimer: Timer?
@@ -40,6 +42,8 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
 
     private var settings: MiniSettings { model?.look.mini ?? MiniSettings() }
     var isFloatingOpen: Bool { panel?.isVisible == true }
+    /// The open window (for tests).
+    var floatingWindow: NSWindow? { panel }
     /// What the open window looks like (for tests): its frame, level, opacity and whether it follows to other desktops.
     var floatingState: (frame: NSRect, level: NSWindow.Level, alpha: CGFloat, onEveryDesktop: Bool)? {
         panel.map { ($0.frame, $0.level, $0.alphaValue, $0.collectionBehavior.contains(.canJoinAllSpaces)) }
@@ -82,19 +86,62 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
         place(p, for: layout, firstTime: true)
         p.orderFrontRegardless()
         p.makeKey()
+        if settings.hideMainWindow { hideMain() }
     }
 
+    /// Puts the mini player away and brings the Aureon window back (when it was put away for it).
     func closeFloating() {
         guard let p = panel else { return }
         saveOrigin(p)
         p.orderOut(nil); p.contentView = nil
         panel = nil; shownLayout = nil
+        restoreMain()
     }
+
+    /// After a drag: the window is brought back onto a screen if it was let go mostly outside every one.
+    private func keepOnScreen() {
+        guard let p = panel else { return }
+        if let o = MiniSettings.onScreen(origin: p.frame.origin, size: p.frame.size, screens: NSScreen.screens.map(\.visibleFrame)) { p.setFrameOrigin(o) }
+        saveOrigin(p)
+    }
+
+    /// For tests: stands in for the app's own window.
+    var mainWindowProvider: (() -> NSWindow?)?
+
+    /// The window of the app itself (not the mini player, not the launch animation); a visible one is preferred.
+    private func mainWindow() -> NSWindow? {
+        if let provider = mainWindowProvider { return provider() }
+        let all = NSApp.windows.filter { $0.canBecomeMain && !($0 is MiniPanel) && !($0 is SplashWindow) }
+        return all.first { $0.isVisible } ?? all.first
+    }
+
+    private func hideMain() {
+        guard mainWindowProvider != nil || !snapshot, let w = mainWindow(), w.isVisible, !w.styleMask.contains(.fullScreen) else { return }
+        hiddenMain = w
+        hiddenFrame = w.frame
+        w.orderOut(nil)
+    }
+
+    /// The window comes back exactly where it was.
+    private func restoreMain() {
+        guard let w = hiddenMain else { return }
+        hiddenMain = nil
+        if let f = hiddenFrame, w.frame != f { w.setFrame(f, display: false) }
+        hiddenFrame = nil
+        w.makeKeyAndOrderFront(nil)
+        if mainWindowProvider == nil { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// Whether the Aureon window is put away behind the mini player (for tests).
+    var mainIsHidden: Bool { hiddenMain != nil }
+    private var hiddenFrame: NSRect?
+
+    /// The Dock icon (or the app switcher) was used while a mini player is open: the full app comes back and the mini player goes.
+    func appReopened() { if isFloatingOpen { closeFloating() } }
 
     private func makePanel() -> MiniPanel {
         let p = MiniPanel(contentRect: NSRect(origin: .zero, size: CGSize(width: 520, height: 96)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
-        p.isMovableByWindowBackground = true
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.delegate = self
@@ -108,6 +155,11 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
         actions.togglePin = { [weak self] in guard let self, let m = self.model else { return }; m.look.mini.alwaysOnTop.toggle() }
         actions.openApp = { [weak self] in self?.openApp() }
         actions.isPinned = settings.alwaysOnTop
+        actions.move = { [weak self] d in
+            guard let p = self?.panel else { return }
+            p.setFrameOrigin(NSPoint(x: p.frame.origin.x + d.width, y: p.frame.origin.y - d.height))
+        }
+        actions.settle = { [weak self] in self?.keepOnScreen() }
         return AnyView(MiniLayoutView(layout: layout).environment(\.miniActions, actions).miniEnvironment(model))
     }
 
@@ -145,13 +197,12 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
 
     func windowDidMove(_ notification: Notification) { if let w = notification.object as? NSWindow, w === panel { saveOrigin(w) } }
 
+    /// "Open Aureon" and the expand button: the full app comes back, on the page it was on, and the mini player goes (one at a time).
     func openApp() {
-        guard let model else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        (NSApp.windows.first { $0.canBecomeMain && !($0 is MiniPanel) })?.makeKeyAndOrderFront(nil)
-        if !(settings.keepFloating) { closeFloating() }
         closePopover()
-        if model.tab != .player { model.tab = .player }
+        if isFloatingOpen { closeFloating() }
+        if mainWindowProvider == nil { NSApp.activate(ignoringOtherApps: true) }
+        if let w = mainWindow(), !w.isVisible { w.makeKeyAndOrderFront(nil) }
     }
 
     // MARK: the menu bar item and its popover
