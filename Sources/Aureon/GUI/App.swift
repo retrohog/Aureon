@@ -11,11 +11,14 @@ struct AureonApp: App {
                 .environmentObject(model)
                 .frame(minWidth: model.djMode ? 1280 : 860, minHeight: 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
                 .onOpenURL { model.add(urls: [$0], play: true) }
-                .onAppear { AppDelegate.model = model }
+                .onAppear { AppDelegate.model = model; model.mini.start() }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1080, height: 700)
         .commands {
+            CommandGroup(after: .windowArrangement) {
+                Button("Mini Player") { model.mini.toggle() }.keyboardShortcut("m", modifiers: [.command, .option])
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Add Music…") {
                     let p = NSOpenPanel()
