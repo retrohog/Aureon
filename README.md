@@ -4,13 +4,13 @@
 
 <br/>
 
-[![Download Aureon 0.3.0](https://img.shields.io/badge/Download-Aureon%200.3.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
+[![Download Aureon 0.4.0](https://img.shields.io/badge/Download-Aureon%200.4.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
 
 ![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%C2%B7%20Intel-macOS%2015%2B-1c2340?style=flat-square&logo=apple&logoColor=white)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](Package.swift)
 [![MIT](https://img.shields.io/badge/license-MIT-f0b45f?style=flat-square)](LICENSE)
 
-<img src="Docs/images/now-playing.png" alt="Aureon's Now Playing page" width="100%" />
+<img src="Docs/images/pulse/now-playing-stage.png" alt="Aureon's Now Playing page" width="100%" />
 
 </div>
 
@@ -19,10 +19,10 @@ their own sample rate and bit depth into 32-bit integers, a lock-free ring buffe
 signal-path view shows every stage in the chain. Upsampling, EQ, crossfeed, room correction and DSD are there when you
 switch them on; when they are off they are out of the path, not set to neutral.
 
-> **Status: early (0.3).** What could not be verified without
+> **Status: early (0.4).** What could not be verified without
 > special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
 >
-> **Platforms:** 0.3.0 runs on **Apple Silicon and Intel Macs, macOS 15 or later**. Windows is next. The app is not notarised
+> **Platforms:** 0.4.0 runs on **Apple Silicon and Intel Macs, macOS 15 or later**. The Windows version follows separately. The app is not notarised
 > yet, so the first launch needs right-click → **Open**.
 
 <br/>
@@ -32,22 +32,23 @@ switch them on; when they are off they are out of the path, not set to neutral.
 |  |  |  |
 |:--|:--|:--|
 | **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | **Sound shaping, opt-in**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | **Signal path**<br/>Shows every stage, and marks the first one that changes a sample. |
-| **New interface**<br/>Obsidian and Ivory, album-colour backdrops, glass accents, Focus mode and a quick control panel. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
+| **New interface**<br/>Five colours in dark and light, six Now Playing layouts, a mini player and a menu bar player. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
 
 <br/>
 
-## What's new in 0.3.0
+## What's new in 0.4.0
 
 | | |
 |:--|:--|
-| **New design** | Four places (Now Playing, Collection, Rooms, Atelier) on one rail, a command palette on **⌘K**, six themes in dark and light, and quality plates for Hi-Res and Lossless. |
-| **Now Playing** | The cover, a quality plate, and a side panel for Lyrics, Queue, Signal path, Analyser or Booklet. **Focus** mode (F) keeps only the cover, names and transport. |
-| **Quick controls** | ⌥⌘D opens the output list and the settings you change most. A sun/moon switch changes appearance. |
-| **Atelier → Sound** | Five tabs (Output, Conversion, Levels, Headphones & room, Playback) with OFF \| ON switches and a bit-perfect strip on top. |
-| **Speaker levelling** | Multiple outputs follow the volume in their own decibel steps, with role-based balance, automatic time alignment and a per-output delay trim. |
-| **Polish** | A launch animation, calm fade page changes (or none), glass accents, and a safer scroll-to-volume setting. |
+| **New design** | A new shell with a search bar, an output chip and a rail of five places. Set in Figtree, with Compact and Comfortable density. |
+| **Colours** | Graphite, Midnight, Forest, Plum and Cocoa, each in dark and light. **Dark**, **Light** or **Auto** (follows macOS), a **Pure black** switch for OLED, any accent colour, and the Starlight backdrop. |
+| **Now Playing** | Six layouts (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax) with the transport, seek bar, queue and volume always in view. Add to playlist, credits, large synced lyrics. |
+| **Mini player** | A floating player in five forms, dragged by its body, that takes the place of the main window, and a menu bar player with a popover. |
+| **Memory** | Reopens with your queue, song and position, page, window place on each display, output, theme and layout. |
+| **Home and Folders** | A Home that follows the time of day, and a Folders page that can remove a library folder safely. |
+| **Queue** | Queue, History and Output in one panel. |
 
-The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.3.0.md).
+The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.4.0.md).
 
 <br/>
 
@@ -55,20 +56,16 @@ The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.3.0.md).
 
 <table>
 <tr>
-<td width="50%"><img src="Docs/images/focus.png" alt="Focus mode: the cover as large as the window allows" /><br/><sub><b>Focus mode.</b> The cover, the names, progress and transport.</sub></td>
-<td width="50%"><img src="Docs/images/lyrics-panel.png" alt="Now Playing with the lyrics panel" /><br/><sub><b>Lyrics</b> beside the cover, with a timing offset.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/now-playing-stage.png" alt="Now Playing in the Stage layout with large synced lyrics" /><br/><sub><b>Stage.</b> Large synced lyrics, the waveform and the song at the foot.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/now-playing-light.png" alt="Now Playing in the Lumen layout on a light theme" /><br/><sub><b>Lumen, on the light side of Midnight.</b> Every colour has a dark and a light side.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/signal-path.png" alt="The signal path panel" /><br/><sub><b>Signal path.</b> Source, output and every stage.</sub></td>
-<td width="50%"><img src="Docs/images/collection.png" alt="The album collection with Hi-Res plates" /><br/><sub><b>Collection.</b> Albums with their quality shown on the cover.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/now-playing-chillax.png" alt="Now Playing in the Chillax layout" /><br/><sub><b>Chillax.</b> A large cover, the signal path and the queue as a shelf.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/now-playing-carousel.png" alt="Now Playing in the Carousel layout" /><br/><sub><b>Carousel.</b> The cover among its neighbours.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/atelier-sound.png" alt="Atelier, Sound, Output tab" /><br/><sub><b>Atelier → Sound.</b> Output settings, in five tabs.</sub></td>
-<td width="50%"><img src="Docs/images/quick-panel.png" alt="The quick control panel" /><br/><sub><b>Quick controls.</b> Output device and key settings.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="Docs/images/rooms-speaker-setup.png" alt="Rooms with the speaker set-up" /><br/><sub><b>Rooms.</b> Several outputs, each with a job, level and delay.</sub></td>
-<td width="50%"><img src="Docs/images/ivory-theme.png" alt="Ivory, the light theme" /><br/><sub><b>Ivory.</b> The light twin of the default theme.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/settings-appearance.png" alt="Settings, Appearance: mode, pure black and the five colour families" /><br/><sub><b>Appearance.</b> Dark, Light or Auto, Pure black, and five colours shown in both halves.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/queue-light.png" alt="The queue panel with Queue, History and Output tabs" /><br/><sub><b>Queue.</b> With History and Output beside it.</sub></td>
 </tr>
 </table>
 
@@ -92,7 +89,7 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 |:--|:--|
 | **Lossless playback** | FLAC, ALAC, WAV and AIFF decode to 32-bit integers. Gapless between tracks of one format; the device clock follows each track. |
 | **DSD** | DSF and DFF play as **DoP** (bits untouched, markers continue across tracks) or convert to PCM. DSD up to 1024 decodes faster than real time. |
-| **Transitions** | Gapless by default. Choose **crossfade** (1–12 s) or **Smart** transitions that skip silence, keep existing fades and match loudness. Albums stay gapless. |
+| **Transitions** | Gapless by default. Choose **crossfade** (1–12 s) or transitions that skip silence, keep existing fades and match loudness. Albums stay gapless. |
 | **Memory playback** | Whole tracks load into RAM first, so playback does no disk reads. |
 | **Loudness** | ReplayGain from tags, plus EBU R128 / ITU-R BS.1770-4 loudness, range, true peak and DR measured once and cached. |
 | **Multichannel** | 5.1 and 7.1 play at their own channel count when the device has the outputs, otherwise through an ITU-R BS.775 downmix. |
@@ -112,15 +109,19 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 
 | | |
 |:--|:--|
-| **One rail** | Now Playing, Collection, Rooms and Atelier across the top, with a row of tabs under each. **⌘K** reaches every page, Sound tab and main action by name. |
-| **Now Playing** | Cover, title, artist and a quality plate: Hi-Res with bit depth and rate, Lossless, or the codec for lossy files. Panels open beside the cover. |
-| **Focus mode** | Press **F** to keep only the cover, names, progress and transport, with the cover as large as the window allows. The choice is remembered. |
-| **Themes** | Six families, each in dark and light: Obsidian (with Ivory as its light twin), Bespoke, Graphite, Evergreen, Nord and Gruvbox. |
-| **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and Starlight. Text contrast is kept on all of them. |
-| **Glass accents** | Liquid Glass on the player bar, panels, palette and pop-ups on macOS 26, a blurred material elsewhere. Switch it off in Settings. |
-| **Quick controls** | ⌥⌘D: switch the output device and reach exclusive access, volume, transitions, levelling, upsampling, EQ, shuffle and repeat. |
-| **Waveform** | Played and unplayed parts keep their contrast on every theme, and each seek is marked. |
-| **Analyser** | Spectrum, spectrogram and levels shown together. |
+| **Shell** | A search bar (⌘K reaches every page and main action), the output chip, and a rail of five places: Library, Playlists, Radio, Rooms and Sound. A quick control panel opens from the output chip (⌥⌘D). |
+| **Colours** | Five families (Graphite, Midnight, Forest, Plum, Cocoa), each with a dark and a soft light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, any accent colour, and a brightness control for the light sides. |
+| **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and **Starlight**, a field of fine stars with settings for intensity, motion, shooting stars and twinkle. |
+| **Type** | Figtree, bundled with its licence, in Light, Regular or Medium, with a text size from 85 % to 130 %, and Compact or Comfortable density. |
+| **Now Playing** | Six layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen and Chillax. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size. |
+| **Lyrics** | Large, time-synced lines in every layout, from a `.lrc` file, the file's tags or LRCLIB. Their size and ±2 s timing are in Settings. |
+| **Song details** | Add to playlist, credits under the artist, format tags (Lossless, FLAC, 24-bit, rates, shared or exclusive) and the signal path. |
+| **Mini player** | Five forms: a bar, a strip, a card, a card with lyrics and a menu bar popover. Dragged by its body; opening it puts the main window away. |
+| **Menu bar** | The logo, the logo and title, or the title; a popover that opens on a click or on hover and closes by itself. |
+| **Home** | Follows the part of the day, with quick picks and shelves chosen on your Mac from what you play. |
+| **Queue** | Queue, History and Output tabs. |
+| **Memory** | Reopens with your queue, song and place in it, page, scroll position, window place on each display, output, theme and layout. Choose Paused, Playing, Ask me or Start fresh. |
+| **Waveform and analyser** | The waveform keeps its contrast on every theme and marks each seek; the analyser shows spectrum, spectrogram and levels together. |
 | **Settings for motion** | Fade or no page transitions, a launch animation you can turn off, and Reduce Motion is honoured. |
 
 ### Library and metadata
@@ -157,7 +158,7 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 
 | | |
 |:--|:--|
-| **Smart features** | One master switch and a switch per feature: natural-language playlists, semantic search, Smart DJ sets, Smart Shuffle and a remixer for the DJ console, all on the Mac. You can bring your own API key (text only, never audio). Experimental: an enhancer for lossy streams and on-device lyrics. |
+| **On-device features** | One master switch and a switch per feature: natural-language playlists, semantic search, DJ sets, a shuffle that learns from your listening and a remixer for the DJ console, all on the Mac. You can bring your own API key (text only, never audio). Experimental: an enhancer for lossy streams and on-device lyrics. |
 
 ### Services and tools
 
@@ -176,15 +177,15 @@ The complete list, with what each feature has been verified against, is in [Docs
 
 | | Status |
 |:--|:--|
-| **Apple Silicon Mac**, macOS 15 or later | Released: 0.3.0 (arm64 build) |
-| **Intel Mac**, macOS 15 or later | Released: 0.3.0 (universal build). Smart features that need an M-series chip are off; not yet tested on Intel hardware |
-| **Windows** | Planned |
+| **Apple Silicon Mac**, macOS 15 or later | Released: 0.4.0 (arm64 build) |
+| **Intel Mac**, macOS 15 or later | Released: 0.4.0 (universal build). Features that need an M-series chip are off; not yet tested on Intel hardware |
+| **Windows** | In development; follows separately |
 
 <br/>
 
 ## Install
 
-1. Download from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**: **Aureon-0.3.0.dmg** for Apple Silicon, or **Aureon-0.3.0-universal.dmg** for Intel Macs (it runs on both). Each has a matching `.pkg` installer.
+1. Download from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**: **Aureon-0.4.0.dmg** for Apple Silicon, or **Aureon-0.4.0-universal.dmg** for Intel Macs (it runs on both). Each has a matching `.pkg` installer.
 2. The app is not notarised yet. On first launch, right-click it and choose **Open**.
 3. Allow access to your music folders when macOS asks.
 
@@ -192,7 +193,7 @@ The complete list, with what each feature has been verified against, is in [Docs
 
 ```bash
 swift build -c release
-./Packaging/make_installer.sh --pkg ~/Desktop     # builds Aureon.app, a dmg and a pkg
+./Packaging/make_installer.sh --pkg ~/Desktop     # builds Aureon.app, a dmg and a pkg (the number is in Packaging/VERSION)
 ```
 
 `Aureon hwdebug` reports what your DAC accepts.
@@ -205,8 +206,9 @@ swift build -c release
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
 - **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
 - **The Intel build has not been tested on real Intel hardware.** It has been run natively on Apple Silicon and under Rosetta only.
-- **On Intel Macs, the on-device language model and the audio enhancer are unavailable** (they need an M-series chip). Smart DJ and playlists use an API key instead.
-- **Windows is not available yet.**
+- **On Intel Macs, the on-device language model and the audio enhancer are unavailable** (they need an M-series chip). DJ sets and playlists use an API key instead.
+- **The mini player and the menu bar player use the app's colours.** They do not have a theme of their own yet.
+- **Windows is not included.** The Windows version follows separately.
 
 ### Not verified on real hardware or accounts
 
@@ -225,12 +227,13 @@ swift build -c release
 | | |
 |:--|:--|
 | **Intel hardware checks** | Run the universal build on real Intel Macs and tune the rate planner for older models. |
-| **Windows** | A Windows 11 port built on the headless daemon. |
+| **Windows** | A native Windows 11 version of the same design. |
 | **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
 | **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
 | **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
 | **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
-| **More themes and layouts** | More colour families and layout presets. |
+| **More layouts** | Vinyl, Hi-Fi, Orbit, Timeline and Poster layouts for Now Playing. |
+| **Mini player theme** | A colour theme of its own for the mini player and the menu bar player. |
 | **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 
 <br/>
