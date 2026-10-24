@@ -21,10 +21,7 @@ private struct ProbeModifier: ViewModifier {
     let name: String
     @Environment(\.probeToken) private var token
     func body(content: Content) -> some View {
-        content.background(GeometryReader { g in
-            Color.clear.onAppear { LayoutProbe.record(name, g.frame(in: .global), token: token) }
-                .onChange(of: g.frame(in: .global)) { _, f in LayoutProbe.record(name, f, token: token) }
-        })
+        content.onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { LayoutProbe.record(name, $0, token: token) }
     }
 }
 
