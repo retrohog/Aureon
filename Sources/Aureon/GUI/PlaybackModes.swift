@@ -23,12 +23,12 @@ struct ShuffleButton: View {
             Image(systemName: m.shuffle.icon).font(Typo.sans(size, .regular))
                 .foregroundStyle(m.shuffle == .off ? (tint ?? Brand.ink) : Brand.accentText)
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Brand.ink.opacity(hover.v ? 0.08 : 0)))
+                .background(Circle().fill(m.shuffle != .off ? Brand.accent.opacity(0.2) : Brand.ink.opacity(hover.v ? 0.08 : 0)))
                 .overlay(alignment: .bottom) { if m.shuffle != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: 1) } }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
-        .help(m.shuffle == .off ? "Shuffle" : "\(m.shuffle.title) is on")
+        .help(m.shuffle == .off ? "Shuffle is off" : "Shuffle: \(m.shuffle.title) is on")
         .accessibilityLabel("Shuffle: \(m.shuffle.title)")
         .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 0) {
@@ -80,7 +80,7 @@ struct RepeatButton: View {
             Image(systemName: m.repeatMode == .one ? "repeat.1" : "repeat").font(Typo.sans(size, .regular))
                 .foregroundStyle(m.repeatMode == .off ? AnyShapeStyle(tint ?? Brand.ink) : AnyShapeStyle(Brand.accent))
                 .frame(width: 32, height: 32)
-                .background(Circle().fill(Brand.ink.opacity(hover.v ? 0.1 : 0)))
+                .background(Circle().fill(m.repeatMode != .off ? Brand.accent.opacity(0.2) : Brand.ink.opacity(hover.v ? 0.1 : 0)))
                 .overlay(alignment: .bottom) { if m.repeatMode != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: 1) } }
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }

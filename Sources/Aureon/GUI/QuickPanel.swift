@@ -4,7 +4,9 @@ import CoreAudio
 // The quick control panel: switch the output device in one click, and a few of the settings that are reached for most. It opens from the rail, from the
 // player bar, from ⌥⌘D and from ⌘K. Nothing in it keeps a setting of its own: every control reads and writes the same value as its place in Atelier → Sound.
 
-enum QuickPanelAnchor: Hashable { case rail, bar }
+/// Where the output popover is anchored. Each place that can show it has its own, so two chips on one screen never present it twice (the second would
+/// close the first, and the popover would vanish the moment it opened).
+enum QuickPanelAnchor: Hashable { case rail, bar, stage }
 
 /// What a device switch needs from the app.
 @MainActor

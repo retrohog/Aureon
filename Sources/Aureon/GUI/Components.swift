@@ -197,6 +197,7 @@ struct CoverView: View {
             .frame(width: g.size.width, height: g.size.height)
         }
         .aspectRatio(1, contentMode: .fit)
+        .animation(.easeOut(duration: 0.25), value: image != nil)
         .clipShape(RoundedRectangle(cornerRadius: r, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: r, style: .continuous).strokeBorder(Brand.ink.opacity(0.14), lineWidth: Metrics.hairline))
     }

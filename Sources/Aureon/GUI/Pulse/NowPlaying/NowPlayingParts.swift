@@ -96,6 +96,7 @@ struct NPTags: View {
     var alignment: Alignment = .leading
     var body: some View {
         NowPlayingTags(place: .bar, alignment: alignment).frame(maxWidth: .infinity, alignment: alignment)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("np.tags")
     }
 }
 
@@ -296,6 +297,7 @@ struct NPUpNext: View {
 }
 
 struct NPQueueRow: View {
+    @EnvironmentObject var m: PlayerModel
     let item: QueueItem
     let cover: CGFloat
     let titleSize: CGFloat
@@ -317,6 +319,7 @@ struct NPQueueRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
+        .onAppear { m.requestMetadata(item.id) }
         .accessibilityLabel("Play \(item.title)")
     }
 }
@@ -339,6 +342,7 @@ struct NPShelf: View {
 }
 
 struct NPShelfCard: View {
+    @EnvironmentObject var m: PlayerModel
     let item: QueueItem
     let cover: CGFloat
     let play: () -> Void
@@ -358,6 +362,7 @@ struct NPShelfCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
+        .onAppear { m.requestMetadata(item.id) }
         .accessibilityLabel("Play \(item.title)")
     }
 }
@@ -453,21 +458,32 @@ struct NPTransport: View {
     }
 }
 
-/// The output chip, the queue, the mini player and the volume.
+/// The output chip, the queue, the mini player and the volume. When there is not room for all of it the chip goes first, then the volume slider shrinks and
+/// then goes; the buttons stay.
 struct NPCluster: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var stage: StageModel
     var showsChip = true
     var volumeWidth: CGFloat = 96
-    var body: some View {
+
+    private func buttons(volume: CGFloat?, chip: Bool) -> some View {
         HStack(spacing: 4) {
-            if showsChip { OutputChip().padding(.trailing, 6) }
+            if chip { OutputChip(anchor: .stage).padding(.trailing, 6) }
             Button { stage.toggle(.queue) } label: { Image(systemName: "list.bullet") }
                 .buttonStyle(RoundIconStyle(on: stage.panel == .queue)).help("Queue").accessibilityLabel("Queue")
             Button { m.mini.toggle() } label: { Image(systemName: "pip") }
                 .buttonStyle(RoundIconStyle(on: m.mini.isFloatingOpen)).help("Mini player").accessibilityLabel("Mini player")
-            Color.clear.frame(width: 4)
-            VolumeControl(width: volumeWidth, readout: false)
+            if let volume { Color.clear.frame(width: 4); VolumeControl(width: volume, readout: false) }
+        }
+        .fixedSize()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            if showsChip { buttons(volume: volumeWidth, chip: true) }
+            buttons(volume: volumeWidth, chip: false)
+            buttons(volume: volumeWidth * 0.6, chip: false)
+            buttons(volume: nil, chip: false)
         }
     }
 }
@@ -502,7 +518,7 @@ struct NPLyrics: View {
     var body: some View {
         var scaled = style
         scaled.size = style.size * s * Look.current.lyricSize.scale; scaled.gap = style.gap * s * Look.current.lyricSize.scale
-        return LyricsSection(availableHeight: height + 150, chrome: false).environment(\.lyricStyle, scaled).frame(height: height)
+        return LyricsSection(availableHeight: height, chrome: false).environment(\.lyricStyle, scaled).frame(height: height).clipped()
     }
 }
 

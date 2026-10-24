@@ -283,6 +283,49 @@ extension PulseTests {
 nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 
 extension PulseTests {
+    /// Picking a song in the queue only jumps to it: with Shuffle off nothing is reordered; with it on, only what is still to come is shuffled.
+    @MainActor func pickingFromTheQueueDoesNotReorderIt() {
+        setenv("AUREON_NULLSINK", "1", 1)
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        defer { m.clear() }
+        let dir = tempDir("pickq")
+        var urls: [URL] = []
+        for i in 0..<8 { let u = dir.appendingPathComponent("Pick \(i).wav"); _ = writeWAV(u, rate: 8000, bits: 16, frames: 8000 * 30) { f, _ in Int(2000 * sin(Double(f) * 0.1)) }; urls.append(u) }
+        m.shuffle = .off
+        m.add(urls: urls, play: false)
+        let ids = m.items.map(\.id)
+        expect(ids.count == 8 && m.shuffle == .off, "eight songs queued, Shuffle off")
+        m.play(ids[0])
+        func settle() { let end = Date().addingTimeInterval(1.5); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) } }
+        settle()
+        expect(m.player.queue.map(\.id) == ids, "the engine's queue is in the order it was added")
+        // choose a song further down: a jump, nothing else
+        m.play(ids[5]); settle()
+        expect(m.items.map(\.id) == ids && m.player.queue.map(\.id) == ids, "Shuffle off: choosing the sixth song leaves the queue exactly as it was")
+        expect(m.status.trackID == ids[5], "and it is the one playing: \(String(describing: m.status.trackID))")
+        m.play(ids[2]); settle()
+        expect(m.items.map(\.id) == ids && m.status.trackID == ids[2], "going back is a jump too: the songs after it keep their order")
+        // not playing at all (stopped, or just restored): choosing a song starts there, and the order is still the same
+        m.player.stop(); settle()
+        m.play(ids[6]); settle()
+        expect(m.items.map(\.id) == ids && m.player.queue.map(\.id) == ids && m.status.trackID == ids[6], "Shuffle off, nothing playing: choosing a song starts it and leaves the queue alone")
+        // Shuffle on: only what is still to come is shuffled; what was played stays
+        m.play(ids[3]); settle()
+        m.shuffle = .normal; settle()
+        let order = m.player.queue.map(\.id)
+        expect(Array(order[0...3]) == Array(ids[0...3]) && Set(order) == Set(ids), "Shuffle on: the songs up to the current one keep their places, the rest is a permutation of the same songs")
+        // choosing a song while shuffled still only jumps
+        let before = m.player.queue.map(\.id)
+        let pick = before[6]
+        m.play(pick); settle()
+        expect(m.player.queue.map(\.id) == before && m.status.trackID == pick, "choosing from a shuffled queue does not shuffle it again")
+        // and Shuffle off puts the original order back
+        m.shuffle = .off; settle()
+        expect(m.player.queue.map(\.id) == ids && m.items.map(\.id) == m.player.queue.map(\.id), "Shuffle off restores the order the songs were added in")
+    }
+}
+
+extension PulseTests {
     /// The mini player is dragged by its body (a real window, real mouse events), its controls still answer, and it swaps places with the Aureon window.
     @MainActor func theMiniPlayerDragsAndSwapsWithTheMainWindow() {
         guard !NSScreen.screens.isEmpty else { return }
@@ -502,6 +545,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
