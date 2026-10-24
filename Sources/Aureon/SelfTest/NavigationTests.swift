@@ -19,7 +19,7 @@ struct NavigationTests {
         for d in RailDestination.allCases {
             let nav = d.subNav
             let reachable = Set(nav.compactMap { t -> Tab? in if case .tab(let tab) = t { tab } else { nil } } + [{ if case .tab(let t) = d.home { t } else { .home } }()])
-            for t in d.tabs { expect(reachable.contains(t), "\(t) cannot be reached from \(d)") }
+            for t in d.tabs where !(d == .home && t == .search) { expect(reachable.contains(t), "\(t) cannot be reached from \(d)") }       // Search is the field in the top bar
             for t in nav { expect(t.destination == d, "\(t.id) sits under the wrong destination") }
             expect(Set(nav.map(\.id)).count == nav.count, "\(d) lists something twice")
         }
@@ -29,7 +29,7 @@ struct NavigationTests {
         expect(Set(sound.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test", "Diagnostics"], "\(sound.map(\.title))")
         expect(RailDestination.library.subNav.map(\.title).starts(with: ["Albums", "Artists", "Songs"]), "album-first")
         expect(RailDestination.library.subNav.count == 9, "the whole library is in the line")
-        expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked Songs"] && RailDestination.radio.subNav.map(\.title) == ["Radio", "Podcasts"])
+        expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked"] && RailDestination.radio.subNav.map(\.title) == ["Radio", "Podcasts"])
         // the rooms page holds what was spread over other pages
         expect(Tab.rooms.rawValue == "Rooms" && RailDestination.of(.rooms) == .rooms)
         // labels are plain words
