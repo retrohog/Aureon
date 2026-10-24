@@ -211,7 +211,7 @@ struct OutputChip: View {
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
         .help("Output: \(m.selectedDevice?.name ?? "none"). Quick controls (⌥⌘D)")
-        .accessibilityLabel("Output").accessibilityValue(text)
+        .accessibilityLabel("Output").accessibilityValue(text).layoutProbe("output.\(anchor)")
         .popover(isPresented: Binding(get: { m.quickPanel == anchor }, set: { if !$0, m.quickPanel == anchor { m.quickPanel = nil } }), arrowEdge: anchor == .rail ? .bottom : .top) {
             QuickPanelView().environmentObject(m)
         }

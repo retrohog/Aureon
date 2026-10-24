@@ -96,7 +96,7 @@ struct NPTags: View {
     var alignment: Alignment = .leading
     var body: some View {
         NowPlayingTags(place: .bar, alignment: alignment).frame(maxWidth: .infinity, alignment: alignment)
-            .accessibilityElement(children: .contain).accessibilityIdentifier("np.tags")
+            .accessibilityElement(children: .contain).accessibilityIdentifier("np.tags").layoutProbe("tags")
     }
 }
 
@@ -114,6 +114,7 @@ struct NPActions: View {
             if m.look.showPlaylistButton { NPPlaylistButton(path: path, size: size * s) }
             NPMoreMenu(size: size * s)
         }
+        .layoutProbe("actions")
     }
 }
 
@@ -137,7 +138,7 @@ struct NPPlaylistButton: View {
     var body: some View {
         Button { open.v.toggle() } label: { Image(systemName: "text.badge.plus") }
             .buttonStyle(RoundIconStyle(on: open.v, size: size)).disabled(path == nil)
-            .help("Add to a playlist").accessibilityLabel("Add to a playlist")
+            .help("Add to a playlist").accessibilityLabel("Add to a playlist").layoutProbe("playlistButton")
             .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .bottom) { if let path { PlaylistPicker(path: path) } }
     }
 }
@@ -241,6 +242,7 @@ struct NPMoreMenu: View {
             Button("Booklet", systemImage: "book") { stage.toggle(.booklet) }
             Divider()
             Toggle("Show lyrics", isOn: Binding(get: { m.look.showLyrics }, set: { m.look.showLyrics = $0 }))
+            if m.look.showLyrics, m.focusItem?.isStream == false { Menu("Lyrics") { LyricsMenuItems() } }
             Picker("Layout", selection: Binding(get: { NowPlayingLayout.resolve(m.look.nowPlayingLayout) }, set: { m.look.nowPlayingLayout = $0.rawValue })) {
                 ForEach(NowPlayingLayout.allCases) { Text($0.title).tag($0) }
             }
@@ -436,6 +438,7 @@ struct NPSeek: View {
                 }
             }
         }
+        .layoutProbe("seek")
     }
 }
 
@@ -455,6 +458,7 @@ struct NPTransport: View {
             RepeatButton(size: 16, tint: Brand.inkSecondary)
         }
         .buttonStyle(TransportButtonStyle(size: 13, ink: Brand.ink)).disabled(m.items.isEmpty)
+        .layoutProbe("transport")
     }
 }
 
@@ -485,6 +489,7 @@ struct NPCluster: View {
             buttons(volume: volumeWidth * 0.6, chip: false)
             buttons(volume: nil, chip: false)
         }
+        .layoutProbe("cluster")
     }
 }
 
@@ -518,7 +523,7 @@ struct NPLyrics: View {
     var body: some View {
         var scaled = style
         scaled.size = style.size * s * Look.current.lyricSize.scale; scaled.gap = style.gap * s * Look.current.lyricSize.scale
-        return LyricsSection(availableHeight: height, chrome: false).environment(\.lyricStyle, scaled).frame(height: height).clipped()
+        return LyricsSection(availableHeight: height, chrome: false).environment(\.lyricStyle, scaled).frame(height: height).clipped().layoutProbe("lyrics")
     }
 }
 

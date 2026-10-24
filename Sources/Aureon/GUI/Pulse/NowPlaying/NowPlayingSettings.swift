@@ -109,6 +109,7 @@ struct NowPlayingSettings: View {
                         Text("Large is the default.").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                     }
                 }
+                LyricsTimingRow()
                 LyricsSettingsToggle()
             }
             Card(title: "On this screen", subtitle: "What else Now Playing shows") {

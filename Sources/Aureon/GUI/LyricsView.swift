@@ -115,7 +115,7 @@ struct LyricsSection: View {
         let item = m.focusItem
         let isSong = item != nil && item?.isStream != true
         VStack(alignment: .leading, spacing: 12) {
-            if chrome { header } else { bareHeader }
+            if chrome { header }
             if isSong { content }
             else { Text(item == nil ? "Play a song to see its words." : "Radio streams have no lyrics.").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).padding(.top, 8) }
             Spacer(minLength: 0)
@@ -125,25 +125,12 @@ struct LyricsSection: View {
         .animation(Motion.glide, value: service.phase)
     }
 
-    /// How tall the words are: what is left of the panel under its header (with the frame) or under the thin row of controls (without it). It never exceeds
-    /// the room it was given, so the controls above can never reach into whatever sits above the lyrics.
+    /// How tall the words are: what is left of the panel under its header (with the frame), or all of it (without it: the words stand alone, with no controls
+    /// floating over them; the timing lives in Settings and the options in the More menu). It never exceeds the room it was given.
     static func stageHeight(available: CGFloat, chrome: Bool) -> CGFloat {
-        chrome ? max(200, available - 150) : max(40, available - Self.bareHeaderHeight - Self.bareSpacing)
+        chrome ? max(200, available - 150) : max(40, available)
     }
-    static let bareHeaderHeight: CGFloat = 24
-    static let bareSpacing: CGFloat = 12
     private var stageHeight: CGFloat { Self.stageHeight(available: availableHeight, chrome: chrome) }
-
-    /// Without the frame: a thin row at the corner with the timing of the words and the options.
-    private var bareHeader: some View {
-        HStack(spacing: 10) {
-            Spacer(minLength: 0)
-            if service.phase == .ready, service.lyrics?.synced == true { offsetControl }
-            if service.upgrading { ProgressView().controlSize(.mini) }
-            menu
-        }
-        .frame(height: Self.bareHeaderHeight).opacity(0.7).foregroundStyle(Brand.ink)
-    }
 
     // MARK: header
 
@@ -152,7 +139,6 @@ struct LyricsSection: View {
             HStack(spacing: 12) {
                 Text("Lyrics").kicker().foregroundStyle(Brand.inkSecondary)
                 Spacer()
-                if service.phase == .ready, service.lyrics?.synced == true { offsetControl }
                 menu
                 Button(action: onClose) { Image(systemName: "xmark") }.buttonStyle(IconButtonStyle()).help("Close the lyrics").accessibilityLabel("Close the lyrics")
             }
@@ -165,22 +151,6 @@ struct LyricsSection: View {
         .foregroundStyle(Brand.ink)
     }
 
-    /// −2 s … +2 s in steps of a tenth, remembered for every song. Positive shows the words earlier.
-    private var offsetControl: some View {
-        HStack(spacing: 0) {
-            Button { offset = LyricsTiming.stepped(offset, by: -0.1) } label: { Image(systemName: "minus") }.buttonStyle(IconButtonStyle())
-                .help("Show the words later").accessibilityLabel("Words later")
-            Text(String(format: "%+.1f s", offset)).font(Typo.mono(11, .regular)).foregroundStyle(offset == 0 ? Brand.inkSecondary : Brand.accentText)
-                .frame(width: 52).contentShape(Rectangle())
-                .onTapGesture(count: 2) { offset = 0 }
-                .help("Timing of the words against the music. Double-click to reset. Positive shows them earlier.")
-                .accessibilityLabel("Lyrics timing").accessibilityValue(String(format: "%+.1f seconds", offset))
-            Button { offset = LyricsTiming.stepped(offset, by: 0.1) } label: { Image(systemName: "plus") }.buttonStyle(IconButtonStyle())
-                .help("Show the words earlier").accessibilityLabel("Words earlier")
-        }
-        .background(Capsule().fill(Brand.ink.opacity(0.08)))
-    }
-
     private func sourceLine(_ l: Lyrics) -> String {
         var parts = [l.source.isEmpty ? l.origin.rawValue : l.source]
         parts.append(l.wordSynced ? "synced by word" : (l.synced ? "synced" : "not timed"))
@@ -190,18 +160,8 @@ struct LyricsSection: View {
 
     private var menu: some View {
         Menu {
-            Button("Look Again", systemImage: "arrow.clockwise") { service.reload() }
-            Toggle("Look Up Lyrics Online", isOn: $service.onlineLookup)
-            if service.canOfferGeneration {
-                Button("Write Lyrics by Listening…", systemImage: "waveform.badge.mic") { service.generate() }
-            }
-            if service.lyrics != nil, service.request?.isLocalFile == true {
-                Divider()
-                if let r = service.request, TagEditing.isEditable(r.path) { Button("Save in the File's Tags", systemImage: "tag") { service.saveToTags() } }
-                Button("Save as .lrc Next to the Song", systemImage: "doc.badge.plus") { service.saveAsLRC() }
-            }
+            LyricsMenuItems()
             Divider()
-            Toggle("Offer to Write Missing Lyrics", isOn: $offerGeneration)
             Button("Close the Lyrics", systemImage: "xmark") { onClose() }
         } label: {
             Image(systemName: "ellipsis.circle")
@@ -587,11 +547,52 @@ private struct IntroDots: View {
     }
 }
 
+/// The things that can be done about the lyrics of the current song, as menu items (in the lyrics panel's menu and in Now Playing's More menu).
+struct LyricsMenuItems: View {
+    @ObservedObject private var service = LyricsService.shared
+    var body: some View {
+        Button("Look for the Lyrics Again", systemImage: "arrow.clockwise") { service.reload() }
+        if service.canOfferGeneration {
+            Button("Write Lyrics by Listening…", systemImage: "waveform.badge.mic") { service.generate() }
+        }
+        if service.lyrics != nil, service.request?.isLocalFile == true {
+            if let r = service.request, TagEditing.isEditable(r.path) { Button("Save Lyrics in the File's Tags", systemImage: "tag") { service.saveToTags() } }
+            Button("Save Lyrics as .lrc Next to the Song", systemImage: "doc.badge.plus") { service.saveAsLRC() }
+        }
+    }
+}
+
+/// Settings → Now Playing → Lyrics: how far the words are moved against the music, −2 s … +2 s in steps of a tenth, for every song.
+struct LyricsTimingRow: View {
+    @AppStorage("aureon.lyrics.offset") private var offset = 0.0
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Lyrics timing").font(Typo.sans(13, .medium))
+                Text("Positive shows the words earlier, negative later. Applies to every song.").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+            }
+            Spacer(minLength: 12)
+            HStack(spacing: 0) {
+                Button { offset = LyricsTiming.stepped(offset, by: -0.1) } label: { Image(systemName: "minus") }.buttonStyle(IconButtonStyle())
+                    .help("Show the words later").accessibilityLabel("Words later")
+                Text(String(format: "%+.1f s", offset)).font(Typo.mono(12, .regular)).foregroundStyle(offset == 0 ? Brand.inkSecondary : Brand.accentText)
+                    .frame(width: 60).accessibilityLabel("Lyrics timing").accessibilityValue(String(format: "%+.1f seconds", offset))
+                Button { offset = LyricsTiming.stepped(offset, by: 0.1) } label: { Image(systemName: "plus") }.buttonStyle(IconButtonStyle())
+                    .help("Show the words earlier").accessibilityLabel("Words earlier")
+            }
+            .background(Capsule().fill(Brand.ink.opacity(0.08)))
+            Button("Reset") { offset = 0 }.buttonStyle(.plain).font(Typo.sans(12)).foregroundStyle(offset == 0 ? Brand.inkTertiary : Brand.accentText).disabled(offset == 0)
+        }
+    }
+}
+
 /// The "Look up lyrics online" switch for the settings page.
 struct LyricsSettingsToggle: View {
+    @AppStorage("aureon.lyrics.offerGeneration") private var offerGeneration = true
     @ObservedObject private var service = LyricsService.shared
     var body: some View {
         Toggle("Look up missing lyrics online", isOn: $service.onlineLookup)
+        Toggle("Offer to write missing lyrics by listening", isOn: $offerGeneration)
     }
 }
 

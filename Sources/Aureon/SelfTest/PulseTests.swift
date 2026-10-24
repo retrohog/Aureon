@@ -282,6 +282,166 @@ extension PulseTests {
 
 nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 
+private final class KeyableWindow: NSWindow { override var canBecomeKey: Bool { true } }
+
+extension PulseTests {
+    @MainActor private func popoverShown() -> Bool { NSApp.windows.contains { String(describing: type(of: $0)).contains("Popover") && $0.isVisible } }
+
+    @MainActor private func pumpFor(_ secs: Double) {
+        let end = Date().addingTimeInterval(secs)
+        while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+    }
+
+    /// A real click at the middle of a probed frame (measured from the window's top-left corner).
+    @MainActor private func clickMiddle(_ win: NSWindow, _ r: CGRect, height: CGFloat) {
+        let loc = NSPoint(x: r.midX, y: height - r.midY)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let e = NSEvent.mouseEvent(with: type, location: loc, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) { win.sendEvent(e) }
+            pumpFor(0.04)
+        }
+    }
+
+    /// On Now Playing, in every layout, the output popover and the Add-to-playlist card stay open once opened: after a turn of the run loop, and while the
+    /// lyrics keep ticking and redrawing under them.
+    @MainActor func popoversStayOpenOnNowPlaying() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("nppop")
+        let song = dir.appendingPathComponent("Popover Check.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let lrc = (0..<12).map { String(format: "[00:%02d.00]A made-up line number %d for the popovers", $0 * 3 + 1, $0) }.joined(separator: "\n")
+        try? Data(("[ti:Popover Check]\n" + lrc + "\n").utf8).write(to: dir.appendingPathComponent("Popover Check.lrc"))
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        let saved = LyricsService.shared.isOnlineAllowed
+        LyricsService.shared.isOnlineAllowed = { false }
+        LayoutProbe.enabled = true
+        defer { m.clear(); LyricsService.shared.isOnlineAllowed = saved; LayoutProbe.enabled = false }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        stage.open(m, reduceMotion: true)
+        let size = CGSize(width: 1500, height: 900)                 // wide enough for the output chip to be in the controls of every layout
+        for layout in NowPlayingLayout.allCases {
+            m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = true
+            let probe = LayoutProbe.begin()
+            let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+            host.frame = NSRect(origin: .zero, size: size)
+            let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+            pumpFor(1.2)
+            for (what, key) in [("output popover", "output.stage"), ("playlist card", "playlistButton")] {
+                guard let r = LayoutProbe.frames[key] else { expect(false, "\(layout.rawValue): the \(what) button is on screen"); continue }
+                expect(!popoverShown(), "\(layout.rawValue): nothing is open before the \(what) is opened")
+                clickMiddle(win, r, height: size.height)
+                pumpFor(0.1)
+                expect(popoverShown(), "\(layout.rawValue): the \(what) opened")
+                if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover belongs to the stage chip") }
+                pumpFor(1.6)                                           // the lyrics tick and redraw meanwhile
+                expect(popoverShown(), "\(layout.rawValue): the \(what) is still open after the lyrics redraw")
+                if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover was not closed by a redraw") }
+                m.quickPanel = nil
+                for w in NSApp.windows where String(describing: type(of: w)).contains("Popover") { w.close() }
+                pumpFor(0.3)
+            }
+            win.orderOut(nil); win.contentView = nil
+            pumpFor(0.15)
+        }
+    }
+
+    /// The songs that come next have their tags and covers asked for ahead of time (ten, once each), so the Up next lists have pictures when drawn.
+    @MainActor func upcomingArtworkIsPrefetched() {
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("npart")
+        var urls: [URL] = []
+        for i in 0..<16 {
+            let u = dir.appendingPathComponent(String(format: "Song %02d.wav", i))
+            _ = writeWAV(u, rate: 8000, bits: 16, frames: 8000 * 20) { f, _ in Int(2000 * sin(Double(f) * 0.1)) }
+            urls.append(u)
+        }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        defer { m.clear() }
+        m.add(urls: urls, play: false)
+        expect(m.items.count == 16, "all sixteen songs are queued")
+        guard m.items.count == 16 else { return }
+        m.play(m.items[2].id)
+        pumpFor(0.6)
+        m.prefetchUpcomingArtwork()
+        let asked = m.artworkRequested
+        for k in 3...12 { expect(asked.contains(m.items[k].id), "song \(k), one of the next ten, was asked for") }
+        for k in 13...15 { expect(!asked.contains(m.items[k].id), "song \(k), beyond the next ten, was not asked for yet") }
+        let before = m.artworkRequested.count
+        m.prefetchUpcomingArtwork(); m.prefetchUpcomingArtwork()
+        expect(m.artworkRequested.count == before, "asking again does not ask twice")
+        pumpFor(2.5)
+        let settled = (3...12).filter { m.items[$0].artSource != .unknown }.count
+        expect(settled == 10, "the tags of the next ten were read in the background: \(settled)")
+    }
+
+    /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
+    /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
+    @MainActor func everyLayoutKeepsItsControlsApart() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("npfit")
+        let song = dir.appendingPathComponent("Layout Check.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let lrc = (0..<12).map { String(format: "[00:%02d.00]A made-up line number %d for the layout", $0 * 3 + 1, $0) }.joined(separator: "\n")
+        try? Data(("[ti:Layout Check]\n" + lrc + "\n").utf8).write(to: dir.appendingPathComponent("Layout Check.lrc"))
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        let saved = LyricsService.shared.isOnlineAllowed
+        LyricsService.shared.isOnlineAllowed = { false }
+        defer { m.clear(); LyricsService.shared.isOnlineAllowed = saved }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        stage.open(m, reduceMotion: true)
+        LayoutProbe.enabled = true
+        defer { LayoutProbe.enabled = false }
+        let sizes = [CGSize(width: 860, height: 540), CGSize(width: 1080, height: 700), CGSize(width: 1700, height: 1050)]
+        var checked = 0
+        for density in [UIDensity.compact, .comfortable] {
+            m.look.density = density
+            for layout in NowPlayingLayout.allCases where ProcessInfo.processInfo.environment["AUREON_NP_ONLY"].map({ $0 == layout.rawValue }) ?? true {
+                for lyrics in [true, false] {
+                    for size in sizes {
+                        m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = lyrics
+                        let probe = LayoutProbe.begin()
+                        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+                        host.frame = NSRect(origin: .zero, size: size)
+                        let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                        win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.orderFront(nil)
+                        let end = Date().addingTimeInterval(lyrics ? 2.0 : 0.8)
+                        while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+                        host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+                        let name = "\(layout.rawValue) lyrics \(lyrics ? "on" : "off") \(Int(size.width))×\(Int(size.height)) \(density.rawValue)"
+                        let window = CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1)
+                        let f = LayoutProbe.frames
+                        // the dock is whole and inside the window: seek bar, transport, and the output / queue / mini player / volume cluster
+                        for part in ["dock", "seek", "transport", "cluster"] {
+                            guard let r = f[part] else { expect(false, "\(name): \(part) is on screen"); continue }
+                            expect(window.contains(r), "\(name): \(part) is inside the window: \(r)")
+                        }
+                        // nothing in the dock or around the title and lyrics touches anything else
+                        let parts = ["seek", "transport", "cluster", "tags", "actions", "lyrics"].compactMap { n in f[n].map { (n, $0) } }
+                        for i in parts.indices { for j in parts.indices where j > i {
+                            let a = parts[i].1.insetBy(dx: 1, dy: 1), b = parts[j].1.insetBy(dx: 1, dy: 1)
+                            if a.intersects(b) { print("frames:", f.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")) }
+                            expect(!a.intersects(b), "\(name): \(parts[i].0) and \(parts[j].0) overlap: \(parts[i].1) \(parts[j].1)")
+                        } }
+                        // the words end where the dock begins, and are inside the window
+                        if let dock = f["dock"], let words = f["lyrics"] { expect(words.maxY <= dock.minY + 1 && window.contains(words), "\(name): the lyrics reach into the dock or out of the window: \(words) \(dock)") }
+                        checked += 1
+                        win.orderOut(nil); win.contentView = nil
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.15))     // let the old tree finish before the next one is measured
+                    }
+                }
+            }
+        }
+        expect(checked == 2 * NowPlayingLayout.allCases.count * 2 * 3 || ProcessInfo.processInfo.environment["AUREON_NP_ONLY"] != nil, "every combination was looked at: \(checked)")
+    }
+}
+
 extension PulseTests {
     /// Picking a song in the queue only jumps to it: with Shuffle off nothing is reordered; with it on, only what is still to come is shuffled.
     @MainActor func pickingFromTheQueueDoesNotReorderIt() {
@@ -545,6 +705,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
