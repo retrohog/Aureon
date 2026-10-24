@@ -253,12 +253,13 @@ struct ThemePicker: View {
                 }
             }
             HStack(spacing: 14) {
-                Toggle("", isOn: $m.look.pureBlack).labelsHidden().accessibilityLabel("Pure black").fixedSize()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Pure black").font(Typo.sans(13, .medium))
-                    Text(m.appearance == .light ? "For dark mode: a true black window, for OLED screens. Any colour family can use it." : "A true black window for dark mode, for OLED screens. Any colour family can use it.")
+                    Text("A true black window for dark mode, for OLED screens. Any colour family can use it.")
                         .font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
+                Spacer(minLength: 12)
+                Toggle("", isOn: $m.look.pureBlack).labelsHidden().accessibilityLabel("Pure black").fixedSize()
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Colour").microLabel().foregroundStyle(Brand.inkTertiary)

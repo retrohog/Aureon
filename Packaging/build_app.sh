@@ -22,6 +22,9 @@ cd "$(dirname "$0")/.."
 WITH_HELPER=0; DEST="$HOME/Desktop"
 for a in "$@"; do case "$a" in --with-helper) WITH_HELPER=1 ;; *) DEST="$a" ;; esac; done
 APP="$DEST/Aureon.app"
+# The release number lives in Packaging/VERSION (one line, for example 0.4.0); the build number is derived from it (0.4.0 becomes 400).
+VERSION="$(tr -d '[:space:]' < Packaging/VERSION)"
+BUILD="$(echo "$VERSION" | awk -F. '{ print $1 * 10000 + $2 * 100 + $3 }')"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ARCHS="${ARCHS:-arm64 x86_64}"
@@ -71,8 +74,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>Aureon</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.3.0</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleShortVersionString</key><string>__VERSION__</string>
+  <key>CFBundleVersion</key><string>__BUILD__</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -93,6 +96,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   </dict></array>
 </dict></plist>
 PLIST
+sed -i '' -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD/" "$APP/Contents/Info.plist"
 
 if [ "$WITH_HELPER" = 1 ]; then
   mkdir -p "$APP/Contents/Library/LaunchDaemons"
