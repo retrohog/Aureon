@@ -276,7 +276,12 @@ struct QueueView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if m.items.isEmpty { empty } else { list }
+            QueueTabs()
+            switch m.queueTab {
+            case .queue: if m.items.isEmpty { empty } else { list }
+            case .history: QueueHistory()
+            case .output: QueueOutput()
+            }
         }
         .overlay {
             if dropping {
@@ -291,11 +296,17 @@ struct QueueView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Queue").font(Typo.serif(20, .semibold))
-            if !m.items.isEmpty { Text("\(m.items.count)").font(Typo.mono(12, .medium)).foregroundStyle(Brand.inkSecondary).contentTransition(.numericText()) }
+            Text(m.queueTab.rawValue).font(Typo.serif(20, .semibold))
+            if m.queueTab == .queue, !m.items.isEmpty { Text("\(m.items.count)").font(Typo.mono(12, .medium)).foregroundStyle(Brand.inkSecondary).contentTransition(.numericText()) }
             Spacer()
-            Button { openPanel() } label: { Image(systemName: "plus") }.help("Add music (⌘O)")
-            Button { withAnimation(.smooth) { m.clear() } } label: { Image(systemName: "trash") }.disabled(m.items.isEmpty).help("Clear queue")
+            switch m.queueTab {
+            case .queue:
+                Button { openPanel() } label: { Image(systemName: "plus") }.help("Add music (⌘O)")
+                Button { withAnimation(.smooth) { m.clear() } } label: { Image(systemName: "trash") }.disabled(m.items.isEmpty).help("Clear queue")
+            case .history:
+                Button { withAnimation(.smooth) { m.clearPlayedLog() } } label: { Image(systemName: "trash") }.disabled(m.playedLog.entries.isEmpty).help("Clear the history")
+            case .output: EmptyView()
+            }
             if let onClose { Button(action: onClose) { Image(systemName: "xmark") }.help("Close") }
         }
         .buttonStyle(IconButtonStyle())

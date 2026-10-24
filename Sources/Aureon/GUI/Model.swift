@@ -306,6 +306,17 @@ final class PlayerModel: ObservableObject {
     private var parameterTokens: [UUID: AUParameterObserverToken] = [:]
     /// The queue panel (slides in over the page, so it can never fall outside the window).
     @Published var showQueue = false
+    /// The tab of the queue panel that is open.
+    @Published var queueTab = QueueTab.queue
+    /// The songs played since the app opened (the queue panel's History tab).
+    @Published private(set) var playedLog = PlayedLog()
+    func clearPlayedLog() { playedLog.clear() }
+    /// Plays a song from the history again: the one in the queue when it is still there, otherwise it is added and played.
+    func playAgain(path: String) {
+        if let it = items.first(where: { $0.path == path }) { play(it.id); return }
+        guard !path.contains("://") else { return }
+        add(urls: [URL(fileURLWithPath: path)], play: true)
+    }
     @Published var showDropToast = false
     @Published var shuffle = ShuffleMode.off { didSet { if shuffle != oldValue { applyShuffle(from: oldValue); defaults.set(shuffle.rawValue, forKey: "aureon.shuffle") } } }
     @Published var repeatMode = RepeatMode.off { didSet { player.repeatMode = repeatMode; defaults.set(repeatMode.rawValue, forKey: "aureon.repeat") } }
@@ -797,7 +808,7 @@ final class PlayerModel: ObservableObject {
         refreshHero()
         countPlay()
         rememberSessionIfChanged()
-        if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { requestMetadata(id, urgent: true); for k in 1...Self.artworkLookahead where i + k < items.count { requestMetadata(items[i + k].id) } } }
+        if started, s.trackID != metaFor { metaFor = s.trackID; if let id = s.trackID, let i = items.firstIndex(where: { $0.id == id }) { if !items[i].isStream { playedLog.note(path: items[i].path, title: items[i].title, artist: items[i].artist, album: items[i].album) }; requestMetadata(id, urgent: true); for k in 1...Self.artworkLookahead where i + k < items.count { requestMetadata(items[i + k].id) } } }
         if started, s.state == .playing || s.state == .paused { analyzeIfNeeded(s.trackID) }
         if started && s.trackID != lastDeepDiveID && tab == .deepDive { loadDeepDiveForCurrent() }
         let playing = started && s.state == .playing
