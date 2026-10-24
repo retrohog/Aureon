@@ -85,9 +85,9 @@ enum Tab: String, CaseIterable, Identifiable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
+    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
+    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -185,8 +185,11 @@ final class PlayerModel: ObservableObject {
             if env["AUREON_SNAPSHOT"] == nil, env["AUREON_TESTING"] == nil { look.save(defaults) }
             resolveTheme(persist: false)
             lookRevision &+= 1
+            if look.mini != oldValue.mini { mini.settingsChanged() }
         }
     }
+    /// The floating mini player and the menu bar item (created when first asked for).
+    private(set) lazy var mini = MiniPlayerController(model: self)
     /// Counts changes of the look; the root view is rebuilt when it changes, so the type and spacing tokens are read again.
     @Published private(set) var lookRevision = 0
     /// How the page backdrop is painted. Remembered separately for each theme, so Obsidian can stay soft while another theme is flat.

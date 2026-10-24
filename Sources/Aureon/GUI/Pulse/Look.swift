@@ -124,6 +124,8 @@ struct LookSettings: Codable, Equatable {
     var showPlaylistButton = true
     var showCredits = true
     var showSignalTags = true
+    /// The mini player and the menu bar item.
+    var mini = MiniSettings()
 
     static let defaults = LookSettings()
     static let textScaleRange = 0.85...1.3
@@ -151,8 +153,9 @@ struct LookSettings: Codable, Equatable {
         showPlaylistButton = try c.decodeIfPresent(Bool.self, forKey: .showPlaylistButton) ?? d.showPlaylistButton
         showCredits = try c.decodeIfPresent(Bool.self, forKey: .showCredits) ?? d.showCredits
         showSignalTags = try c.decodeIfPresent(Bool.self, forKey: .showSignalTags) ?? d.showSignalTags
+        mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags }
+    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -192,6 +195,9 @@ struct LookSettings: Codable, Equatable {
             case "playlistbutton": showPlaylistButton = kv[1] != "0"
             case "credits": showCredits = kv[1] != "0"
             case "signaltags": showSignalTags = kv[1] != "0"
+            case "mini": if let x = MiniLayout(rawValue: kv[1]) { mini.layout = x }
+            case "minibg": if let x = MiniBackground(rawValue: kv[1]) { mini.background = x }
+            case "menubar": mini.menuBar.show = kv[1] != "0"
             default: break
             }
         }
@@ -203,6 +209,8 @@ struct LookSettings: Codable, Equatable {
         s.textScale = min(Self.textScaleRange.upperBound, max(Self.textScaleRange.lowerBound, textScale))
         s.lightBrightness = c(lightBrightness); s.edge = c(edge); s.backdrop = c(backdrop); s.motion = c(motion)
         s.starlight.intensity = c(starlight.intensity); s.starlight.motion = c(starlight.motion); s.starlight.reaction = c(starlight.reaction)
+        s.mini.strength = c(mini.strength); s.mini.opacity = min(1, max(0.4, mini.opacity))
+        if !MenuBarSettings.autoCloseChoices.contains(mini.menuBar.autoCloseSeconds) { s.mini.menuBar.autoCloseSeconds = MenuBarSettings().autoCloseSeconds }
         if let hex = accentHex, Look.color(hex: hex) == nil { s.accentHex = nil }
         return s
     }

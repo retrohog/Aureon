@@ -316,6 +316,7 @@ struct SettingsPage: View {
                 case .general: GeneralSettings()
                 case .appearance: AppearanceSettings()
                 case .nowPlaying: NowPlayingSettings()
+                case .miniPlayer: MiniPlayerSettings()
                 case .sidebar: SidebarSettings()
                 case .connect: ConnectTab()
                 case .midi: MIDIPage()

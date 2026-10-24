@@ -196,11 +196,117 @@ extension PulseTests {
     }
 }
 
+extension PulseTests {
+    func theMiniPlayerSettingsAreRemembered() {
+        let suite = UserDefaults(suiteName: "aureon.test.mini.\(UUID().uuidString)")!
+        var s = LookSettings()
+        expect(s.mini.layout == .bar && s.mini.background == .gradient && s.mini.alwaysOnTop && s.mini.formatTags && !s.mini.menuBar.show && s.mini.menuBar.autoCloseSeconds == 5 && s.mini.menuBar.closeOnOutsideClick && s.mini.keepFloating && s.mini.rememberPosition && !s.mini.onEveryDesktop, "defaults: the bar, a gradient, on top, closes after five seconds")
+        s.mini.layout = .cardLyrics; s.mini.background = .blur; s.mini.strength = 0.3; s.mini.opacity = 0.7; s.mini.menuBar.show = true; s.mini.menuBar.shows = .title; s.mini.menuBar.openOn = .hover; s.mini.menuBar.autoCloseSeconds = 30; s.mini.menuBar.keepOpenWhileOver = false
+        s.save(suite)
+        expect(LookSettings.load(suite, environment: [:]).mini == s.clamped().mini, "everything comes back")
+        suite.set(Data(#"{"mini":{"layout":"strip"}}"#.utf8), forKey: LookSettings.storageKey)
+        let old = LookSettings.load(suite, environment: [:]).mini
+        expect(old.layout == .strip && old.background == .gradient && old.menuBar == MenuBarSettings(), "an older record reads with the defaults in place of what is missing")
+        var wild = LookSettings(); wild.mini.strength = 7; wild.mini.opacity = -2; wild.mini.menuBar.autoCloseSeconds = 17
+        let c = wild.clamped().mini
+        expect(c.strength == 1 && c.opacity == 0.4 && c.menuBar.autoCloseSeconds == 5, "values are held in range: \(c.strength) \(c.opacity) \(c.menuBar.autoCloseSeconds)")
+        expect(LookSettings.load(suite, environment: ["AUREON_LOOK": "mini=card,minibg=solid,menubar=1"]).mini.layout == .card, "the environment overlay reaches it")
+        // the layouts
+        expect(MiniLayout.allCases.map(\.rawValue) == ["bar", "strip", "card", "cardLyrics", "popover"] && MiniLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty }, "five layouts")
+        expect(MiniLayout.bar.size == CGSize(width: 520, height: 96) && MiniLayout.strip.size.height == 48 && MiniLayout.card.size == CGSize(width: 380, height: 620) && MiniLayout.popover.size == CGSize(width: 340, height: 236), "the sizes of the boards")
+        expect(MiniLayout.allCases.filter(\.isWindow).count == 4 && !MiniLayout.popover.isWindow, "the popover is the one that is not a window")
+    }
+
+    func positionsComeBackOnScreen() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 875), other = CGRect(x: 1440, y: 0, width: 1920, height: 1055)
+        let size = CGSize(width: 520, height: 96)
+        expect(MiniSettings.onScreen(origin: CGPoint(x: 100, y: 100), size: size, screens: [screen]) == nil, "a place on a screen is kept")
+        expect(MiniSettings.onScreen(origin: CGPoint(x: 1500, y: 100), size: size, screens: [screen, other]) == nil, "and on the second one")
+        let moved = MiniSettings.onScreen(origin: CGPoint(x: 1500, y: 100), size: size, screens: [screen])
+        expect(moved != nil && screen.contains(CGRect(origin: moved!, size: size)), "a display that is gone: the window comes back to the one that is left: \(String(describing: moved))")
+        let far = MiniSettings.onScreen(origin: CGPoint(x: -4000, y: 5000), size: size, screens: [screen])
+        expect(far != nil && screen.contains(CGRect(origin: far!, size: size)), "far away: brought in")
+        expect(MiniSettings.onScreen(origin: .zero, size: size, screens: []) == nil, "no screens, nothing to do")
+        let o = MiniSettings.defaultOrigin(size: size, in: screen)
+        expect(screen.contains(CGRect(origin: o, size: size)) && o.x > screen.midX && o.y > screen.midY, "the first place is the top right")
+    }
+
+    func thePopoverClosesOnItsOwnTimeAndWaitsForThePointer() {
+        typealias C = PopoverCountdown
+        expect(C.action(autoClose: 0, elapsed: 99, pointerInside: false, keepWhileOver: true) == .none, "never: no countdown")
+        expect(C.action(autoClose: 5, elapsed: 1, pointerInside: false, keepWhileOver: true) == .wait(4), "waits out the rest of the time")
+        expect(C.action(autoClose: 5, elapsed: 5, pointerInside: false, keepWhileOver: true) == .close, "time is up")
+        expect(C.action(autoClose: 5, elapsed: 8, pointerInside: true, keepWhileOver: true) == .wait(1), "the pointer is over it: it waits")
+        expect(C.action(autoClose: 5, elapsed: 8, pointerInside: true, keepWhileOver: false) == .close, "unless it was told not to")
+        expect(MenuBarSettings.autoCloseChoices == [0, 3, 5, 10, 30] && MenuBarSettings.label(0) == "Never" && MenuBarSettings.label(30) == "30 s", "the choices")
+    }
+
+    @MainActor func theFloatingWindowFollowsTheSettings() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let ud = UserDefaults.standard
+        let savedOrigin = ud.object(forKey: "aureon.mini.origin"), savedHeight = ud.object(forKey: "aureon.mini.height")
+        defer { if let savedOrigin { ud.set(savedOrigin, forKey: "aureon.mini.origin") } else { ud.removeObject(forKey: "aureon.mini.origin") }; if let savedHeight { ud.set(savedHeight, forKey: "aureon.mini.height") } else { ud.removeObject(forKey: "aureon.mini.height") }; m.mini.shutDown() }
+        m.look.mini.rememberPosition = false
+        m.look.mini.layout = .bar
+        m.mini.toggle()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        expect(m.mini.isFloatingOpen, "the button opens the bar")
+        if let st = m.mini.floatingState {
+            expect(st.frame.size == MiniLayout.bar.size && st.level == .floating && abs(st.alpha - 0.92) < 0.001 && !st.onEveryDesktop, "size, on top, opacity: \(st)")
+        } else { expect(false, "there is a window") }
+        // changing the settings changes the open window
+        m.look.mini.alwaysOnTop = false; m.look.mini.opacity = 0.6; m.look.mini.onEveryDesktop = true
+        if let st = m.mini.floatingState { expect(st.level == .normal && abs(st.alpha - 0.6) < 0.001 && st.onEveryDesktop, "level, opacity and desktops follow: \(st)") } else { expect(false, "still there") }
+        let top = m.mini.floatingState?.frame.maxY
+        m.look.mini.layout = .card
+        if let st = m.mini.floatingState { expect(st.frame.size == MiniLayout.card.size && abs(st.frame.maxY - (top ?? 0)) < 0.5, "another layout resizes from the top edge: \(st.frame)") } else { expect(false, "the card") }
+        // the popover layout is not a window: the open window is put away
+        m.look.mini.layout = .popover
+        expect(!m.mini.isFloatingOpen, "the popover is not a floating window")
+        m.look.mini.layout = .strip
+        m.mini.toggle()
+        expect(m.mini.isFloatingOpen && m.mini.floatingState?.frame.size == MiniLayout.strip.size, "the strip")
+        m.mini.toggle()
+        expect(!m.mini.isFloatingOpen, "the button puts it away again")
+    }
+}
+
+nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
+
+extension PulseTests {
+    /// Each mini layout drawn as the real view (a development aid: `AUREON_MINI_SHOTS=/folder` writes a PNG of each; without it nothing is written).
+    @MainActor func theMiniLayoutsDrawWithoutTrouble() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let out = ProcessInfo.processInfo.environment["AUREON_MINI_SHOTS"]
+        for l in MiniLayout.allCases {
+            for bg in MiniBackground.allCases {
+                m.look.mini.background = bg
+                let host = NSHostingView(rootView: MiniLayoutView(layout: l).miniEnvironment(m).frame(width: l.size.width, height: l.size.height))
+                host.frame = NSRect(origin: .zero, size: l.size)
+                let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.orderFront(nil)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+                host.layoutSubtreeIfNeeded(); host.displayIfNeeded()
+                guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { expect(false, "\(l) \(bg): a bitmap"); win.orderOut(nil); continue }
+                host.cacheDisplay(in: host.bounds, to: rep)
+                var coloured = 0
+                if let data = rep.bitmapData { for i in stride(from: 0, to: rep.bytesPerRow * rep.pixelsHigh, by: 64) where data[i] != data[i + 1] || data[i + 1] != data[i + 2] || data[i] > 20 { coloured += 1 } }
+                expect(coloured > 20, "\(l) \(bg): something is drawn")
+                if let out { try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out).appendingPathComponent("mini-\(l.rawValue)-\(bg.rawValue).png")) }
+                win.orderOut(nil); win.contentView = nil
+            }
+        }
+    }
+}
+
 private final class PulseTestsAnchor {}
 
 func pulseTests() -> [(String, TestFn)] {
     let t = PulseTests()
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
-            ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
+            ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
