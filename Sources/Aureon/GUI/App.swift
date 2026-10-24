@@ -52,6 +52,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        MainActor.assumeIsolated { AppDelegate.model?.mini.appReopened() }
+        return true
+    }
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated { AppDelegate.model?.saveSession(); WindowMemoryController.shared.saveNow() }
     }

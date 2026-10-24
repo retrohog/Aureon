@@ -59,6 +59,7 @@ struct MiniPlayerSettings: View {
             LookSliderRow(title: "Strength", hint: "How much of the cover's colour reaches the gradient, the blur and the glow.", value: $m.look.mini.strength, defaultValue: MiniSettings().strength)
             LookSliderRow(title: "Opacity", hint: "Of the whole window.", value: Binding(get: { (m.look.mini.opacity - 0.4) / 0.6 }, set: { m.look.mini.opacity = 0.4 + $0 * 0.6 }),
                           defaultValue: (MiniSettings().opacity - 0.4) / 0.6, format: { "\(Int((0.4 + $0 * 0.6) * 100))%" })
+            row("Hide the Aureon window while it is open", "Like other players: the mini player takes over, and closing or expanding it brings the app back.", $m.look.mini.hideMainWindow)
             row("Always on top", "Keeps the window above the others.", $m.look.mini.alwaysOnTop)
             row("Format tags", "The codec, rate and quality beside the song.", $m.look.mini.formatTags)
             row("Show on every desktop", "The window follows you from one Space to the next.", $m.look.mini.onEveryDesktop)

@@ -11,6 +11,9 @@ struct MiniActions {
     var openApp: () -> Void = {}
     var isPinned = true
     var interactive = false
+    /// Moves the window by this much (a drag on anywhere that is not a control), and puts it back on a screen when the drag ends.
+    var move: (CGSize) -> Void = { _ in }
+    var settle: () -> Void = {}
 }
 
 private struct MiniActionsKey: EnvironmentKey { static let defaultValue = MiniActions() }
@@ -63,16 +66,35 @@ struct MiniBackdrop: View {
     }
 }
 
-/// The frame of a mini player: its size, its background and the corner.
+/// The frame of a mini player: its size, its background and the corner. In a window, anywhere that is not a control drags the window.
 struct MiniSurface<Content: View>: View {
     let layout: MiniLayout
+    @Environment(\.miniActions) private var actions
     @ViewBuilder var content: Content
     var body: some View {
         content
             .frame(width: layout.size.width, height: layout.size.height)
-            .background(MiniBackdrop(layout: layout))
+            .background {
+                ZStack {
+                    MiniBackdrop(layout: layout)
+                    if actions.interactive { MiniDragHandle() }
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
+    }
+}
+
+/// Behind the controls: dragging anywhere on it moves the window. The pointer's place in the window is read at every step; the window follows the pointer,
+/// so each step moves it by how far the pointer has got ahead of where it was picked up.
+struct MiniDragHandle: View {
+    @Environment(\.miniActions) private var actions
+    var body: some View {
+        Color.clear.contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { v in actions.move(CGSize(width: v.location.x - v.startLocation.x, height: v.location.y - v.startLocation.y)) }
+                .onEnded { _ in actions.settle() })
+            .accessibilityHidden(true)
     }
 }
 
@@ -106,6 +128,7 @@ struct MiniProgressLine: View {
 
 struct MiniTransport: View {
     @EnvironmentObject var m: PlayerModel
+    @Environment(\.miniActions) private var actions
     var play: CGFloat = 42
     var side: CGFloat = 36
     var modes = false
@@ -115,6 +138,7 @@ struct MiniTransport: View {
             Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 14) }.buttonStyle(RoundIconStyle(size: side)).accessibilityLabel("Previous")
             Button { m.togglePlay() } label: { TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: play * 0.4) }
                 .buttonStyle(PlayKeyStyle(size: play)).accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
+                .keyboardShortcut(actions.interactive ? KeyboardShortcut(.space, modifiers: []) : nil)
             Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 14) }.buttonStyle(RoundIconStyle(size: side)).accessibilityLabel("Next")
             if modes { RepeatButton(size: 15, tint: Brand.inkSecondary) }
         }
