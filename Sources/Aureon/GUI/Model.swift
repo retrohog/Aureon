@@ -171,11 +171,18 @@ final class PlayerModel: ObservableObject {
         resolveTheme()
     }
     /// The look: density, type weight and size, light brightness, accent, edges, backdrop strength, Starlight, tags, the Now Playing layout.
-    @Published var look: LookSettings = { var l = LookSettings.load(); Look.current = l; return l }() {
+    @Published var look: LookSettings = {
+        // tests start from the defaults and never read or write the person's own settings
+        var l = ProcessInfo.processInfo.environment["AUREON_TESTING"] != nil ? LookSettings().clamped() : LookSettings.load()
+        if ProcessInfo.processInfo.environment["AUREON_TESTING"] != nil, let e = ProcessInfo.processInfo.environment["AUREON_LOOK"] { l.apply(environment: e); l = l.clamped() }
+        Look.current = l
+        return l
+    }() {
         didSet {
             guard look != oldValue else { return }
             Look.current = look
-            if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { look.save(defaults) }
+            let env = ProcessInfo.processInfo.environment
+            if env["AUREON_SNAPSHOT"] == nil, env["AUREON_TESTING"] == nil { look.save(defaults) }
             resolveTheme(persist: false)
             lookRevision &+= 1
         }
