@@ -242,7 +242,7 @@ struct ThemePicker: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Backdrop").microLabel().foregroundStyle(Brand.inkTertiary)
                 HStack(spacing: 16) {
-                    SegmentedChoice(selection: $m.backdrop, items: BackdropMode.allCases.filter { $0 != .starlight || !m.theme.isLight }, label: { $0.title }).frame(width: 352)
+                    SegmentedChoice(selection: $m.backdrop, items: Array(BackdropMode.allCases), label: { $0.title }).frame(width: 352)
                     Text(m.backdrop.hint).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
                 if m.backdrop == .album {
@@ -251,13 +251,6 @@ struct ThemePicker: View {
                         Text(m.backdropIntensity.hint).font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                     }
                     .transition(.opacity)
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Glass").microLabel().foregroundStyle(Brand.inkTertiary)
-                HStack(spacing: 16) {
-                    Toggle("Glass accents", isOn: $m.glassAccents).labelsHidden().accessibilityLabel("Glass accents")
-                    Text("Liquid glass on the player bar, the Now Playing panels, the palette and pop-ups. Off keeps them flat.").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {

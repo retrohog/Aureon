@@ -23,6 +23,7 @@ struct StarlightUniforms {
     var pal0 = SIMD4<Float>(0.8, 0.66, 0.43, 1)
     var pal1 = SIMD4<Float>(0.35, 0.40, 0.75, 1)
     var pal2 = SIMD4<Float>(0.62, 0.34, 0.60, 1)
+    var e = SIMD4<Float>(1, 1, 1, 1)               // twinkle on (0/1), star tint (rgb, brightest component 1)
 }
 
 /// The settings, the theme and the cover turned into uniforms. Pure, so the mapping can be tested.
@@ -51,6 +52,20 @@ enum StarlightModel {
         return [v(tune(p.accent)), v(tune(p.grid[2])), v(tune(p.grid[6]))]
     }
 
+    /// The colour the stars are multiplied by: white (none), the accent, or the cover's accent; scaled so its brightest part is 1 and the sky is no dimmer.
+    static func starTint(_ t: StarTint, theme: Theme, palette: ArtPalette?) -> SIMD3<Float> {
+        let c: RGB
+        switch t {
+        case .white: return SIMD3(1, 1, 1)
+        case .accent: c = theme.accentRGB
+        case .cover: c = (palette.map { $0 != .neutral } ?? false) ? palette!.accent : theme.accentRGB
+        }
+        let m = max(c.r, c.g, c.b, 0.001)
+        // a hint of white is kept, so a deep accent still reads as stars
+        func f(_ v: Double) -> Float { Float(0.25 + 0.75 * v / m) }
+        return SIMD3(f(c.r), f(c.g), f(c.b))
+    }
+
     static func uniforms(time: Double, settings s: StarlightSettings, theme: Theme, palette: ArtPalette?, energy: Float, veil: Float, size: CGSize,
                          shoot: StarlightSky.Shot?, layers: Int = 4) -> StarlightUniforms {
         var u = StarlightUniforms()
@@ -65,6 +80,8 @@ enum StarlightModel {
         u.base = SIMD4(Float(base.r), Float(base.g), Float(base.b), 1)
         let n = nebula(palette: palette, theme: theme)
         u.pal0 = n[0]; u.pal1 = n[1]; u.pal2 = n[2]
+        let tint = starTint(s.tint, theme: theme, palette: palette)
+        u.e = SIMD4(s.twinkle ? 1 : 0, tint.x, tint.y, tint.z)
         return u
     }
 }
@@ -90,19 +107,29 @@ struct StarlightSky {
     private var current: (begin: Double, start: CGPoint, angle: Double, length: Double)?
     static let duration = 1.15
     var rng: () -> Double
+    /// How long to wait between two stars (nil: none at all).
+    var interval: (min: Double, max: Double)? = ShootingStars.rare.interval
 
-    init(now: Double = 0, rng: @escaping () -> Double = { Double.random(in: 0..<1) }) {
+    init(now: Double = 0, interval: (min: Double, max: Double)? = ShootingStars.rare.interval, rng: @escaping () -> Double = { Double.random(in: 0..<1) }) {
         self.rng = rng
-        next = now + 6 + rng() * 20
+        self.interval = interval
+        next = now + (interval.map { 6 + rng() * ($0.min - 6 > 0 ? $0.min - 6 : 4) } ?? .infinity)
+    }
+
+    /// Changes the pace (the setting was changed): the next star is scheduled afresh from `time`.
+    mutating func setInterval(_ i: (min: Double, max: Double)?, at time: Double) {
+        guard i?.min != interval?.min || i?.max != interval?.max else { return }
+        interval = i
+        next = i.map { time + $0.min * 0.4 + rng() * ($0.max - $0.min) * 0.6 } ?? .infinity
     }
 
     /// The shot to draw at `time`, if any. `quiet`: a text field has focus, the app is in the background or the sky is still.
     mutating func shot(at time: Double, quiet: Bool) -> Shot? {
         if let c = current {
             let p = (time - c.begin) / Self.duration
-            if p >= 1 { current = nil; next = time + 25 + rng() * 45 } else { return Shot(progress: p, start: c.start, angle: c.angle, length: c.length) }
+            if p >= 1 { current = nil; next = interval.map { time + $0.min + rng() * ($0.max - $0.min) } ?? .infinity } else { return Shot(progress: p, start: c.start, angle: c.angle, length: c.length) }
         }
-        guard !quiet, time >= next else { return nil }
+        guard interval != nil, !quiet, time >= next else { return nil }
         let start = CGPoint(x: 0.1 + rng() * 0.7, y: 0.05 + rng() * 0.4)
         let angle = 0.35 + rng() * 0.5            // down and to the right
         current = (time, start, angle, 0.30 + rng() * 0.2)
@@ -170,7 +197,7 @@ final class StarlightRenderer: @unchecked Sendable {
     #include <metal_stdlib>
     using namespace metal;
 
-    struct U { float4 a, b, c, d, base, pal0, pal1, pal2; };
+    struct U { float4 a, b, c, d, base, pal0, pal1, pal2, e; };
     struct VOut { float4 pos [[position]]; float2 uv; };
 
     vertex VOut sl_vertex(uint vid [[vertex_id]]) {
@@ -235,12 +262,13 @@ final class StarlightRenderer: @unchecked Sendable {
 
         // stars: four depths, nearer ones larger, brighter and faster
         float3 st = float3(0.0);
-        float tw = 0.5 * S;
-        if (layers >= 4) st += 0.30 * stars(uv, 38.0, float2(0.010, 0.002), t * S, 0.40, 0.30, 0.0, 3.0, 1.0, 0);
-        if (layers >= 3) st += 0.45 * stars(uv, 22.0, float2(0.006, 0.0015), t * S, 0.34, 0.45, 0.0, 7.0, 1.0, 0);
-        st += 0.75 * stars(uv, 12.0, float2(0.0035, 0.001), t * S, 0.30, 0.55, 0.6, 11.0, 1.1, 1);
-        st += 1.00 * stars(uv, 6.0, float2(0.002, 0.0006), t * S, 0.26, 0.60, 1.0, 19.0, 1.3, 1);
+        float tw = 0.5 * S, tk = u.e.x;
+        if (layers >= 4) st += 0.30 * stars(uv, 38.0, float2(0.010, 0.002), t * S, 0.40, 0.30 * tk, 0.0, 3.0, 1.0, 0);
+        if (layers >= 3) st += 0.45 * stars(uv, 22.0, float2(0.006, 0.0015), t * S, 0.34, 0.45 * tk, 0.0, 7.0, 1.0, 0);
+        st += 0.75 * stars(uv, 12.0, float2(0.0035, 0.001), t * S, 0.30, 0.55 * tk, 0.6, 11.0, 1.1, 1);
+        st += 1.00 * stars(uv, 6.0, float2(0.002, 0.0006), t * S, 0.26, 0.60 * tk, 1.0, 19.0, 1.3, 1);
         st *= (0.35 + 0.65 * I) * (0.7 + 0.3 * tw + 0.3 * react);
+        st *= u.e.yzw;
 
         float3 col;
         if (light < 0.5) {
@@ -314,7 +342,7 @@ final class StarlightMTKView: MTKView, MTKViewDelegate {
         clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         autoResizeDrawable = true
         layer?.isOpaque = true
-        sky = StarlightSky(now: 0)
+        sky = StarlightSky(now: 0, interval: settings.shooting.interval)
         syncRunning()
     }
     required init(coder: NSCoder) { fatalError("not used") }
@@ -368,6 +396,7 @@ final class StarlightMTKView: MTKView, MTKViewDelegate {
         let animating = StarlightPolicy.animates(mode)
         let t = animating ? CACurrentMediaTime() - started + 30 : 30
         let typing = NSApp?.keyWindow?.firstResponder is NSText
+        sky.setInterval(settings.shooting.interval, at: t)
         let shot = animating ? sky.shot(at: t, quiet: typing || !(NSApp?.isActive ?? true)) : nil
         let e = animating ? energy() : 0
         smoothedEnergy += (e - smoothedEnergy) * (e > smoothedEnergy ? 0.35 : 0.08)
@@ -431,16 +460,32 @@ struct StarlightBackdrop: View {
     }
 }
 
-/// Settings → Appearance → Starlight: the sky's intensity, its speed and how much the music moves it.
+/// Settings → Appearance → Starlight: how dense the sky is, how often a star shoots across it, whether the stars twinkle, their colour, the speed and how
+/// much the music moves it.
 struct StarlightGroup: View {
     @EnvironmentObject var m: PlayerModel
     var body: some View {
         Card(title: "Starlight", subtitle: "A sky of stars and a slow nebula in the cover's colours") {
-            LookSliderRow(title: "Intensity", hint: "Brightness and number of stars, and how much of the nebula shows.", value: $m.look.starlight.intensity, defaultValue: StarlightSettings().intensity)
-            LookSliderRow(title: "Motion speed", hint: "How fast the sky drifts and the stars twinkle. It stands still under Reduce Motion.", value: $m.look.starlight.motion, defaultValue: StarlightSettings().motion)
+            LookSliderRow(title: "Density", hint: "How many stars, and how bright the sky is.", value: $m.look.starlight.intensity, defaultValue: StarlightSettings().intensity)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Shooting stars").font(Typo.sans(13, .medium))
+                HStack(spacing: 16) {
+                    SegmentedChoice(selection: $m.look.starlight.shooting, items: ShootingStars.allCases, label: { $0.title }).frame(width: 360)
+                    Text(m.look.starlight.shooting == .off ? "None" : "Never while you are typing").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                }
+            }
+            HStack(spacing: 12) {
+                Toggle("Twinkle", isOn: $m.look.starlight.twinkle).labelsHidden().accessibilityLabel("Twinkle")
+                Text("Twinkle: the stars brighten and dim a little.").font(Typo.sans(13))
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Star colour").font(Typo.sans(13, .medium))
+                SegmentedChoice(selection: $m.look.starlight.tint, items: StarTint.allCases, label: { $0.title }).frame(width: 280)
+            }
+            LookSliderRow(title: "Motion speed", hint: "How fast the sky drifts. It stands still under Reduce Motion.", value: $m.look.starlight.motion, defaultValue: StarlightSettings().motion)
             HStack(spacing: 12) {
                 Toggle("Music reaction", isOn: $m.look.starlight.reacts).labelsHidden().accessibilityLabel("Music reaction")
-                Text("The low notes of the music brighten the nebula a little.").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
+                Text("Music reaction: the low notes brighten the nebula a little.").font(Typo.sans(13))
             }
             if m.look.starlight.reacts {
                 LookSliderRow(title: "Reaction amount", value: $m.look.starlight.reaction, defaultValue: StarlightSettings().reaction)

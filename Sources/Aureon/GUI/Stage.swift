@@ -290,11 +290,10 @@ struct StageBackdrop: View {
     private var base: RGB { theme.canvasRGB }
     private var effective: BackdropMode {
         if mode == .album && image == nil { return .soft }
-        if mode == .starlight { return .soft }          // the wash under the stars is the soft one
+        if mode == .starlight { return .soft }          // the wash under the sky is the soft one
         return mode
     }
-    private var starry: Bool { mode == .starlight && !theme.isLight }
-    private var starsKey: String { "stars|\(theme.id)" }
+    private var starry: Bool { mode == .starlight }
     private var key: String { "\(effective.rawValue)|\(theme.id)|\(stage ? "stage" : "page")|\(effective == .album ? token + "|" + intensity.rawValue : "")" }
     /// Soft pages hold their backdrop to half of the allowed shift, the stage to all of it. The Album backdrop takes its share through its intensity
     /// (a little less on pages, which are busier than the stage).
@@ -313,7 +312,7 @@ struct StageBackdrop: View {
                 }
                 .id(dk).transition(HWPanel.snapshot ? .identity : .opacity)
             }
-            if starry, let stars = store.image(for: starsKey) { StarfieldView(image: stars).allowsHitTesting(false).transition(.opacity) }
+            if starry { StarlightBackdrop(theme: theme, palette: palette, stage: stage).allowsHitTesting(false).transition(.opacity) }
         }
         .animation(HWPanel.snapshot ? nil : Motion.backdrop, value: drawKey)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -327,10 +326,6 @@ struct StageBackdrop: View {
 
     private func prepare() {
         guard mode != .off else { return }
-        if starry, !BackdropStore.shared.isKnown(starsKey) {
-            let ink = theme.inkRGB, accent = theme.accentRGB
-            store.prepare(key: starsKey) { BackdropRenderer.stars(ink: ink, accent: accent) }
-        }
         guard !BackdropStore.shared.isKnown(key) else { return }
         let base = self.base, light = theme.isLight, limit = self.limit
         switch effective {

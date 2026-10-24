@@ -201,6 +201,9 @@ final class LibraryModel: ObservableObject {
 
     func rescan() { scan(folders) }
 
+    /// Reads one library folder again.
+    func rescan(_ folder: String) { scan([folder]) }
+
     /// Indexes a folder once without remembering it as a library folder (ripped discs, for example).
     func importOnce(_ url: URL) { scan([realPath(url).path]) }
 
