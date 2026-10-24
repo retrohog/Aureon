@@ -345,7 +345,7 @@ struct AppearanceSettings: View {
     var body: some View {
         VStack(spacing: 16) {
             preview
-            Card(title: "Theme", subtitle: "Six dark themes and three soft light ones. The whole interface follows the one you pick") { ThemePicker() }
+            Card(title: "Theme", subtitle: "Five colours, each with a dark and a soft light side. The whole interface follows them") { ThemePicker() }
             if m.backdrop == .starlight { StarlightGroup() }
             if m.backdrop != .off {
                 Card(title: "Backdrop strength", subtitle: "How far the cover's colours and the wash reach into the pages") {

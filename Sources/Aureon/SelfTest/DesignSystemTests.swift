@@ -16,12 +16,14 @@ struct DesignSystemTests {
     // MARK: themes
 
     func everyThemeMeetsContrast() {
-        expect(Theme.all.count == 9 && Set(Theme.all.map(\.id)).count == 9, "nine themes with unique ids")
-        expect(Theme.dark.map(\.name) == ["Graphite", "AMOLED", "Midnight", "Forest", "Plum", "Cocoa"] && Theme.light.map(\.name) == ["Stone", "Sage", "Paper"], "six dark themes and three light ones")
-        // the light themes are checked across the whole brightness slider, the accent across a spread of picked colours
-        var shown = Theme.all
+        expect(Theme.families.map(\.name) == ["Graphite", "Midnight", "Forest", "Plum", "Cocoa"], "five colour families")
+        expect(Theme.all.count == 10 && Set(Theme.all.map(\.id)).count == 10, "each with a dark and a light half, ten unique ids")
+        expect(Theme.dark.count == 5 && Theme.light.count == 5 && Theme.families.allSatisfy { !$0.dark.isLight && $0.light.isLight && $0.dark.family == $0.id && $0.light.family == $0.id }, "every family has one of each")
+        // the light halves are checked across the whole brightness slider, every dark half also on pure black, the accent across a spread of picked colours
+        let black = Theme.dark.map(\.onPureBlack)
+        var shown = Theme.all + black
         for b in [0.0, 0.35, 1.0] { shown += Theme.light.map { $0.adjusted(lightBrightness: b) } }
-        for hue in stride(from: 0.0, to: 1.0, by: 0.125) { shown += Theme.all.map { $0.withAccent(RGB(h: hue, s: 0.9, v: 0.9)) } }
+        for hue in stride(from: 0.0, to: 1.0, by: 0.125) { shown += (Theme.all + black).map { $0.withAccent(RGB(h: hue, s: 0.9, v: 0.9)) } }
         for t in shown {
             for s in t.surfaces {
                 expect(ratio(t.inkRGB, s) >= 6.5, "ink on \(t.id): \(ratio(t.inkRGB, s))")
@@ -38,16 +40,22 @@ struct DesignSystemTests {
         }
     }
 
-    func defaultThemesAreGraphiteAndStone() {
-        expect(Theme.all.first?.id == "graphite" && Theme.aureon.id == "graphite", "Graphite is the default")
-        expect(Theme.defaultLight.id == "stone" && Theme.defaultLight.isLight, "Stone is the default for day")
-        // earlier ids are carried over
-        for (old, new) in [("obsidian", "graphite"), ("obsidian.light", "stone"), ("light", "stone"), ("bespoke", "forest"), ("gruvbox.light", "paper")] { expect(Theme.named(old).id == new, "\(old) became \(new)") }
+    func defaultThemesAreGraphiteDarkAndLight() {
+        expect(Theme.families.first?.id == "graphite" && Theme.aureon.id == "graphite" && !Theme.aureon.isLight, "Graphite, dark, is the default")
+        expect(Theme.defaultLight.id == "graphite.light" && Theme.defaultLight.isLight && Theme.defaultLight.family == "graphite", "and its light half is the default for day")
+        // earlier ids are carried over (the nine-theme names too)
+        for (old, new) in [("obsidian", "graphite"), ("obsidian.light", "graphite.light"), ("light", "graphite.light"), ("bespoke", "forest"), ("gruvbox.light", "cocoa.light"),
+                           ("stone", "graphite.light"), ("sage", "forest.light"), ("paper", "cocoa.light"), ("amoled", "graphite.black"), ("nord", "midnight")] { expect(Theme.named(old).id == new, "\(old) became \(new)") }
         // ids that were removed fall back to the default
         for gone in ["synthwave", "dracula", "catppuccin", "album", "nonsense", ""] { expect(Theme.named(gone).id == "graphite", "\(gone) falls back") }
-        // AMOLED is true black behind everything
-        let amoled = Theme.named("amoled")
-        expect(amoled.sidebarRGB == RGB(0, 0, 0) && WCAG.luminance(amoled.canvasRGB) < 0.005, "AMOLED is true black")
+        // pure black: the window is true black, the panels stay in the family's tint, for every family
+        for f in Theme.families {
+            let t = f.dark.onPureBlack
+            expect(t.pureBlack && !t.isLight && t.sidebarRGB == RGB(0, 0, 0) && WCAG.luminance(t.canvasRGB) < 0.012, "\(f.id) on pure black: a black window under dark panels")
+            expect(t.canvasRGB != RGB(0, 0, 0) && WCAG.luminance(t.panel2RGB) > WCAG.luminance(t.canvasRGB), "\(f.id): the panels still rise above the window")
+            expect(f.light.onPureBlack == f.light, "\(f.id): pure black does nothing to the light half")
+            expect(Theme.resolve(family: f.id, light: false, pureBlack: true).id == f.id + ".black" && Theme.resolve(family: f.id, light: true, pureBlack: true).id == f.id + ".light" && Theme.resolve(family: f.id, light: false, pureBlack: false).id == f.id, "\(f.id) resolves for every mode")
+        }
         // the light themes are muted: no panel is brighter than a soft grey
         for t in Theme.light { expect(WCAG.luminance(t.canvasRGB) < 0.65, "\(t.id) does not dazzle: \(WCAG.luminance(t.canvasRGB))") }
         // the brightness slider moves the surfaces monotonically and leaves dark themes alone
@@ -121,7 +129,7 @@ struct DesignSystemTests {
     // MARK: accent pair
 
     func accentPairStaysInOneColourFamily() {
-        let light = Theme.named("stone"), dark = Theme.named("graphite")
+        let light = Theme.named("graphite.light"), dark = Theme.named("graphite")
         for step in 0..<20 {
             let h = Double(step) / 20
             let source = RGB(h: h, s: 0.8, v: 0.9)
@@ -183,7 +191,7 @@ struct DesignSystemTests {
             }
         }
         // on a light theme the cover can only darken the page, within the same budget
-        let l = Theme.named("stone")
+        let l = Theme.named("graphite.light")
         let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
         let reach = abs(WCAG.luminance(l.backdropLimitRGB) - WCAG.luminance(l.canvasRGB))

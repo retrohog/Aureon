@@ -103,6 +103,8 @@ struct LookSettings: Codable, Equatable {
     var textScale = 1.0
     /// Light themes only: from a quiet grey (0) to paper (1); 0.35 is the designed tone.
     var lightBrightness = 0.35
+    /// Dark themes only: the window is true black (for OLED screens) and the panels sit just above it. Any colour family can use it.
+    var pureBlack = false
     /// The accent chosen by the user as "RRGGBB"; nil keeps each theme's own.
     var accentHex: String?
     /// How strong hairlines, outlines and separators are.
@@ -141,6 +143,7 @@ struct LookSettings: Codable, Equatable {
         weight = try c.decodeIfPresent(TypeWeight.self, forKey: .weight) ?? d.weight
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? d.textScale
         lightBrightness = try c.decodeIfPresent(Double.self, forKey: .lightBrightness) ?? d.lightBrightness
+        pureBlack = try c.decodeIfPresent(Bool.self, forKey: .pureBlack) ?? d.pureBlack
         accentHex = try c.decodeIfPresent(String.self, forKey: .accentHex)
         edge = try c.decodeIfPresent(Double.self, forKey: .edge) ?? d.edge
         backdrop = try c.decodeIfPresent(Double.self, forKey: .backdrop) ?? d.backdrop
@@ -158,7 +161,7 @@ struct LookSettings: Codable, Equatable {
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -179,6 +182,7 @@ struct LookSettings: Codable, Equatable {
             case "weight": if let x = TypeWeight(rawValue: kv[1]) { weight = x }
             case "scale": if let v { textScale = v }
             case "light": if let v { lightBrightness = v }
+            case "black": pureBlack = kv[1] != "0"
             case "accent": accentHex = kv[1].isEmpty || kv[1] == "none" ? nil : kv[1]
             case "edge": if let v { edge = v }
             case "backdrop": if let v { backdrop = v }

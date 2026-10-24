@@ -147,7 +147,7 @@ func extraTests() -> [(String, TestFn)] {
           ("ui.waveformCache", hw.waveformCacheRoundTrip), ("ui.waveformColumns", hw.waveformColumnsAndEdgeCases), ("ui.scrubMath", hw.scrubberMath),
           ("ui.backdropBlur", hw.backdropImageIsSmallAndBlurred), ("ui.stageNavigation", hw.stageOpensAndReturns), ("ui.lyricsButton", hw.lyricsButtonOpensTheLyrics)]
     let ds = DesignSystemTests()
-    t += [("ui.themeContrast", ds.everyThemeMeetsContrast), ("ui.defaultThemes", ds.defaultThemesAreGraphiteAndStone), ("ui.typography", ds.typographyTokensArePresent),
+    t += [("ui.themeContrast", ds.everyThemeMeetsContrast), ("ui.defaultThemes", ds.defaultThemesAreGraphiteDarkAndLight), ("ui.typography", ds.typographyTokensArePresent),
           ("ui.noScatteredFonts", ds.noScatteredFontsOrSprings), ("ui.metrics", ds.metricsStayOnTheGridAndRound), ("ui.accentPair", ds.accentPairStaysInOneColourFamily),
           ("ui.softBackdrop", ds.softBackdropNeverCostsTextItsContrast), ("ui.albumBackdrop", ds.albumBackdropIsHeldToTheSameLimit), ("ui.backdropModes", ds.backdropModesAreNamed), ("ui.backdropView", ds.backdropViewDrawsTheWash)]
     let ui = InterfaceTests()

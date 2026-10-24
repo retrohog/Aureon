@@ -167,17 +167,22 @@ final class PlayerModel: ObservableObject {
     @Published var sidebar = SidebarLayout.load() { didSet { if sidebar != oldValue { sidebar.save() } } }
     /// The colour theme. Changing it rebuilds the whole interface (the root view is keyed on the theme's id).
     @Published private(set) var theme: Theme = Theme.current
-    /// The theme chosen for the dark appearance and the one for the light appearance. Picking a dark theme sets the first, a light theme the second;
-    /// `appearance` decides which of the two is shown (Auto follows macOS).
-    @Published var darkThemeID = Theme.aureon.id { didSet { if darkThemeID != oldValue { resolveTheme() } } }
-    @Published var lightThemeID = Theme.defaultLight.id { didSet { if lightThemeID != oldValue { resolveTheme() } } }
+    /// The colour family (Graphite, Midnight, Forest, Plum or Cocoa). Each has a dark and a light half; `appearance` decides which is shown (Auto follows
+    /// macOS) and `look.pureBlack` puts the dark half on true black.
+    @Published var themeFamily = Theme.aureon.family { didSet { if themeFamily != oldValue { resolveTheme() } } }
     /// The id of the theme being shown.
     var themeID: String { theme.id }
-    /// Chooses a theme from the nine: it becomes the dark or the light one by its kind, and (unless Auto is on) switches the appearance to match.
-    func choose(theme t: Theme) {
-        if t.isLight { lightThemeID = t.id; if appearance != .system { appearance = .light } }
-        else { darkThemeID = t.id; if appearance != .system { appearance = .dark } }
+    /// Chooses a colour family; the mode (Dark, Light, Auto) stays as it is.
+    func choose(family id: String) {
+        guard Theme.families.contains(where: { $0.id == id }) else { return }
+        themeFamily = id
         resolveTheme()
+    }
+    /// Chooses the family of a theme (the palette's older "theme" entries): a light theme also switches to Light unless Auto is on.
+    func choose(theme t: Theme) {
+        if t.isLight, appearance == .dark { appearance = .light }
+        else if !t.isLight, appearance == .light { appearance = .dark }
+        choose(family: t.family)
     }
     /// The look: density, type weight and size, light brightness, accent, edges, backdrop strength, Starlight, tags, the Now Playing layout.
     @Published var look: LookSettings = {
@@ -202,13 +207,15 @@ final class PlayerModel: ObservableObject {
     /// Counts changes of the look; the root view is rebuilt when it changes, so the type and spacing tokens are read again.
     @Published private(set) var lookRevision = 0
     /// How the page backdrop is painted. Remembered separately for each theme, so Obsidian can stay soft while another theme is flat.
-    @Published var backdrop = BackdropMode.soft { didSet { if backdrop != oldValue, !restoringBackdrop, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdrop.rawValue, forKey: "aureon.backdrop." + theme.id) } } }
+    @Published var backdrop = BackdropMode.soft { didSet { if backdrop != oldValue, !restoringBackdrop, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(backdrop.rawValue, forKey: "aureon.backdrop." + Self.backdropKey(theme)) } } }
     /// While the backdrop is being set to a theme's remembered choice, that is not a new choice and is not saved.
     private var restoringBackdrop = false
+    /// The dark half and its pure black version share a backdrop choice; the light half has its own.
+    static func backdropKey(_ t: Theme) -> String { t.isLight ? t.family + ".light" : t.family }
     func savedBackdrop(for family: String) -> BackdropMode {
         if let e = ProcessInfo.processInfo.environment["AUREON_BACKDROP"], let m = BackdropMode(rawValue: e) { return m }
         // the night themes open on the sky; the day themes on the quiet wash
-        return defaults.string(forKey: "aureon.backdrop." + family).flatMap(BackdropMode.init(rawValue:)) ?? (Theme.named(family).isLight ? .soft : .starlight)
+        return defaults.string(forKey: "aureon.backdrop." + family).flatMap(BackdropMode.init(rawValue:)) ?? (family.hasSuffix(".light") ? .soft : .starlight)
     }
     /// How strong the Album backdrop is (Subtle / Rich / Vivid). One choice for every theme.
     @Published var backdropIntensity: BackdropIntensity = {
@@ -246,16 +253,35 @@ final class PlayerModel: ObservableObject {
         }
     }
 
+    /// Where the colour family is remembered (the key "aureon.themeFamily" belongs to older versions and held a different kind of id).
+    static let familyKey = "aureon.pulse.family"
+
+    /// The family, mode and pure black switch to start with. A saved Pulse choice wins; a choice from the earlier nine-theme builds is carried over (Graphite
+    /// stays Graphite, AMOLED is Graphite on pure black, Stone is Graphite in Light, Sage is Forest in Light, Paper is Cocoa in Light, the other dark themes
+    /// keep their name); with nothing saved it is Graphite, Dark.
+    static func startingTheme(defaults d: UserDefaults, environmentTheme: Theme?) -> (family: String, mode: AppearanceMode, pureBlack: Bool) {
+        if let t = environmentTheme { return (t.family, t.isLight ? .light : .dark, t.pureBlack) }
+        let saved = d.string(forKey: "aureon.appearance").flatMap(AppearanceMode.init(rawValue:))
+        if let f = d.string(forKey: familyKey), Theme.families.contains(where: { $0.id == f }) { return (f, saved ?? .dark, false) }
+        let darkID = d.string(forKey: "aureon.darkTheme") ?? d.string(forKey: "aureon.theme")
+        let lightID = d.string(forKey: "aureon.lightTheme")
+        guard darkID != nil || lightID != nil || saved != nil else { return (Theme.aureon.family, .dark, false) }
+        let mode = saved ?? .dark
+        // the half that was showing decides the family: the light choice when the appearance was Light, the dark one otherwise
+        let from = Theme.migrated(id: mode == .light ? (lightID ?? darkID) : (darkID ?? lightID), light: mode == .light)
+        return (from.family, mode, from.pureBlack && mode != .light)
+    }
+
     func resolveTheme(persist: Bool = true) {
         let systemLight = systemIsLight()
         let light = appearance == .light || (appearance == .system && systemLight)
-        let previous = theme.id
-        theme = Look.themed(Theme.resolve(dark: darkThemeID, light: lightThemeID, wantsLight: light), look)
+        let previous = Self.backdropKey(theme)
+        theme = Look.themed(Theme.resolve(family: themeFamily, light: light, pureBlack: look.pureBlack), look)
         Theme.current = theme
-        // each theme remembers its own backdrop: switching theme brings its choice back
-        if theme.id != previous { restoringBackdrop = true; backdrop = savedBackdrop(for: theme.id); restoringBackdrop = false }
+        // each half of a family remembers its own backdrop: switching brings its choice back
+        if Self.backdropKey(theme) != previous { restoringBackdrop = true; backdrop = savedBackdrop(for: Self.backdropKey(theme)); restoringBackdrop = false }
         if persist, ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil {
-            defaults.set(darkThemeID, forKey: "aureon.darkTheme"); defaults.set(lightThemeID, forKey: "aureon.lightTheme"); defaults.set(appearance.rawValue, forKey: "aureon.appearance")
+            defaults.set(themeFamily, forKey: Self.familyKey); defaults.set(appearance.rawValue, forKey: "aureon.appearance")
         }
     }
     let navigator = Navigator(start: Place(tab: .player))
@@ -414,18 +440,13 @@ final class PlayerModel: ObservableObject {
         followRate = defaults.object(forKey: "aureon.followRate") as? Bool ?? true
         // property observers do not run inside init, so the theme is resolved explicitly
         let envTheme = ProcessInfo.processInfo.environment["AUREON_THEME"].map { Theme.named($0) }
-        // earlier versions kept one family and a dark/light switch: that family's id maps onto the nearest Pulse theme
-        let oldFamily = defaults.string(forKey: "aureon.themeFamily")
-        var dark = Theme.named(defaults.string(forKey: "aureon.darkTheme") ?? oldFamily ?? defaults.string(forKey: "aureon.theme"))
-        var light = Theme.named(defaults.string(forKey: "aureon.lightTheme") ?? oldFamily.map { $0 + ".light" })
-        if dark.isLight { dark = .aureon }
-        if !light.isLight { light = .defaultLight }
-        var mode = AppearanceMode(rawValue: defaults.string(forKey: "aureon.appearance") ?? "") ?? .dark
-        if let t = envTheme { if t.isLight { light = t; mode = .light } else { dark = t; mode = .dark } }
-        darkThemeID = dark.id; lightThemeID = light.id
+        let start = Self.startingTheme(defaults: defaults, environmentTheme: envTheme)
+        themeFamily = start.family
+        if start.pureBlack, !look.pureBlack { look.pureBlack = true }
+        let mode = start.mode
         appearance = mode; observeSystemAppearance()
         resolveTheme()
-        restoringBackdrop = true; backdrop = savedBackdrop(for: theme.id); restoringBackdrop = false
+        restoringBackdrop = true; backdrop = savedBackdrop(for: Self.backdropKey(theme)); restoringBackdrop = false
         DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"), object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if self?.appearance == .system { self?.resolveTheme() } }
         }
