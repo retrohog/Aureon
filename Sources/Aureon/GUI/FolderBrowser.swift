@@ -122,6 +122,12 @@ final class FolderBrowserModel: ObservableObject {
         rebuildRoots(libraryFolders: libraryFolders)
     }
 
+    /// The set of library folders changed (one was added or removed): the roots follow, unless the page has not been shown yet.
+    func libraryFoldersChanged(_ libraryFolders: [String]) {
+        guard bootstrapped else { return }
+        rebuildRoots(libraryFolders: libraryFolders)
+    }
+
     func isSaved(_ node: FolderNode) -> Bool { savedRoots.contains(node.entry.url.path) }
 
     // MARK: reading
@@ -311,6 +317,12 @@ struct FolderBrowserPage: View {
                 m.djMode = false; m.tab = .abx
             },
             removeRoot: { node in FolderBrowserModel.shared.removeRoot(node, libraryFolders: m.library.folders) },
+            isLibraryFolder: { node in m.library.folders.contains { $0 == node.entry.url.path || realPath(URL(fileURLWithPath: $0)).path == node.resolvedPath } },
+            removeFromLibrary: { node in
+                let path = m.library.folders.first { $0 == node.entry.url.path || realPath(URL(fileURLWithPath: $0)).path == node.resolvedPath } ?? node.entry.url.path
+                guard confirmRemoveLibraryFolder(path) else { return }
+                m.library.removeFolder(path)
+            },
             nowPlayingPath: { m.isActive ? m.current?.path : nil }
         )
     }
@@ -327,6 +339,8 @@ struct FolderActions {
     var openBooklet: (URL) -> Void
     var abx: (URL, ABXSlot) -> Void
     var removeRoot: (FolderNode) -> Void
+    var isLibraryFolder: (FolderNode) -> Bool
+    var removeFromLibrary: (FolderNode) -> Void
     var nowPlayingPath: () -> String?
 }
 
@@ -495,7 +509,9 @@ struct FolderOutline: NSViewRepresentable {
             add("Show in Finder", "folder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.entry.url)) }
             add("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(targets.map(\.entry.url.path).joined(separator: "\n"), forType: .string) }
             if n.isFolder { add("Read Again", "arrow.clockwise") { self.model.refresh(n) } }
-            if n.isRoot, model.isSaved(n) { menu.addItem(.separator()); add("Remove from Folders") { a.removeRoot(n) } }
+            if n.isRoot, model.isSaved(n) || a.isLibraryFolder(n) { menu.addItem(.separator()) }
+            if n.isRoot, a.isLibraryFolder(n) { add("Remove from Library…", "minus.circle") { a.removeFromLibrary(n) } }
+            if n.isRoot, model.isSaved(n) { add("Remove from Folders") { a.removeRoot(n) } }
         }
     }
 }

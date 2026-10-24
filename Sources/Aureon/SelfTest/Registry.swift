@@ -173,7 +173,8 @@ func extraTests() -> [(String, TestFn)] {
     let lb = LibraryTests()
     t += [("library.classical", lb.classicalOntology), ("library.multiValued", lb.multiValuedCredits), ("library.retag", lb.reTaggingReplacesCreditsAndPruning),
           ("library.changeLog", lb.changeLogDrivesSync), ("library.search", lb.searchFoldsCaseAndDiacritics), ("library.persist", lb.persistsOnDisk),
-          ("library.import", lb.importFolderEndToEnd)]
+          ("library.import", lb.importFolderEndToEnd),
+          ("library.removeFolder", lb.removeFolderRemovesItsSongs), ("library.forgetFolder", lb.forgetFolderStopsWatching)]
     let ri = RTIntegrationTests()
     t += [("rt.crossfeed", ri.crossfeedThroughThePlayer), ("rt.status", ri.statusReportsTheChainAndBitPerfectFlag),
           ("rt.liveToggle", ri.switchingOnAndOffMidPlaybackIsClean), ("rt.headphoneEQ", ri.headphoneEQThroughThePlayer),

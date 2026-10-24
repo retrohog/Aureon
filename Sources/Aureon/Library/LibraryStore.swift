@@ -267,6 +267,38 @@ final class LibraryStore: @unchecked Sendable {
         }
     }
 
+    /// Deletes every track that is not under one of `roots` (an empty list empties the library). Playlist entries of removed tracks go with them.
+    @discardableResult
+    func removeTracks(excludingRoots roots: [String]) -> Int {
+        let prefixes = roots.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        return removeTracks { path in !prefixes.contains { path.hasPrefix($0) } }
+    }
+
+    /// Deletes the tracks of a library folder that is being removed, except those another remaining folder (a parent, or one inside it) still covers.
+    @discardableResult
+    func removeFolderTracks(root: String, keeping others: [String]) -> Int {
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        let kept = others.filter { $0 != root }.map { $0.hasSuffix("/") ? $0 : $0 + "/" }
+        return removeTracks(under: prefix) { path in !kept.contains { path.hasPrefix($0) } }
+    }
+
+    private func removeTracks(under prefix: String? = nil, where doomed: (String) -> Bool) -> Int {
+        ctx.performAndWait {
+            var deleted: [(kind: String, uid: String)] = []
+            var touched = Touched()
+            let predicate = prefix.map { NSPredicate(format: "path BEGINSWITH %@", $0) }
+            for t in fetch("Track", predicate) where doomed(str(t, "path") ?? "") {
+                if let r = t.value(forKey: "release") as? NSManagedObject, let u = str(r, "uid") { touched.aggregate.insert(u) }
+                deleted.append(("track", str(t, "uid") ?? "")); ctx.delete(t)
+            }
+            guard !deleted.isEmpty else { return 0 }
+            try? ctx.save()
+            deleted += pruneOrphans()
+            commit(touched, deleted: deleted)
+            return deleted.filter { $0.kind == "track" }.count
+        }
+    }
+
     private func pruneOrphans() -> [(kind: String, uid: String)] {
         var out: [(kind: String, uid: String)] = []
         for r in fetch("Release", NSPredicate(format: "tracks.@count == 0")) { out.append(("release", str(r, "uid") ?? "")); ctx.delete(r) }

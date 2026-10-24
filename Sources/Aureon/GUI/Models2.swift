@@ -196,6 +196,7 @@ final class LibraryModel: ObservableObject {
     func addFolder(_ url: URL) {
         let p = realPath(url).path
         if !folders.contains(p) { folders.append(p) }
+        FolderBrowserModel.shared.libraryFoldersChanged(folders)
         scan([p])
     }
 

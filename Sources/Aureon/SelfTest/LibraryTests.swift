@@ -175,5 +175,73 @@ struct LibraryTests {
         expect(r5.removed == 1 && lib.stats().composers == 1, "once the last file crediting Z is gone, Z is pruned: \(lib.stats())")
         expect(lib.parties(role: .composer).map(\.name) == ["Composer Y"])
     }
-}
 
+    /// Taking a library folder out removes its songs and what only they supported, keeps what another folder covers, and leaves the rest alone.
+    func removeFolderRemovesItsSongs() {
+        let lib = store()
+        lib.upsert([symphony(1, conductor: "Carlos Kleiber", ensemble: "Wiener Philharmoniker", album: "A", year: 1975, path: "/lib/classical/a1.flac"),
+                    symphony(2, conductor: "Carlos Kleiber", ensemble: "Wiener Philharmoniker", album: "A", year: 1975, path: "/lib/classical/a2.flac"),
+                    pop("One", artists: ["Alice"], album: "Pop", path: "/lib/pop/1.flac"),
+                    pop("Two", artists: ["Bob"], album: "Pop2", path: "/lib/pop2/2.flac"),
+                    pop("Nested", artists: ["Cy"], album: "Deep", path: "/lib/pop/deep/3.flac"),
+                    pop("Ripped", artists: ["Dee"], album: "Disc", path: "/elsewhere/ripped.flac")])
+        let list = lib.createPlaylist(name: "Mix", paths: ["/lib/classical/a1.flac", "/lib/pop/1.flac"])!
+        let before = lib.revision
+
+        // a folder that does not exist in the library changes nothing
+        expect(lib.removeFolderTracks(root: "/nowhere", keeping: ["/lib/pop"]) == 0 && lib.revision == before)
+
+        // the classical folder goes: its songs, release, work and people with them; the playlist keeps its other entry
+        expect(lib.removeFolderTracks(root: "/lib/classical", keeping: ["/lib/pop", "/lib/pop2"]) == 2)
+        let st = lib.stats()
+        expect(st.tracks == 4 && st.works == 0 && st.composers == 0, "orphans pruned: \(st)")
+        expect(lib.parties(role: .conductor).isEmpty && lib.parties(role: .ensemble).isEmpty)
+        expect(lib.track(path: "/lib/classical/a1.flac") == nil && lib.track(path: "/lib/pop/1.flac") != nil)
+        expect(lib.playlistTracks(id: list.id).map(\.path) == ["/lib/pop/1.flac"], "playlist entries of removed songs go with them")
+        let log = lib.changes(since: before)
+        expect(log.contains { $0.kind == "track" && $0.op == "delete" } && log.contains { $0.kind == "work" && $0.op == "delete" }, "deletions are logged for sync")
+        expect(lib.revision == before + 1)
+
+        // a folder that is still covered by another remaining folder keeps those songs (a parent stays, so nothing under it is lost)
+        expect(lib.removeFolderTracks(root: "/lib/pop/deep", keeping: ["/lib/pop"]) == 0 && lib.track(path: "/lib/pop/deep/3.flac") != nil)
+        // removing the parent keeps what a remaining nested folder covers
+        expect(lib.removeFolderTracks(root: "/lib/pop", keeping: ["/lib/pop/deep", "/lib/pop2"]) == 1)
+        expect(lib.track(path: "/lib/pop/1.flac") == nil && lib.track(path: "/lib/pop/deep/3.flac") != nil && lib.track(path: "/lib/pop2/2.flac") != nil)
+        // a prefix match is by folder, not by name: /lib/pop2 is not under /lib/pop
+        expect(lib.parties(role: .artist).contains { $0.name == "Bob" })
+
+        // excluding roots keeps only what is under them (the ripped disc is outside every library folder)
+        expect(lib.removeTracks(excludingRoots: ["/lib/pop2"]) == 2)
+        expect(lib.stats().tracks == 1 && lib.track(path: "/lib/pop2/2.flac") != nil)
+        expect(lib.removeTracks(excludingRoots: []) == 1 && lib.stats().tracks == 0 && lib.stats().releases == 0)
+    }
+
+    /// A folder taken out of the library is no longer watched and its history is dropped, in memory and on disk; other folders are unaffected.
+    func forgetFolderStopsWatching() {
+        let top = realPath(tempDir("forget-\(UUID().uuidString.prefix(6))"))
+        let a = top.appendingPathComponent("A"), b = top.appendingPathComponent("B"), stateURL = top.appendingPathComponent("watch.json")
+        for u in [a, b] { try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true) }
+        let w = LibraryWatcher(stateURL: stateURL, settle: 0.2)
+        for root in [a.path, b.path] {
+            guard case .needsReconcile(let since) = w.start(root: root) else { expect(false, "first start needs a comparison"); return }
+            w.markReconciled(root: root, eventID: since)
+        }
+        expect(w.watchedRoots == [a.path, b.path] && w.state(of: a.path) != nil)
+
+        w.forget(root: a.path)
+        expect(w.watchedRoots == [b.path], "the stream of the forgotten folder is stopped: \(w.watchedRoots)")
+        expect(w.state(of: a.path) == nil && w.state(of: b.path) != nil)
+        let saved = (try? JSONDecoder().decode([String: LibraryWatcher.State].self, from: Data(contentsOf: stateURL))) ?? [:]
+        expect(saved[a.path] == nil && saved[b.path] != nil, "the history is dropped on disk too: \(saved.keys)")
+        w.forget(root: a.path)                                                     // forgetting twice, or a folder never watched, is harmless
+        w.forget(root: top.appendingPathComponent("never").path)
+        expect(w.watchedRoots == [b.path])
+        w.stopAll()
+
+        // adding the folder again starts from a full comparison, the other one still resumes
+        let again = LibraryWatcher(stateURL: stateURL, settle: 0.2)
+        if case .needsReconcile = again.start(root: a.path) {} else { expect(false, "a folder added again is compared in full") }
+        if case .replaying = again.start(root: b.path) {} else { expect(false, "an untouched folder keeps its history") }
+        again.stopAll()
+    }
+}
