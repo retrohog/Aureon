@@ -13,8 +13,8 @@ enum Brand {
     /// Secondary (7:1) and tertiary (4.5:1) text: the ink at the lowest opacity that still meets those ratios on both surfaces.
     static var inkSecondary: Color { Theme.current.inkSecondary }
     static var inkTertiary: Color { Theme.current.inkTertiary }
-    /// A hairline: the ink at 14 %.
-    static var rule: Color { Theme.current.ink.opacity(Theme.current.isLight ? 0.18 : 0.14) }
+    /// A hairline: the ink at 14 % (18 % on light themes), scaled by the edge setting.
+    static var rule: Color { Theme.current.ink.opacity(Look.ruleOpacity(light: Theme.current.isLight)) }
     /// The coachline: the accent as a fine pinstripe (the player bar's edge, the playhead, active marks).
     static var coachline: Color { Theme.current.accent.opacity(0.7) }
     /// A warm copper for cautions and altered signal (instead of orange), fitted to read on the page in every theme.
@@ -30,6 +30,10 @@ enum Brand {
     /// Flat surfaces
     static var canvas: Color { Theme.current.canvas }
     static var sidebar: Color { Theme.current.sidebar }
+    /// The window behind the panels (top bar, rail), the main panel, and the raised surface (cards, chips, the selected rail item).
+    static var window: Color { Theme.current.sidebar }
+    static var panel: Color { Theme.current.canvas }
+    static var panel2: Color { Theme.current.panel2 }
 }
 
 /// The system's translucent material, e.g. the sidebar showing the desktop through the window.
@@ -226,19 +230,19 @@ struct FluidSlider: View {
     var body: some View {
         GeometryReader { g in
             let w = g.size.width, active = enabled && (hover.v || dragging.v)
-            let h: CGFloat = active ? 2 : 1
+            let h: CGFloat = 5
             let f = fraction(value)
             ZStack(alignment: .leading) {
-                Rectangle().fill(Brand.ink.opacity(enabled ? 0.22 : 0.12)).frame(height: h)
-                Rectangle().fill(tint.opacity(enabled ? 1 : 0.35)).frame(width: max(h, w * f), height: h)
-                Rectangle().fill(tint).frame(width: 2, height: 12)
+                Capsule().fill(Brand.ink.opacity(enabled ? 0.18 : 0.1)).frame(height: h)
+                Capsule().fill((active ? tint : Brand.ink.opacity(0.9)).opacity(enabled ? 1 : 0.35)).frame(width: max(h, w * f), height: h)
+                Circle().fill(Brand.ink).frame(width: 13, height: 13)
                     .opacity(active ? 1 : 0)
-                    .offset(x: min(max(0, w * f - 1), w - 2))
+                    .offset(x: min(max(0, w * f - 6.5), w - 13))
                 if let bubble, enabled, active {
                     let shown = dragging.v ? value : (pointerX.v.map { range.lowerBound + Double(min(1, max(0, $0 / w))) * (range.upperBound - range.lowerBound) } ?? value)
                     Text(bubble(shown)).font(Typo.mono(11, .regular))
                         .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Rectangle().fill(Brand.canvas)).overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+                        .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(Brand.panel2))
                         .foregroundStyle(Brand.ink).fixedSize()
                         .offset(x: min(max(0, (dragging.v ? w * f : (pointerX.v ?? w * f)) - 22), max(0, w - 44)), y: -24)
                         .allowsHitTesting(false).transition(.opacity)
@@ -327,14 +331,13 @@ struct RuleButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         @Environment(\.controlSize) private var size
         var body: some View {
-            let pad: CGFloat = size == .mini ? 6 : (size == .small ? 8 : 12)
+            let pad: CGFloat = size == .mini ? 10 : (size == .small ? 12 : 16)
             configuration.label
-                .font(Typo.sans(size == .mini || size == .small ? 11 : 12, .medium)).tracking(0.4)
+                .font(Typo.sans(size == .mini || size == .small ? 12 : 13, .regular))
                 .foregroundStyle(Brand.ink.opacity(enabled ? 1 : 0.4))
-                .padding(.horizontal, pad).padding(.vertical, size == .mini ? 3 : (size == .small ? 4 : 6))
-                .background(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.ink.opacity(configuration.isPressed ? 0.1 : (hover.v && enabled ? 0.05 : 0))))
-                .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(hover.v && enabled ? Brand.coachline : Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
-                .contentShape(Rectangle())
+                .padding(.horizontal, pad).frame(minHeight: size == .mini ? 24 : (size == .small ? 28 : Metrics.pillHeight))
+                .background(Capsule().fill(configuration.isPressed ? Brand.ink.opacity(0.16) : (hover.v && enabled ? Brand.ink.opacity(0.1) : Brand.panel2)))
+                .contentShape(Capsule())
                 .animation(Motion.touch, value: hover.v)
                 .onHover { hover.v = $0 }
         }
@@ -350,15 +353,15 @@ struct SolidButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var enabled
         @Environment(\.controlSize) private var size
         var body: some View {
-            let pad: CGFloat = size == .mini ? 6 : (size == .small ? 8 : 12)
+            let pad: CGFloat = size == .mini ? 10 : (size == .small ? 12 : 18)
             configuration.label
-                .font(Typo.sans(size == .mini || size == .small ? 11 : 12, .medium)).tracking(0.4)
+                .font(Typo.sans(size == .mini || size == .small ? 12 : 13, .medium))
                 .foregroundStyle(Brand.onAccent)
-                .padding(.horizontal, pad).padding(.vertical, size == .mini ? 3 : (size == .small ? 4 : 6))
-                .background(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).fill(Brand.accent))
+                .padding(.horizontal, pad).frame(minHeight: size == .mini ? 24 : (size == .small ? 28 : Metrics.pillHeight))
+                .background(Capsule().fill(Brand.accent))
                 .brightness(configuration.isPressed ? -0.08 : (hover.v && enabled ? 0.05 : 0))
                 .opacity(enabled ? 1 : 0.4)
-                .contentShape(Rectangle())
+                .contentShape(Capsule())
                 .animation(Motion.touch, value: hover.v)
                 .onHover { hover.v = $0 }
         }
@@ -386,39 +389,20 @@ struct RuleToggleStyle: ToggleStyle {
     }
 }
 
-/// The two segments themselves.
+/// The switch itself: a 44 × 26 capsule, the accent when on, with a round knob.
 struct OnOffSwitch: View {
     let on: Bool
     @StateObject private var hover = Box(false)
     @Environment(\.isEnabled) private var enabled
 
-    static let width: CGFloat = 76, height: CGFloat = 26
+    static let width: CGFloat = 44, height: CGFloat = 26
 
     var body: some View {
-        ZStack {
-            // the block that sits under the active word
-            HStack(spacing: 0) {
-                if on { Spacer(minLength: 0) }
-                ZStack {
-                    Rectangle().fill(on ? Brand.accent : Brand.ink.opacity(0.12))
-                    if !on { Rectangle().fill(Brand.ink.opacity(0.22)).frame(height: Metrics.hairline).frame(maxHeight: .infinity, alignment: .top) }   // the recess: a shadowed top edge
-                }
-                .frame(width: Self.width / 2)
-                if !on { Spacer(minLength: 0) }
-            }
-            HStack(spacing: 0) {
-                Text("OFF").font(Typo.mono(10, on ? .regular : .medium)).tracking(1.4).foregroundStyle(on ? Brand.inkTertiary : Brand.inkSecondary)
-                    .frame(width: Self.width / 2)
-                HStack(spacing: 5) {
-                    Rectangle().fill(on ? Brand.onAccent : Color.clear).frame(width: 4, height: 4)          // the lit mark
-                    Text("ON").font(Typo.mono(10, on ? .medium : .regular)).tracking(1.4).foregroundStyle(on ? Brand.onAccent : Brand.inkTertiary)
-                }
-                .frame(width: Self.width / 2)
-            }
+        ZStack(alignment: on ? .trailing : .leading) {
+            Capsule().fill(on ? Brand.accent : Brand.ink.opacity(hover.v ? 0.26 : 0.2))
+            Circle().fill(on ? Brand.onAccent : Brand.ink).frame(width: 20, height: 20).padding(3)
         }
         .frame(width: Self.width, height: Self.height)
-        .overlay(RoundedRectangle(cornerRadius: 2, style: .continuous).strokeBorder(on ? Brand.coachline : Brand.ink.opacity(hover.v ? 0.5 : 0.32), lineWidth: Metrics.hairline))
-        .clipShape(RoundedRectangle(cornerRadius: 2, style: .continuous))
         .opacity(enabled ? 1 : 0.45)
         .animation(Motion.glide, value: on)
         .onHover { hover.v = $0 }
@@ -431,8 +415,8 @@ extension ToggleStyle where Self == RuleToggleStyle { static var rule: RuleToggl
 extension View {
     /// A text field framed by a hairline (use with `.textFieldStyle(.plain)`).
     func ruleField() -> some View {
-        padding(.horizontal, 8).padding(.vertical, 4)
-            .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
+        padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Capsule().fill(Brand.panel2))
     }
 }
 

@@ -13,15 +13,15 @@ struct Card<Content: View>: View {
     var subtitle: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(Typo.serif(24, .regular)).tracking(-0.3)
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(Typo.serif(22, .medium)).tracking(-0.2)
                 if let subtitle, !subtitle.isEmpty { Text(subtitle).font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true) }
             }
-            VStack(alignment: .leading, spacing: 16) { content }.font(Typo.sans(13))
+            VStack(alignment: .leading, spacing: 14) { content }.font(Typo.sans(13))
         }
-        .padding(.top, 24).padding(.bottom, 16).frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .top) { Rule() }
+        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Metrics.cardRadius, style: .continuous).fill(Brand.panel2))
     }
 }
 
@@ -29,8 +29,8 @@ struct Card<Content: View>: View {
 struct Badge: View {
     let text: String; let color: Color
     var body: some View {
-        Text(text).font(Typo.sans(10, .medium)).tracking(1.2).textCase(.uppercase).padding(.horizontal, 8).padding(.vertical, 4)
-            .overlay(Slab().strokeBorder(color.opacity(0.7), lineWidth: Metrics.hairline)).foregroundStyle(color)
+        Text(text).font(Typo.sans(11, .medium)).padding(.horizontal, 9).frame(height: Metrics.tagHeight)
+            .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(color.opacity(0.14))).foregroundStyle(color)
     }
 }
 
@@ -91,26 +91,26 @@ struct SegmentedChoice<T: Hashable>: View {
     var isDisabled: (T) -> Bool = { _ in false }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(items, id: \.self) { it in
                 let on = it == selection
                 Button { selection = it } label: {
                     HStack(spacing: 4) {
-                        if let icon { Image(systemName: icon(it)).font(Typo.sans(11, .light)) }
-                        Text(label(it)).font(Typo.sans(12, on ? .medium : .regular)).tracking(0.3).lineLimit(singleLine ? 1 : 2).minimumScaleFactor(singleLine ? 0.7 : 1).multilineTextAlignment(.center)
+                        if let icon { Image(systemName: icon(it)).font(Typo.sans(12, .regular)) }
+                        Text(label(it)).font(Typo.sans(13, on ? .medium : .regular)).lineLimit(singleLine ? 1 : 2).minimumScaleFactor(singleLine ? 0.7 : 1).multilineTextAlignment(.center)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 32).padding(.horizontal, 8)
-                    .foregroundStyle(on ? Brand.ink : Brand.inkSecondary)
-                    .background(Rectangle().fill(Brand.ink.opacity(on ? 0.06 : 0)))
-                    .overlay(alignment: .bottom) { Rectangle().fill(Brand.gradient).frame(height: 1).opacity(on ? 1 : 0) }
-                    .contentShape(Rectangle())
+                    .frame(maxWidth: .infinity, minHeight: 30).padding(.horizontal, 12)
+                    .foregroundStyle(on ? Brand.panel : Brand.inkSecondary)
+                    .background(Capsule().fill(on ? Brand.ink : Color.clear))
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .disabled(isDisabled(it)).opacity(isDisabled(it) ? 0.4 : 1)
                 .accessibilityAddTraits(on ? .isSelected : [])
             }
         }
-        .overlay(RoundedRectangle(cornerRadius: Metrics.controlRadius, style: .continuous).strokeBorder(Brand.ink.opacity(0.28), lineWidth: Metrics.hairline))
+        .padding(3)
+        .background(Capsule().fill(Brand.panel2))
         .animation(Motion.touch, value: selection)
     }
 }

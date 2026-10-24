@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-// Layout, shape and contrast tokens of the interface. Spacing sits on an 8-point grid (4 for the tight steps), rules are hairlines, and corners
-// are square-ish: nothing is rounder than 4 points, and there are no pills.
+// Layout, shape and contrast tokens of the interface. Spacing sits on an 8-point grid (4 for the tight steps), rules are hairlines, and shapes are
+// round: panels 16, cards 14, controls 10, tags 6, and pills for buttons, chips and search.
 
 enum Metrics {
     /// The grid unit. Layout values are multiples of it (or of half of it).
@@ -11,18 +11,27 @@ enum Metrics {
     /// A hairline: half a point, which is one device pixel on a Retina display.
     static let hairline: CGFloat = 0.5
 
-    /// Any corner radius that is asked for, brought into the 2…4 point range (tiny radii on bars and ticks stay as they are).
+    /// The corners of the shell: the main panel, a card, a control, a tag.
+    static let panelRadius: CGFloat = 16
+    static let cardRadius: CGFloat = 14
+    static let controlRadius: CGFloat = 10
+    static let tagRadius: CGFloat = 6
+
+    /// Any corner radius that is asked for, kept within what the shell uses (1…20 points; tiny radii on bars and ticks stay as they are).
     static func radius(_ r: CGFloat) -> CGFloat {
         if r < 2.5 { return r }
-        if r <= 9 { return 2 }
-        if r <= 16 { return 3 }
-        return 4
+        return max(Metrics.tagRadius, min(r, 20))
     }
-    static let controlRadius: CGFloat = 3
-    static let tagRadius: CGFloat = 2
 
     /// The nearest step of the 4-point grid (4, 8, 12, 16, …); used for values that came from the old, free-hand layout.
     static func snap4(_ v: CGFloat) -> CGFloat { v <= 0 ? 0 : max(4, (v / 4).rounded() * 4) }
+
+    // The fixed sizes of the shell.
+    static let topBarHeight: CGFloat = 52
+    static let railWidth: CGFloat = 72
+    static let playerBarHeight: CGFloat = 96
+    static let pillHeight: CGFloat = 36
+    static let tagHeight: CGFloat = 24
 }
 
 /// A rectangle with the interface's smallest radius, standing in for capsules: tracks, tags, indicator bars.
@@ -73,9 +82,9 @@ enum WCAG {
 
     /// `c` moved towards white (on a dark `background`) or black (on a light one), in small steps of lightness, until it reaches `minimum`:1.
     /// The hue and most of the saturation are kept; if even the extreme is not enough the extreme is returned.
-    static func fit(_ c: RGB, against background: RGB, minimum: Double) -> RGB {
+    static func fit(_ c: RGB, against background: RGB, minimum: Double, towardWhite forced: Bool? = nil) -> RGB {
         if contrast(c, background) >= minimum { return c }
-        let towardWhite = luminance(background) < 0.4
+        let towardWhite = forced ?? (luminance(background) < 0.18)
         var t = 0.0
         while t < 1 {
             t += 0.02

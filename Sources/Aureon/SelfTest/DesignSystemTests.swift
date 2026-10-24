@@ -16,39 +16,48 @@ struct DesignSystemTests {
     // MARK: themes
 
     func everyThemeMeetsContrast() {
-        expect(Theme.all.count == Theme.families.count * 2 && Set(Theme.all.map(\.id)).count == Theme.all.count, "every family has a dark and a light variant, with unique ids")
-        for t in Theme.all {
+        expect(Theme.all.count == 9 && Set(Theme.all.map(\.id)).count == 9, "nine themes with unique ids")
+        expect(Theme.dark.map(\.name) == ["Graphite", "AMOLED", "Midnight", "Forest", "Plum", "Cocoa"] && Theme.light.map(\.name) == ["Stone", "Sage", "Paper"], "six dark themes and three light ones")
+        // the light themes are checked across the whole brightness slider, the accent across a spread of picked colours
+        var shown = Theme.all
+        for b in [0.0, 0.35, 1.0] { shown += Theme.light.map { $0.adjusted(lightBrightness: b) } }
+        for hue in stride(from: 0.0, to: 1.0, by: 0.125) { shown += Theme.all.map { $0.withAccent(RGB(h: hue, s: 0.9, v: 0.9)) } }
+        for t in shown {
             for s in t.surfaces {
                 expect(ratio(t.inkRGB, s) >= 6.5, "ink on \(t.id): \(ratio(t.inkRGB, s))")
                 expect(ratio(t.inkSecondaryRGB, s) >= min(7, ratio(t.inkRGB, s)) - 1e-9, "secondary ink on \(t.id): \(ratio(t.inkSecondaryRGB, s))")
                 expect(ratio(t.inkTertiaryRGB, s) >= 4.5 - 1e-9, "tertiary ink on \(t.id): \(ratio(t.inkTertiaryRGB, s))")
                 expect(ratio(t.accentTextRGB, s) >= 4.5 - 1e-9, "accent as text on \(t.id): \(ratio(t.accentTextRGB, s))")
             }
-            for s in [t.canvasRGB, t.sidebarRGB] {
-                expect(ratio(t.accentRGB, s) >= 3, "accent against \(t.id): \(ratio(t.accentRGB, s))")
-                expect(ratio(t.accent2RGB, s) >= 3, "second accent against \(t.id): \(ratio(t.accent2RGB, s))")
+            // the designed accents carry 3:1 on their surfaces; a picked colour is held to it by `accentTextRGB` instead (checked above)
+            if t.accentRGB == Theme.named(t.id).accentRGB {
+                for s in [t.canvasRGB, t.sidebarRGB, t.panel2RGB] { expect(ratio(t.accentRGB, s) >= 3, "accent against \(t.id): \(ratio(t.accentRGB, s))") }
             }
             expect(ratio(t.onAccentRGB, t.accentRGB) >= 4.5, "the label on a solid accent in \(t.id): \(ratio(t.onAccentRGB, t.accentRGB))")
             expect(t.isLight == (WCAG.luminance(t.canvasRGB) > 0.4), "\(t.id) is as light as it says")
         }
     }
 
-    func defaultThemesAreObsidianAndIvory() {
-        expect(Theme.families.first?.id == "obsidian" && Theme.aureon.id == "obsidian", "Obsidian is the default")
-        expect(Theme.named("obsidian.light").name == "Obsidian" && Theme.named("obsidian.light").isLight, "Ivory is Obsidian's day version")
-        expect(Theme.named("light").id == "obsidian.light", "the old plain light is Ivory")
-        // themes that were removed (the purple and pink ones) fall back to the default
-        for gone in ["synthwave", "dracula", "catppuccin", "album", "nonsense", ""] { expect(Theme.named(gone).id == "obsidian", "\(gone) falls back") }
-        // neutral chrome: the surfaces and ink of the signature themes carry almost no saturation
-        for id in ["obsidian", "obsidian.light"] {
-            let t = Theme.named(id)
-            func chroma(_ c: RGB) -> Double { max(c.r, c.g, c.b) - min(c.r, c.g, c.b) }
-            expect(chroma(t.canvasRGB) < 0.06 && chroma(t.sidebarRGB) < 0.07 && chroma(t.inkRGB) < 0.1, "\(id) chrome is neutral")
-        }
-        // the accent is champagne gold: warm hue, restrained saturation
-        let a = Theme.aureon.accentRGB.hsb
-        expect(a.h > 0.08 && a.h < 0.14 && a.s < 0.6, "champagne, not neon: \(a)")
-        for t in Theme.all.prefix(6) { expect(t.accentRGB.hsb.h < 0.17 || t.family == "evergreen" || t.family == "nord", "the signature themes avoid blue and purple accents") }
+    func defaultThemesAreGraphiteAndStone() {
+        expect(Theme.all.first?.id == "graphite" && Theme.aureon.id == "graphite", "Graphite is the default")
+        expect(Theme.defaultLight.id == "stone" && Theme.defaultLight.isLight, "Stone is the default for day")
+        // earlier ids are carried over
+        for (old, new) in [("obsidian", "graphite"), ("obsidian.light", "stone"), ("light", "stone"), ("bespoke", "forest"), ("gruvbox.light", "paper")] { expect(Theme.named(old).id == new, "\(old) became \(new)") }
+        // ids that were removed fall back to the default
+        for gone in ["synthwave", "dracula", "catppuccin", "album", "nonsense", ""] { expect(Theme.named(gone).id == "graphite", "\(gone) falls back") }
+        // AMOLED is true black behind everything
+        let amoled = Theme.named("amoled")
+        expect(amoled.sidebarRGB == RGB(0, 0, 0) && WCAG.luminance(amoled.canvasRGB) < 0.005, "AMOLED is true black")
+        // the light themes are muted: no panel is brighter than a soft grey
+        for t in Theme.light { expect(WCAG.luminance(t.canvasRGB) < 0.65, "\(t.id) does not dazzle: \(WCAG.luminance(t.canvasRGB))") }
+        // the brightness slider moves the surfaces monotonically and leaves dark themes alone
+        let lo = Theme.defaultLight.adjusted(lightBrightness: 0), mid = Theme.defaultLight.adjusted(lightBrightness: 0.35), hi = Theme.defaultLight.adjusted(lightBrightness: 1)
+        expect(WCAG.luminance(lo.canvasRGB) < WCAG.luminance(mid.canvasRGB) && WCAG.luminance(mid.canvasRGB) < WCAG.luminance(hi.canvasRGB), "brightness is monotonic")
+        expect(mid == Theme.defaultLight && Theme.aureon.adjusted(lightBrightness: 1) == Theme.aureon, "the designed tone is the default; dark themes ignore it")
+        // a picked accent replaces the theme's and derives its companion
+        let blue = Theme.aureon.withAccent(Look.color(hex: "3FA7FF"))
+        expect(blue.accentRGB == Look.color(hex: "3FA7FF")! && blue.accent2RGB != blue.accentRGB && Theme.aureon.withAccent(nil) == Theme.aureon, "accent picker")
+        expect(Look.color(hex: "#3fa7ff") != nil && Look.color(hex: "zzz") == nil && Look.hex(Look.color(hex: "3FA7FF")!) == "3FA7FF", "hex round trip")
     }
 
     // MARK: type
@@ -56,15 +65,26 @@ struct DesignSystemTests {
     func typographyTokensArePresent() {
         expect(Typo.scale == Typo.scale.sorted() && Typo.scale.count >= 8, "an ordered scale")
         for odd: CGFloat in [9.5, 10.5, 11.5, 12.5, 13.5, 14, 16, 18, 22, 26, 30, 32, 36, 48] { expect(Typo.scale.contains(Typo.snap(odd)), "\(odd) snaps onto the scale") }
-        expect(Typo.snap(13) == 13 && Typo.snap(12.4) == 12 && Typo.snap(100) == 56)
-        // weights: bold is medium in the sans and mono, the serif goes light from 20 points
-        expect(Typo.sansWeight(.bold) == .medium && Typo.sansWeight(.semibold) == .medium && Typo.sansWeight(.regular) == .regular && Typo.sansWeight(.ultraLight) == .light)
+        expect(Typo.snap(13) == 13 && Typo.snap(12.4) == 12 && Typo.snap(100) == 56 && Typo.snap(44) == 44 && Typo.snap(14.5) == 14.5)
+        // weights: Regular is the default; bold is Medium and nothing is heavier; Light only when asked for
+        var look = LookSettings()
+        expect(look.weight == .regular && Typo.sansWeight(.regular, look) == .regular && Typo.sansWeight(.medium, look) == .medium, "Regular by default")
+        expect(Typo.sansWeight(.bold, look) == .medium && Typo.sansWeight(.semibold, look) == .medium && Typo.sansWeight(.ultraLight, look) == .light)
+        look.weight = .light
+        expect(Typo.sansWeight(.regular, look) == .light && Typo.sansWeight(.medium, look) == .regular, "the Light setting lightens body and titles by a step")
+        look.weight = .medium
+        expect(Typo.sansWeight(.regular, look) == .medium && Typo.sansWeight(.bold, look) == .medium, "Medium is the heaviest")
+        look.weight = .regular
+        expect(Typo.titleWeight(.light, size: 44, look) == .medium && Typo.titleWeight(.regular, size: 15, look) == .regular, "titles are one step above running text")
         expect(Typo.monoWeight(.bold, size: 11) == .medium && Typo.monoWeight(.regular, size: 28) == .light)
-        expect(Typo.serifWeight(.semibold, size: 28) == .regular && Typo.serifWeight(.regular, size: 40) == .light && Typo.serifWeight(.regular, size: 15) == .regular)
-        // roles: labels are upper-case and widely tracked, running text is tight
-        expect(TypoStyle.label.uppercase && TypoStyle.label.tracking >= 1.5 && TypoStyle.labelMono.uppercase && TypoStyle.labelMono.tracking >= 1.2)
+        // roles: labels are upper-case and tracked, running text is tight
+        expect(TypoStyle.label.uppercase && TypoStyle.label.tracking >= 1 && TypoStyle.labelMono.uppercase && TypoStyle.labelMono.tracking >= 1)
         expect(TypoStyle.body.tracking < 0 && TypoStyle.pageTitle.tracking < 0 && !TypoStyle.body.uppercase)
-        expect(Typo.microTracking >= 1.5 && Typo.bodyTracking < 0)
+        expect(Typo.microTracking >= 1 && Typo.bodyTracking < 0)
+        // the text-size setting scales every size
+        let saved = Look.current; defer { Look.current = saved }
+        Look.current.textScale = 1.2
+        expect(abs(Typo.sized(13) - 15.6) < 0.001, "text size scales")
     }
 
     func noScatteredFontsOrSprings() {
@@ -77,21 +97,23 @@ struct DesignSystemTests {
             expect(!text.contains(".system(size:"), "\(name) sets a font directly; use Typo")
         }
         for (name, text) in sources {
-            for banned in [".spring(", ".bouncy", ".interpolatingSpring", "Capsule("] { expect(!text.contains(banned), "\(name) uses \(banned)") }
+            for banned in [".spring(", ".bouncy", ".interpolatingSpring"] { expect(!text.contains(banned), "\(name) uses \(banned)") }
         }
     }
 
     // MARK: metrics
 
-    func metricsStayOnTheGridAndSquare() {
-        for r: CGFloat in [2.5, 3, 5, 6, 8, 10, 12, 14, 16, 18, 20, 28, 40] { expect(Metrics.radius(r) >= 2 && Metrics.radius(r) <= 4, "radius \(r) → \(Metrics.radius(r))") }
+    func metricsStayOnTheGridAndRound() {
+        for r: CGFloat in [2.5, 3, 5, 6, 8, 10, 12, 14, 16, 18, 20, 28, 40] { expect(Metrics.radius(r) >= 6 && Metrics.radius(r) <= 20, "radius \(r) → \(Metrics.radius(r))") }
+        expect(Metrics.panelRadius == 16 && Metrics.cardRadius == 14 && Metrics.controlRadius == 10 && Metrics.tagRadius == 6, "the shapes of the shell")
+        expect(Metrics.topBarHeight == 52 && Metrics.railWidth == 72 && Metrics.playerBarHeight == 96 && Metrics.pillHeight == 36 && Metrics.tagHeight == 24, "the fixed sizes of the shell")
         expect(Metrics.radius(1.5) == 1.5 && Metrics.radius(0) == 0, "tiny radii are kept")
         expect(Metrics.unit == 8 && Metrics.grid(3) == 24 && Metrics.hairline == 0.5)
         for v: CGFloat in [1, 5, 7, 9, 10, 13, 17, 22] { expect(Metrics.snap4(v) .truncatingRemainder(dividingBy: 4) == 0 && Metrics.snap4(v) >= 4, "\(v) → \(Metrics.snap4(v))") }
         expect(Metrics.snap4(0) == 0)
-        // a slab is a rectangle with a barely softened corner, never a capsule
+        // a slab is a rounded tag shape
         let p = Slab().path(in: CGRect(x: 0, y: 0, width: 40, height: 20))
-        expect(p.boundingRect == CGRect(x: 0, y: 0, width: 40, height: 20) && Slab().radius <= 4)
+        expect(p.boundingRect == CGRect(x: 0, y: 0, width: 40, height: 20) && Slab().radius == Metrics.tagRadius)
         // motion: every transition is slow and unhurried
         expect(Motion.glide != Motion.touch)
     }
@@ -99,7 +121,7 @@ struct DesignSystemTests {
     // MARK: accent pair
 
     func accentPairStaysInOneColourFamily() {
-        let light = Theme.named("obsidian.light"), dark = Theme.named("obsidian")
+        let light = Theme.named("stone"), dark = Theme.named("graphite")
         for step in 0..<20 {
             let h = Double(step) / 20
             let source = RGB(h: h, s: 0.8, v: 0.9)
@@ -161,7 +183,7 @@ struct DesignSystemTests {
             }
         }
         // on a light theme the cover can only darken the page, within the same budget
-        let l = Theme.named("obsidian.light")
+        let l = Theme.named("stone")
         let ctx = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
         ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 32, height: 32))
         let reach = abs(WCAG.luminance(l.backdropLimitRGB) - WCAG.luminance(l.canvasRGB))

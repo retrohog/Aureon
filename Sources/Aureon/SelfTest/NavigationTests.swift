@@ -60,7 +60,7 @@ struct NavigationTests {
         for s in SettingsSection.allCases { expect(goes.contains(.settings(s)), "the palette has no settings section \(s)") }
         expect(goes.contains(.dj), "the palette has the DJ console")
         expect(all.allSatisfy { !$0.title.isEmpty && !$0.icon.isEmpty && !$0.group.isEmpty })
-        for f in Theme.families { expect(all.contains { $0.action == .theme(f.id) }, "theme \(f.id)") }
+        for f in Theme.all { expect(all.contains { $0.action == .theme(f.id) }, "theme \(f.id)") }
         for b in BackdropMode.allCases { expect(all.contains { $0.action == .backdrop(b) }, "backdrop \(b)") }
         for a in AppearanceMode.allCases { expect(all.contains { $0.action == .appearance(a) }) }
         for act in [PaletteAction.togglePlay, .next, .previous, .toggleQueue, .showLyrics, .addMusic] { expect(all.contains { $0.action == act }, "\(act)") }
@@ -128,7 +128,7 @@ struct ControlTests {
             // the two states differ clearly: the gold block against the recess
             expect(WCAG.contrast(t.accentRGB, recess) >= 2, "the lit block stands out from the recess in \(t.id)")
         }
-        expect(OnOffSwitch.width >= 64 && OnOffSwitch.height >= 24, "a comfortable target")
+        expect(OnOffSwitch.width >= 44 && OnOffSwitch.height >= 24, "a comfortable target")
     }
 
     func shuffleListShowsEveryMode() {

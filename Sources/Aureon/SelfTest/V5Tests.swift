@@ -29,7 +29,7 @@ struct BackdropGlassTests {
     }
 
     func intensityLevelsAreDistinctAndSafe() {
-        for id in ["obsidian", "obsidian.light"] {
+        for id in ["graphite", "stone"] {
             let t = Theme.named(id)
             let shift = abs(WCAG.luminance(t.backdropLimitRGB) - WCAG.luminance(t.canvasRGB))
             var reach: [Double] = []
@@ -69,7 +69,7 @@ struct BackdropGlassTests {
         expect(GlassPolicy.surface(enabled: false, reduceTransparency: false) == .flat, "the setting off: flat")
         expect(GlassPolicy.surface(enabled: true, reduceTransparency: true) == .flat, "Reduce Transparency: flat")
         expect(GlassPolicy.surface(enabled: false, reduceTransparency: true) == .flat)
-        expect(GlassPolicy.radius >= 10 && GlassPolicy.radius <= 14 && GlassPolicy.popoverRadius >= 10 && GlassPolicy.flatRadius <= 4, "glass is gentler than the chrome's 2 to 4 points")
+        expect(GlassPolicy.radius >= 10 && GlassPolicy.radius <= 14 && GlassPolicy.popoverRadius >= 10 && GlassPolicy.flatRadius <= Metrics.panelRadius, "glass stays within the shell's radii")
         MainActor.assumeIsolated {
             let m = PlayerModel(); v5KeepAlive.append(m)
             expect(m.glassAccents || ProcessInfo.processInfo.environment["AUREON_GLASS"] == "0", "on by default")
@@ -188,25 +188,30 @@ func soundQuickTests() -> [(String, TestFn)] {
 struct AppearanceTests {
     func theSwitchTogglesThePairAndRemembers() {
         let ud = UserDefaults.standard
-        let savedMode = ud.string(forKey: "aureon.appearance"), savedFamily = ud.string(forKey: "aureon.themeFamily")
+        let keys = ["aureon.appearance", "aureon.darkTheme", "aureon.lightTheme"]
+        let saved = keys.map { ud.string(forKey: $0) }
         defer {
-            if let savedMode { ud.set(savedMode, forKey: "aureon.appearance") } else { ud.removeObject(forKey: "aureon.appearance") }
-            if let savedFamily { ud.set(savedFamily, forKey: "aureon.themeFamily") } else { ud.removeObject(forKey: "aureon.themeFamily") }
+            for (k, v) in zip(keys, saved) { if let v { ud.set(v, forKey: k) } else { ud.removeObject(forKey: k) } }
             Theme.current = Theme.aureon
         }
         let m = PlayerModel(); v5KeepAlive.append(m)
-        m.themeFamily = "obsidian"; m.appearance = .dark
-        expect(!m.theme.isLight && m.theme.id == "obsidian")
+        m.choose(theme: Theme.named("graphite")); m.appearance = .dark
+        expect(!m.theme.isLight && m.theme.id == "graphite")
+        m.choose(theme: Theme.named("sage"))
+        expect(m.theme.isLight && m.theme.id == "sage" && m.appearance == .light, "choosing a light theme shows it: \(m.theme.id)")
         m.toggleAppearance(from: nil)
-        expect(m.theme.isLight && m.theme.id == "obsidian.light" && m.appearance == .light, "Obsidian's pair is Ivory: \(m.theme.id)")
-        expect(ud.string(forKey: "aureon.appearance") == "light", "remembered")
+        expect(!m.theme.isLight && m.theme.id == "graphite" && m.appearance == .dark && ud.string(forKey: "aureon.appearance") == "dark", "the switch returns to the dark choice")
         m.toggleAppearance(from: nil)
-        expect(!m.theme.isLight && m.appearance == .dark && ud.string(forKey: "aureon.appearance") == "dark")
-        // every theme has the other half of its pair
-        for f in Theme.families { expect(Theme.resolve(family: f.id, light: true).isLight && !Theme.resolve(family: f.id, light: false).isLight && Theme.resolve(family: f.id, light: true).family == f.id, "\(f.id) has both") }
+        expect(m.theme.id == "sage" && ud.string(forKey: "aureon.appearance") == "light" && ud.string(forKey: "aureon.lightTheme") == "sage", "and to the light choice, remembered")
+        // Auto keeps both choices, whichever is shown
+        m.appearance = .system
+        m.choose(theme: Theme.named("plum"))
+        expect(m.darkThemeID == "plum" && m.lightThemeID == "sage" && m.appearance == .system, "Auto keeps its mode when a theme is picked")
         expect(AppearanceSwitching.target(isLight: true) == .dark && AppearanceSwitching.target(isLight: false) == .light)
-        expect(AppearanceSwitching.tooltip(family: "obsidian", isLight: false).contains("light") && AppearanceSwitching.tooltip(family: "obsidian", isLight: true).contains("dark"))
+        expect(AppearanceSwitching.tooltip(dark: "plum", light: "sage", isLight: false).contains("Sage") && AppearanceSwitching.tooltip(dark: "plum", light: "sage", isLight: true).contains("Plum"))
         expect(AppearanceMode.allCases.map(\.title) == ["Auto", "Light", "Dark"], "Light, Dark, Auto in Settings")
+        // resolving a light theme for the dark slot (or the reverse) falls back to a theme of the right kind
+        expect(!Theme.resolve(dark: "stone", light: "stone", wantsLight: false).isLight && Theme.resolve(dark: "graphite", light: "plum", wantsLight: true).isLight)
     }
 
     func autoFollowsTheSystem() {
@@ -214,7 +219,7 @@ struct AppearanceTests {
         let savedMode = ud.string(forKey: "aureon.appearance")
         defer { if let savedMode { ud.set(savedMode, forKey: "aureon.appearance") } else { ud.removeObject(forKey: "aureon.appearance") }; Theme.current = Theme.aureon }
         let m = PlayerModel(); v5KeepAlive.append(m)
-        m.themeFamily = "obsidian"
+        m.choose(theme: Theme.named("graphite")); m.choose(theme: Theme.named("stone"))
         var light = true
         m.systemIsLight = { light }
         m.appearance = .system

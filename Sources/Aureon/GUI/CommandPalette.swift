@@ -65,7 +65,7 @@ enum PaletteCatalog {
             PaletteItem(id: "act:lyrics", title: "Lyrics", group: "Playback", icon: "quote.bubble", action: .showLyrics),
             PaletteItem(id: "act:add", title: "Add a music folder", group: "Library", icon: "folder.badge.plus", action: .addMusic, keywords: "import scan"),
         ]
-        out += Theme.families.map { PaletteItem(id: "theme:" + $0.id, title: "Theme · " + $0.name, group: "Appearance", icon: "paintpalette", action: .theme($0.id), keywords: "colour color") }
+        out += Theme.all.map { PaletteItem(id: "theme:" + $0.id, title: "Theme · " + $0.name, group: "Appearance", icon: "paintpalette", action: .theme($0.id), keywords: "colour color") }
         out += AppearanceMode.allCases.map { PaletteItem(id: "appearance:" + $0.rawValue, title: "Appearance · " + $0.title, group: "Appearance", icon: $0.icon, action: .appearance($0), keywords: "dark light day night") }
         out += BackdropMode.allCases.map { PaletteItem(id: "backdrop:" + $0.rawValue, title: "Backdrop · " + $0.title, group: "Appearance", icon: "circle.lefthalf.filled", action: .backdrop($0), keywords: "background gradient blur stars") }
         out += SoundSection.allCases.map { PaletteItem(id: "sound:" + $0.rawValue, title: "Sound · " + $0.title, group: "Atelier", icon: $0.icon, action: .sound($0), keywords: "sound audio settings " + $0.blurb) }
@@ -191,7 +191,7 @@ enum PaletteRunner {
             p.message = "Choose the folder(s) that contain your music"
             // after the action has returned: a modal loop run inside a SwiftUI action can leave the window unresponsive
             DispatchQueue.main.async { if p.runModal() == .OK { p.urls.forEach { m.library.addFolder($0) } } }
-        case .theme(let id): withAnimation(Motion.glide) { m.themeFamily = id }
+        case .theme(let id): withAnimation(Motion.glide) { m.choose(theme: Theme.named(id)) }
         case .appearance(let mode): withAnimation(Motion.glide) { m.appearance = mode }
         case .backdrop(let mode): m.backdrop = mode
         case .sound(let section): withAnimation(Motion.page) { m.showSound(section) }
