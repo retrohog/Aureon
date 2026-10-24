@@ -8,10 +8,16 @@ import SwiftUI
 /// The values are stored as `RGB` so contrast can be computed on them: `ink`, its two lighter steps and the accent are all held to WCAG AA
 /// against every surface, for every theme.
 struct Theme: Identifiable, Equatable {
+    /// "graphite" (dark), "graphite.light", and "graphite.black" for the dark one on pure black.
     let id: String
+    /// The family: "graphite", "midnight", "forest", "plum", "cocoa".
+    let family: String
+    /// The family's name (the same for its dark and light halves).
     let name: String
     let blurb: String
     var isLight = false
+    /// Dark on pure black: the window is black and the panels sit just above it.
+    var pureBlack = false
     var canvasRGB: RGB            // the main panel: pages and the player bar
     var sidebarRGB: RGB           // the window behind the panels: top bar and rail
     var panel2RGB: RGB            // raised surfaces: cards, chips, the selected rail item
@@ -73,9 +79,9 @@ struct Theme: Identifiable, Equatable {
     /// window, panel, raised surface, ink, accent
     typealias Palette = (window: UInt32, panel: UInt32, panel2: UInt32, ink: UInt32, accent: UInt32)
 
-    private static func make(_ id: String, _ name: String, _ blurb: String, light: Bool, _ p: Palette) -> Theme {
+    private static func make(_ family: String, _ name: String, _ blurb: String, light: Bool, _ p: Palette) -> Theme {
         let accent = rgbValue(p.accent)
-        return Theme(id: id, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(p.panel), sidebarRGB: rgbValue(p.window), panel2RGB: rgbValue(p.panel2),
+        return Theme(id: light ? family + ".light" : family, family: family, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(p.panel), sidebarRGB: rgbValue(p.window), panel2RGB: rgbValue(p.panel2),
                      inkRGB: rgbValue(p.ink), accentRGB: accent, accent2RGB: companion(of: accent))
     }
 
@@ -86,43 +92,73 @@ struct Theme: Identifiable, Equatable {
         return accent.hueShifted(shift).with(saturation: min(1, h.s * 1.05), brightness: h.v * 0.86)
     }
 
-    /// The nine themes, dark ones first. The light ones are muted on purpose: panels sit a step darker than paper white (see `Look.lightBrightness`).
-    static let all: [Theme] = [
-        make("graphite", "Graphite", "Warm charcoal with amber", light: false, (0x0C0C0E, 0x161619, 0x222227, 0xF6F3EC, 0xF2B84B)),
-        make("amoled", "AMOLED", "True black, for OLED screens", light: false, (0x000000, 0x0A0A0A, 0x171717, 0xF4F1EA, 0xF2B84B)),
-        make("midnight", "Midnight", "Deep navy with a clear blue", light: false, (0x080B14, 0x0F1424, 0x1A2036, 0xEEF2FF, 0x7FA6FF)),
-        make("forest", "Forest", "Green-black with soft leaf green", light: false, (0x0A110D, 0x111B15, 0x1B2A21, 0xEEF4EA, 0x9ED38A)),
-        make("plum", "Plum", "Aubergine with rose", light: false, (0x100A12, 0x1A1220, 0x28192F, 0xF7EEF6, 0xF09AD0)),
-        make("cocoa", "Cocoa", "Dark roast with apricot", light: false, (0x120D0A, 0x1D1511, 0x2B201A, 0xF6EEE6, 0xF0A36B)),
-        make("stone", "Stone", "Soft grey day theme with bronze", light: true, (0xC0BEB6, 0xCBC9C1, 0xB5B3AA, 0x201D18, 0x6A4300)),
-        make("sage", "Sage", "Muted green day theme", light: true, (0xB9C0B2, 0xC5CCBE, 0xABB3A3, 0x181D16, 0x2B5436)),
-        make("paper", "Paper", "Warm paper with rust", light: true, (0xCAC0AC, 0xD4CBB8, 0xBDB39E, 0x1E1913, 0x7E3418)),
+    /// A colour family: one palette for the night and one for the day. Which of them is used is the Appearance mode (Dark, Light or Auto).
+    struct Family: Identifiable {
+        let id: String
+        let name: String
+        let blurb: String
+        let dark: Theme
+        let light: Theme
+    }
+
+    /// The five families. The light halves are muted on purpose: panels sit a step darker than paper white (see `Look.lightBrightness`).
+    static let families: [Family] = [
+        family("graphite", "Graphite", "Warm charcoal with amber; warm grey by day", dark: (0x0C0C0E, 0x161619, 0x222227, 0xF6F3EC, 0xF2B84B), light: (0xC0BEB6, 0xCBC9C1, 0xB5B3AA, 0x201D18, 0x6A4300)),
+        family("midnight", "Midnight", "Deep navy with a clear blue; blue-grey by day", dark: (0x080B14, 0x0F1424, 0x1A2036, 0xEEF2FF, 0x7FA6FF), light: (0xB4BDCB, 0xC2CAD6, 0xA6B0C0, 0x121827, 0x2F4F9E)),
+        family("forest", "Forest", "Green-black with soft leaf green; sage by day", dark: (0x0A110D, 0x111B15, 0x1B2A21, 0xEEF4EA, 0x9ED38A), light: (0xB9C0B2, 0xC5CCBE, 0xABB3A3, 0x181D16, 0x2B5436)),
+        family("plum", "Plum", "Aubergine with rose; lilac-grey by day", dark: (0x100A12, 0x1A1220, 0x28192F, 0xF7EEF6, 0xF09AD0), light: (0xC4BBC9, 0xD0C8D5, 0xB6ACBC, 0x1E1424, 0x7A2E6E)),
+        family("cocoa", "Cocoa", "Dark roast with apricot; warm paper by day", dark: (0x120D0A, 0x1D1511, 0x2B201A, 0xF6EEE6, 0xF0A36B), light: (0xCAC0AC, 0xD4CBB8, 0xBDB39E, 0x1E1913, 0x7E3418)),
     ]
+
+    private static func family(_ id: String, _ name: String, _ blurb: String, dark: Palette, light: Palette) -> Family {
+        Family(id: id, name: name, blurb: blurb, dark: make(id, name, blurb, light: false, dark), light: make(id, name, blurb, light: true, light))
+    }
+
+    /// Every theme: each family's dark half and its light half.
+    static let all: [Theme] = families.flatMap { [$0.dark, $0.light] }
     static let dark: [Theme] = all.filter { !$0.isLight }
     static let light: [Theme] = all.filter { $0.isLight }
 
     /// The theme used before anything is chosen and when an id is unknown: Graphite.
-    static let aureon = all[0]
-    static let defaultLight = all.first { $0.id == "stone" }!
+    static let aureon = families[0].dark
+    static let defaultLight = families[0].light
 
-    /// Ids of earlier versions and what they became.
+    /// This dark theme on pure black: the window is #000000 and the panels are the family's own, taken most of the way down, so the tint stays.
+    var onPureBlack: Theme {
+        guard !isLight else { return self }
+        var t = Theme(id: family + ".black", family: family, name: name, blurb: blurb, isLight: false, pureBlack: true, canvasRGB: canvasRGB.mixed(with: RGB(0, 0, 0), 0.55),
+                      sidebarRGB: RGB(0, 0, 0), panel2RGB: panel2RGB.mixed(with: RGB(0, 0, 0), 0.32), inkRGB: inkRGB, accentRGB: accentRGB, accent2RGB: accent2RGB)
+        t.isLight = false
+        return t
+    }
+
+    /// Ids of earlier versions and what they became (an id that ends in ".black" is a family on pure black).
     static let legacy: [String: String] = [
         "obsidian": "graphite", "aureon": "graphite", "bespoke": "forest", "evergreen": "forest", "nord": "midnight", "gruvbox": "cocoa",
-        "obsidian.light": "stone", "light": "stone", "aureon.light": "stone", "bespoke.light": "sage", "evergreen.light": "sage",
-        "nord.light": "stone", "gruvbox.light": "paper",
+        "obsidian.light": "graphite.light", "light": "graphite.light", "aureon.light": "graphite.light", "bespoke.light": "forest.light", "evergreen.light": "forest.light",
+        "nord.light": "midnight.light", "gruvbox.light": "cocoa.light",
+        // the nine themes of the first Pulse builds
+        "amoled": "graphite.black", "stone": "graphite.light", "sage": "forest.light", "paper": "cocoa.light",
     ]
 
     /// A theme by id (earlier ids are carried over; anything else is Graphite).
     static func named(_ id: String?) -> Theme {
         guard let id else { return .aureon }
         let key = legacy[id] ?? id
+        if key.hasSuffix(".black") { return named(String(key.dropLast(6))).onPureBlack }
         return all.first { $0.id == key } ?? .aureon
     }
 
-    /// The theme to show for the chosen dark and light themes and whether the day one is wanted.
-    static func resolve(dark: String, light: String, wantsLight: Bool) -> Theme {
-        if wantsLight { let t = named(light); return t.isLight ? t : defaultLight }
-        let t = named(dark); return t.isLight ? .aureon : t
+    /// The theme to show for a family in a mode (pure black only applies to the dark half).
+    static func resolve(family: String, light: Bool, pureBlack: Bool) -> Theme {
+        let f = families.first { $0.id == family } ?? families[0]
+        return light ? f.light : (pureBlack ? f.dark.onPureBlack : f.dark)
+    }
+
+    /// An old saved choice (a theme id, with the appearance it was shown in) as a family, a mode and the pure black switch.
+    static func migrated(id: String?, light: Bool?) -> (family: String, light: Bool, pureBlack: Bool) {
+        let t = named(id)
+        return (t.family, light ?? t.isLight, t.pureBlack)
     }
 
     /// The light themes at a brightness between 0 and 1 (0.35 is the designed tone): towards a quieter grey below it, towards paper above it.
