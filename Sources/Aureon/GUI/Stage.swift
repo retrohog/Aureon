@@ -359,32 +359,11 @@ final class StageModel: ObservableObject {
     @Published var lyricsPending = false
     /// The side panel open on Now Playing: lyrics, the queue, the signal path, the analyser or the booklet. One at a time; nil for none.
     @Published var panel: GalleryPanel?
+    /// What the middle of Stage and Classic shows (Lyrics, Up next, Credits, Signal path).
+    @Published var npTab = NowPlayingTab.lyrics
 
-    /// Focus: only the cover, the title and artist, the progress and the transport, with the cover as large as the window allows. Remembered.
-    @Published private(set) var focus = StageModel.savedFocus
-    /// The panel that was open when Focus began, brought back when it ends.
-    private var panelBeforeFocus: GalleryPanel?
-    static let focusKey = "aureon.stageFocus"
-    static var savedFocus: Bool {
-        if ProcessInfo.processInfo.environment["AUREON_FOCUS"] != nil { return true }
-        return ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil && UserDefaults.standard.bool(forKey: focusKey)
-    }
-
-    /// F: into Focus (any side panel closes), and out of it again (the panel that was open comes back).
-    func toggleFocus() {
-        if focus { setFocus(false); panel = panelBeforeFocus; panelBeforeFocus = nil }
-        else { panelBeforeFocus = panel; panel = nil; setFocus(true) }
-    }
-    private func setFocus(_ on: Bool) {
-        focus = on
-        if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { UserDefaults.standard.set(on, forKey: Self.focusKey) }
-    }
-
-    /// Opens the panel, or closes it if it is the one open. Opening another replaces it (and ends Focus, which has no room for a panel).
-    func toggle(_ p: GalleryPanel) {
-        if focus { setFocus(false); panelBeforeFocus = nil; panel = p; return }
-        panel = panel == p ? nil : p
-    }
+    /// Opens the panel, or closes it if it is the one open. Opening another replaces it.
+    func toggle(_ p: GalleryPanel) { panel = panel == p ? nil : p }
     var returnTab: Tab = .home
 
     /// From the player bar (or any "open Now Playing" button): the cover and waveform fly up into the full view.
@@ -409,10 +388,11 @@ final class StageModel: ObservableObject {
     func showLyrics(_ m: some StageHost, reduceMotion: Bool) {
         UserDefaults.standard.set(true, forKey: "aureon.lyrics.show")
         UserDefaults.standard.set(true, forKey: "aureon.lyrics.expanded")
+        if let pm = m as? PlayerModel, !pm.look.showLyrics { pm.look.showLyrics = true }
         if m.tab != .player { open(m, reduceMotion: reduceMotion) }
         lyricsPending = true
-        if focus { setFocus(false); panelBeforeFocus = nil }
-        panel = .lyrics
+        npTab = .lyrics
+        panel = nil
         // the lookup is not left to the page appearing: start it for the song in focus now
         if let focus = m as? LyricsFocus { LyricsDriver.start(focus) }
     }
@@ -452,19 +432,4 @@ private struct StageMatched: ViewModifier {
 extension View {
     /// Marks this view as the bar's or the stage's copy of `element`; whichever is on screen is the source of the morph.
     func stageMatched(_ element: StageElement) -> some View { modifier(StageMatched(element: element)) }
-}
-
-
-/// The size of the cover in Focus: as large as the free space allows, the picture inside its mat.
-enum FocusLayout {
-    static let mat: CGFloat = 14
-    /// Room the title and artist need under the cover when the window is too narrow to put them beside it.
-    static let infoBelow: CGFloat = 110
-    static let infoBeside: CGFloat = 300
-
-    /// `free` is the space between the rail and the progress line, inside the page margins. Wide: the cover on the left, the names beside it. Narrow: the names under.
-    static func coverSide(free: CGSize, wide: Bool) -> CGFloat {
-        let room = wide ? min(free.height, free.width - infoBeside - 56) : min(free.width, free.height - infoBelow)
-        return max(120, room - 2 * mat)
-    }
 }

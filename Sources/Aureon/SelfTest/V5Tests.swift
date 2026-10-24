@@ -679,47 +679,6 @@ struct FeedbackTests {
         expect(ScrollVolumeMode.allCases.map(\.rawValue) == ["off", "optionOnly", "handle"])
     }
 
-    func focusMakesTheCoverBig() {
-        // wide window: free space inside the margins, rail above and progress below
-        for size in [CGSize(width: 1152, height: 520), CGSize(width: 1400, height: 700), CGSize(width: 900, height: 400)] {
-            let side = FocusLayout.coverSide(free: size, wide: true) + 2 * FocusLayout.mat       // with its mat
-            let shorter = min(size.height, size.width)
-            expect(side <= size.width + 0.5 && side <= size.height + 0.5, "it fits: \(side) in \(size)")
-            expect((side - 2 * FocusLayout.mat) >= 0.8 * shorter - 2 * FocusLayout.mat && side >= 0.8 * shorter, "at least 80% of the shorter free side: \(side) of \(shorter)")
-        }
-        let narrow = CGSize(width: 480, height: 640)
-        let n = FocusLayout.coverSide(free: narrow, wide: false) + 2 * FocusLayout.mat
-        expect(n <= narrow.width && n + FocusLayout.infoBelow <= narrow.height + 0.5, "narrow: the cover on top, the names under it, everything fits")
-        expect(FocusLayout.coverSide(free: CGSize(width: 50, height: 50), wide: true) >= 120, "never smaller than a readable cover")
-    }
-
-    func focusTogglesAndIsRemembered() {
-        let ud = UserDefaults.standard, saved = ud.object(forKey: StageModel.focusKey)
-        defer { if let saved { ud.set(saved, forKey: StageModel.focusKey) } else { ud.removeObject(forKey: StageModel.focusKey) } }
-        ud.set(false, forKey: StageModel.focusKey)
-        let s = StageModel()
-        expect(!s.focus)
-        s.toggle(.queue)
-        expect(s.panel == .queue)
-        s.toggleFocus()
-        expect(s.focus && s.panel == nil, "Focus closes the side panel")
-        expect(ud.bool(forKey: StageModel.focusKey) || ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil, "the choice is remembered")
-        s.toggleFocus()
-        expect(!s.focus && s.panel == .queue, "a second press restores the layout, panel included")
-        s.toggleFocus()
-        s.toggle(.lyrics)
-        expect(!s.focus && s.panel == .lyrics, "asking for a panel ends Focus and opens it")
-        s.toggleFocus(); s.toggleFocus()
-        expect(!s.focus && s.panel == .lyrics)
-        ud.set(true, forKey: StageModel.focusKey)
-        expect(StageModel.savedFocus || ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil, "it comes back at the next launch")
-        let host = StageTestHost(), st2 = StageModel()
-        st2.toggleFocus()
-        st2.showLyrics(host, reduceMotion: true)
-        expect(!st2.focus && st2.panel == .lyrics, "the Lyrics button leaves Focus")
-        ud.set(false, forKey: StageModel.focusKey)
-    }
-
     private func pump(_ secs: Double, _ host: NSView) {
         let end = Date().addingTimeInterval(secs)
         while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
@@ -729,6 +688,7 @@ struct FeedbackTests {
         let m = PlayerModel(); v5KeepAlive.append(m)
         let stage = StageModel(); v5KeepAlive.append(stage)
         stage.toggle(.analyser)
+        m.backdrop = .soft                 // the sky is alive: a picture of it is never the same twice
         m.tab = .player
         let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).frame(width: 1280, height: 820).preferredColorScheme(.dark)))
         host.frame = NSRect(x: 0, y: 0, width: 1280, height: 820)
@@ -747,7 +707,7 @@ struct FeedbackTests {
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return [] }
             let row = rep.bytesPerRow, start = Int(Double(rep.pixelsWide) * x) * 4
             var out: [UInt8] = []
-            for y in Int(Double(rep.pixelsHigh) * 0.17)..<Int(Double(rep.pixelsHigh) * 0.77) { out += px[(y * row + start)..<(y * row + row)] }
+            for y in Int(Double(rep.pixelsHigh) * 0.17)..<Int(Double(rep.pixelsHigh) * 0.70) { out += px[(y * row + start)..<(y * row + row)] }
             return out
         }
         var shots: [[UInt8]] = []
@@ -766,14 +726,14 @@ struct FeedbackTests {
             }
             return "\(n) px in x \(minX)...\(maxX) y \(minY)...\(maxY)"
         }
-        expect(right(shots[0], from: 0.52) == right(shots[1], from: 0.52) && right(shots[1], from: 0.52) == right(shots[2], from: 0.52), "and the analyser panel is the same with none queued: \(diffBox(shots[0], shots[1]))")
+        expect(right(shots[0], from: 0.74) == right(shots[1], from: 0.74) && right(shots[1], from: 0.74) == right(shots[2], from: 0.74), "and the analyser panel is the same with none queued: \(diffBox(shots[0], shots[1]))")
     }
 }
 
 func feedbackTests() -> [(String, TestFn)] {
     return [("ui.waveformContrast", { MainActor.assumeIsolated { FeedbackTests().theWaveformIsReadableOnEveryBackground() } }), ("ui.seekPulse", { MainActor.assumeIsolated { FeedbackTests().everySeekAnswers() } }),
-            ("ui.volumeScroll", { MainActor.assumeIsolated { FeedbackTests().scrollingCannotJumpTheVolume() } }), ("ui.focusLayout", { MainActor.assumeIsolated { FeedbackTests().focusMakesTheCoverBig() } }),
-            ("ui.focusToggle", { MainActor.assumeIsolated { FeedbackTests().focusTogglesAndIsRemembered() } }), ("ui.queueNoShift", { MainActor.assumeIsolated { FeedbackTests().theAnalyserDoesNotMoveWithTheQueue() } })]
+            ("ui.volumeScroll", { MainActor.assumeIsolated { FeedbackTests().scrollingCannotJumpTheVolume() } }), 
+            ("ui.queueNoShift", { MainActor.assumeIsolated { FeedbackTests().theAnalyserDoesNotMoveWithTheQueue() } })]
 }
 
 

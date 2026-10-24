@@ -76,6 +76,27 @@ final class LyricsCursor: ObservableObject {
     func reset() { active = nil; lyrics = nil }
 }
 
+// MARK: - How the words are set
+
+/// The size and alignment of the lyric lines: the layouts of Now Playing each set them their own way (Stage centres them large, Classic keeps them to the left).
+struct LyricStyle: Equatable {
+    var size: CGFloat = 26
+    var centered = false
+    var gap: CGFloat = 16
+    /// Where the line being sung rests, as a fraction of the height (0.4: a little above the middle).
+    var rest: CGFloat = 0.4
+
+    static let standard = LyricStyle()
+}
+
+private struct LyricStyleKey: EnvironmentKey { static let defaultValue = LyricStyle.standard }
+extension EnvironmentValues {
+    var lyricStyle: LyricStyle {
+        get { self[LyricStyleKey.self] }
+        set { self[LyricStyleKey.self] = newValue }
+    }
+}
+
 // MARK: - The section on the Now Playing page
 
 struct LyricsSection: View {
@@ -87,19 +108,32 @@ struct LyricsSection: View {
     /// Height of the panel, so the stage can fill it.
     var availableHeight: CGFloat = 800
     var onClose: () -> Void = {}
+    /// False: only the words (and a small timing and options control at the corner), as the layouts of Now Playing show them.
+    var chrome = true
 
     var body: some View {
         let item = m.focusItem
         let isSong = item != nil && item?.isStream != true
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if chrome { header } else { bareHeader }
             if isSong { content }
             else { Text(item == nil ? "Play a song to see its words." : "Radio streams have no lyrics.").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).padding(.top, 8) }
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(chrome ? 16 : 0)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(Motion.glide, value: service.phase)
+    }
+
+    /// Without the frame: a thin row at the corner with the timing of the words and the options.
+    private var bareHeader: some View {
+        HStack(spacing: 10) {
+            Spacer(minLength: 0)
+            if service.phase == .ready, service.lyrics?.synced == true { offsetControl }
+            if service.upgrading { ProgressView().controlSize(.mini) }
+            menu
+        }
+        .frame(height: 24).opacity(0.7).foregroundStyle(Brand.ink)
     }
 
     // MARK: header
@@ -135,7 +169,7 @@ struct LyricsSection: View {
             Button { offset = LyricsTiming.stepped(offset, by: 0.1) } label: { Image(systemName: "plus") }.buttonStyle(IconButtonStyle())
                 .help("Show the words earlier").accessibilityLabel("Words earlier")
         }
-        .overlay(Rectangle().strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
+        .background(Capsule().fill(Brand.ink.opacity(0.08)))
     }
 
     private func sourceLine(_ l: Lyrics) -> String {
@@ -319,6 +353,7 @@ struct LyricsStage: View {
     let height: CGFloat
     @StateObject private var cursor = LyricsCursor()
     @AppStorage("aureon.lyrics.offset") private var offset = 0.0
+    @Environment(\.lyricStyle) private var style
     @State private var following = true
     @State private var resume: Task<Void, Never>?
 
@@ -327,14 +362,14 @@ struct LyricsStage: View {
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Color.clear.frame(height: height * 0.36)
+                    VStack(alignment: style.centered ? .center : .leading, spacing: style.gap) {
+                        Color.clear.frame(height: height * (style.rest - 0.04))
                         if let first = lyrics.lines.first, first.time > 3 {
                             IntroDots(until: first.time, isActive: active == nil, cursor: cursor, accent: accent).id(-1)
                         }
                         ForEach(lyrics.lines) { line in
                             LyricRow(line: line, relative: relative(line.id, active), ends: line.id == active ? lyrics.wordEnds(ofLine: line.id) : [],
-                                     breakEnd: line.isBreak ? lyrics.end(ofLine: line.id) : 0, cursor: cursor, accent: accent, reduceMotion: reduceMotion)
+                                     breakEnd: line.isBreak ? lyrics.end(ofLine: line.id) : 0, cursor: cursor, accent: accent, reduceMotion: reduceMotion, style: style)
                                 .equatable()
                                 .id(line.id)
                                 .onTapGesture { seek(to: line) }
@@ -377,8 +412,8 @@ struct LyricsStage: View {
     private func scroll(_ proxy: ScrollViewProxy, to line: Int?, animated: Bool = true) {
         let target = line ?? (lyrics.lines.first.map { $0.time > 3 ? -1 : 0 } ?? 0)
         // the active line rests at 40 % of the panel's height
-        if animated && !reduceMotion { withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: 0.4)) } }
-        else { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: 0.4)) }
+        if animated && !reduceMotion { withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: style.rest)) } }
+        else { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: style.rest)) }
     }
 
     private func userScrolled() {
@@ -440,9 +475,10 @@ private struct LyricRow: View, Equatable {
     let cursor: LyricsCursor
     let accent: Color
     let reduceMotion: Bool
+    let style: LyricStyle
 
     static func == (a: LyricRow, b: LyricRow) -> Bool {
-        a.line.id == b.line.id && a.relative == b.relative && a.accent == b.accent && a.reduceMotion == b.reduceMotion && a.line.text == b.line.text && a.breakEnd == b.breakEnd
+        a.line.id == b.line.id && a.relative == b.relative && a.accent == b.accent && a.reduceMotion == b.reduceMotion && a.line.text == b.line.text && a.breakEnd == b.breakEnd && a.style == b.style
     }
 
     private var isActive: Bool { relative == 0 }
@@ -458,12 +494,12 @@ private struct LyricRow: View, Equatable {
                 Text(line.text)
             }
         }
-        .font(Typo.serif(26, .regular))
+        .font(Typo.face(style.size * CGFloat(Look.current.textScale), style.size >= 34 ? Typo.sansWeight(.medium) : Typo.titleWeight(.regular, size: style.size)))
         .foregroundStyle(Brand.ink.opacity(opacity))
-        .multilineTextAlignment(.leading)
+        .multilineTextAlignment(style.centered ? .center : .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .scaleEffect(isActive || reduceMotion ? 1 : 0.93, anchor: .leading)
+        .frame(maxWidth: .infinity, alignment: style.centered ? .center : .leading)
+        .scaleEffect(isActive || reduceMotion ? 1 : 0.93, anchor: style.centered ? .center : .leading)
         .blur(radius: reduceMotion ? 0 : blur)
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: relative)
         .contentShape(Rectangle())

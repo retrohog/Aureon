@@ -475,8 +475,9 @@ struct StarlightGroup: View {
                 }
             }
             HStack(spacing: 12) {
-                Toggle("Twinkle", isOn: $m.look.starlight.twinkle).labelsHidden().accessibilityLabel("Twinkle")
                 Text("Twinkle: the stars brighten and dim a little.").font(Typo.sans(13))
+                Spacer(minLength: 8)
+                Toggle("", isOn: $m.look.starlight.twinkle).accessibilityLabel("Twinkle").fixedSize()
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Star colour").font(Typo.sans(13, .medium))
@@ -484,8 +485,9 @@ struct StarlightGroup: View {
             }
             LookSliderRow(title: "Motion speed", hint: "How fast the sky drifts. It stands still under Reduce Motion.", value: $m.look.starlight.motion, defaultValue: StarlightSettings().motion)
             HStack(spacing: 12) {
-                Toggle("Music reaction", isOn: $m.look.starlight.reacts).labelsHidden().accessibilityLabel("Music reaction")
                 Text("Music reaction: the low notes brighten the nebula a little.").font(Typo.sans(13))
+                Spacer(minLength: 8)
+                Toggle("", isOn: $m.look.starlight.reacts).accessibilityLabel("Music reaction").fixedSize()
             }
             if m.look.starlight.reacts {
                 LookSliderRow(title: "Reaction amount", value: $m.look.starlight.reaction, defaultValue: StarlightSettings().reaction)

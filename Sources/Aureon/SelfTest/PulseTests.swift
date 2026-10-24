@@ -142,10 +142,65 @@ struct PulseTests {
     }
 }
 
+extension PulseTests {
+    func theLayoutsAreChosenAndRemembered() {
+        expect(NowPlayingLayout.allCases.map(\.rawValue) == ["stage", "classic", "fullbleed", "carousel", "lumen", "chillax"], "six layouts, Stage first")
+        expect(NowPlayingLayout.standard == .stage && LookSettings().nowPlayingLayout == "stage", "Stage is the default")
+        expect(NowPlayingLayout.resolve("lumen") == .lumen && NowPlayingLayout.resolve("vinyl") == .stage && NowPlayingLayout.resolve(nil) == .stage && NowPlayingLayout.resolve("") == .stage, "an unknown id is Stage")
+        expect(NowPlayingLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty } && Set(NowPlayingLayout.allCases.map(\.title)).count == 6, "each has a name and a line")
+        expect(NowPlayingLayout.stage.hasTabs && NowPlayingLayout.classic.hasTabs && !NowPlayingLayout.lumen.hasTabs && !NowPlayingLayout.chillax.hasTabs, "tabs where the layout has them")
+        let suite = UserDefaults(suiteName: "aureon.test.np.\(UUID().uuidString)")!
+        var s = LookSettings(); s.nowPlayingLayout = "chillax"; s.lyricSize = .huge; s.seekChoice = .line; s.showPlaylistButton = false; s.showCredits = false; s.showSignalTags = false
+        s.save(suite)
+        let back = LookSettings.load(suite, environment: [:])
+        expect(back == s && NowPlayingLayout.resolve(back.nowPlayingLayout) == .chillax, "the layout and the screen's options are remembered")
+        expect(LookSettings().lyricSize == .large && LookSettings().seekChoice == .layout && LookSettings().showPlaylistButton && LookSettings().showCredits && LookSettings().showSignalTags, "defaults")
+        expect(LyricSize.medium.scale < LyricSize.large.scale && LyricSize.large.scale == 1 && LyricSize.large.scale < LyricSize.huge.scale, "lyric sizes")
+        // the scale follows the window, within limits
+        expect(NPScale.of(CGSize(width: 1440, height: 900)) == 1 && NPScale.of(CGSize(width: 300, height: 200)) == 0.62 && NPScale.of(CGSize(width: 4000, height: 3000)) == 1.25, "the layout is drawn at 1440 × 900 and scaled")
+        expect(NPScale.of(CGSize(width: 1440, height: 450)) == 0.62 || NPScale.of(CGSize(width: 1440, height: 450)) == 0.62 + 0, "a short window shrinks it: \(NPScale.of(CGSize(width: 1440, height: 450)))")
+    }
+
+    func creditsAndTheSignalPathReadWell() {
+        func c(_ role: CreditRole, _ name: String, _ inst: String? = nil) -> CreditDTO { CreditDTO(role: role.rawValue, name: name, instrument: inst, partyID: name) }
+        let lines = NPCredits.lines([c(.artist, "Marlowe Quay"), c(.composer, "M. Quay"), c(.lyricist, "Ines Vale"), c(.composer, "M. Quay"), c(.producer, "Tomas Hale"), c(.engineer, "R. Okafor"),
+                                     c(.soloist, "Ines Vale", "piano"), c(.performer, "Pier Nine", "field recording"), c(.conductor, "H. Karajan"), c(.ensemble, "Berliner Philharmoniker")])
+        expect(lines.map(\.label) == ["Written by", "Produced by", "Engineered by", "Conductor", "Ensemble", "Piano", "Field recording"], "\(lines.map(\.label))")
+        expect(lines.first?.value == "M. Quay, Ines Vale" && lines.first { $0.label == "Piano" }?.value == "Ines Vale", "names once each, joined")
+        expect(NPCredits.lines([]).isEmpty && NPCredits.lines([c(.artist, "Only Artist")]).isEmpty, "the artist is not a credit; no credits, no lines")
+        expect(NPCredits.line(lines, limit: 2) == "Written by M. Quay, Ines Vale · Produced by Tomas Hale", NPCredits.line(lines, limit: 2))
+        let src = StreamInfo(sampleRate: 96_000, channels: 2, sourceBits: 24, totalFrames: 96_000 * 200, codec: "FLAC")
+        let out = StreamInfo(sampleRate: 192_000, channels: 2, sourceBits: 24, totalFrames: 192_000 * 200, codec: "FLAC")
+        let steps = NPSignal.steps(source: src, output: out, stages: [], bitPerfect: true, exclusive: true, device: "DAC-1")
+        expect(steps.map(\.title) == ["Source", "Player", "Output"] && steps[0].detail == "FLAC · 24-bit / 96 kHz" && steps[1].detail == "Bit-perfect, no resampling" && steps[2].detail == "Exclusive mode · DAC-1 · 192 kHz", "\(steps)")
+        let line = NPSignal.line(source: src, output: out, stages: [], bitPerfect: true, exclusive: true, device: "DAC-1")
+        expect(line == "FLAC 24/96 → bit-perfect → exclusive mode → DAC-1 · 192 kHz", line)
+        let processed = NPSignal.line(source: src, output: out, stages: ["Upsampling 96 kHz → 192 kHz"], bitPerfect: false, exclusive: false, device: "")
+        expect(processed.contains("upsampling") && processed.contains("output") && !processed.contains("bit-perfect"), processed)
+        expect(NPSignal.steps(source: nil, output: nil, stages: [], bitPerfect: false, exclusive: false, device: "").isEmpty && NPSignal.line(source: nil, output: nil, stages: [], bitPerfect: false, exclusive: false, device: "").isEmpty, "nothing playing")
+        let dsd = StreamInfo(sampleRate: 2_822_400, channels: 2, sourceBits: 1, totalFrames: 1, codec: "DSF")
+        expect(NPSignal.steps(source: dsd, output: nil, stages: [], bitPerfect: true, exclusive: false, device: "")[0].detail.contains("DSD"), "DSD is named")
+    }
+
+    func theQueueSeenFromNowPlaying() {
+        struct It: Identifiable { var id: Int }
+        let q = (0..<10).map(It.init)
+        expect(NPQueue.upNext(q, current: 3, limit: 4).map(\.id) == [4, 5, 6, 7], "what follows the current song")
+        expect(NPQueue.upNext(q, current: 8, limit: 5).map(\.id) == [9], "the end of the queue")
+        expect(NPQueue.upNext(q, current: 9, limit: 5).isEmpty && NPQueue.upNext([It](), current: nil, limit: 5).isEmpty, "nothing after the last; nothing in an empty queue")
+        expect(NPQueue.upNext(q, current: nil, limit: 3).map(\.id) == [0, 1, 2] && NPQueue.upNext(q, current: 99, limit: 2).map(\.id) == [0, 1], "nothing playing: from the start")
+        let n = NPQueue.neighbours(q, current: 5)
+        expect(n.previous?.id == 4 && n.next?.id == 6, "the covers beside the centre")
+        let first = NPQueue.neighbours(q, current: 0), last = NPQueue.neighbours(q, current: 9)
+        expect(first.previous == nil && first.next?.id == 1 && last.previous?.id == 8 && last.next == nil, "no neighbour past either end")
+    }
+}
+
 private final class PulseTestsAnchor {}
 
 func pulseTests() -> [(String, TestFn)] {
     let t = PulseTests()
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
-            ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus)]
+            ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
+            ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

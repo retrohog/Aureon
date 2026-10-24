@@ -315,6 +315,7 @@ struct SettingsPage: View {
                 switch m.settingsSection {
                 case .general: GeneralSettings()
                 case .appearance: AppearanceSettings()
+                case .nowPlaying: NowPlayingSettings()
                 case .sidebar: SidebarSettings()
                 case .connect: ConnectTab()
                 case .midi: MIDIPage()

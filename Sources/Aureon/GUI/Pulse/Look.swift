@@ -28,6 +28,21 @@ enum TypeWeight: String, CaseIterable, Identifiable, Codable {
     var emphasis: Font.Weight { switch self { case .light: .regular; case .regular, .medium: .medium } }
 }
 
+/// How large the lyrics are set in Now Playing (Large is the designed size).
+enum LyricSize: String, CaseIterable, Identifiable, Codable {
+    case medium, large, huge
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var scale: CGFloat { switch self { case .medium: 0.85; case .large: 1; case .huge: 1.2 } }
+}
+
+/// The seek bar of Now Playing: each layout's own, or one choice for all.
+enum SeekChoice: String, CaseIterable, Identifiable, Codable {
+    case layout, waveform, line
+    var id: String { rawValue }
+    var title: String { switch self { case .layout: "Layout's own"; case .waveform: "Waveform"; case .line: "Line" } }
+}
+
 /// How often a shooting star crosses the Starlight backdrop.
 enum ShootingStars: String, CaseIterable, Identifiable, Codable {
     case off, rare, sometimes, often
@@ -103,6 +118,12 @@ struct LookSettings: Codable, Equatable {
     /// The Now Playing layout chosen in Settings (an id of `NowPlayingLayout`), and whether synchronised lyrics are shown in it.
     var nowPlayingLayout = "stage"
     var showLyrics = true
+    var lyricSize = LyricSize.large
+    var seekChoice = SeekChoice.layout
+    /// On Now Playing: the add-to-playlist button beside the heart, the credits under the artist, the format tags and the signal path.
+    var showPlaylistButton = true
+    var showCredits = true
+    var showSignalTags = true
 
     static let defaults = LookSettings()
     static let textScaleRange = 0.85...1.3
@@ -125,8 +146,13 @@ struct LookSettings: Codable, Equatable {
         starlight = try c.decodeIfPresent(StarlightSettings.self, forKey: .starlight) ?? d.starlight
         nowPlayingLayout = try c.decodeIfPresent(String.self, forKey: .nowPlayingLayout) ?? d.nowPlayingLayout
         showLyrics = try c.decodeIfPresent(Bool.self, forKey: .showLyrics) ?? d.showLyrics
+        lyricSize = try c.decodeIfPresent(LyricSize.self, forKey: .lyricSize) ?? d.lyricSize
+        seekChoice = try c.decodeIfPresent(SeekChoice.self, forKey: .seekChoice) ?? d.seekChoice
+        showPlaylistButton = try c.decodeIfPresent(Bool.self, forKey: .showPlaylistButton) ?? d.showPlaylistButton
+        showCredits = try c.decodeIfPresent(Bool.self, forKey: .showCredits) ?? d.showCredits
+        showSignalTags = try c.decodeIfPresent(Bool.self, forKey: .showSignalTags) ?? d.showSignalTags
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics }
+    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -161,6 +187,11 @@ struct LookSettings: Codable, Equatable {
             case "tint": if let x = StarTint(rawValue: kv[1]) { starlight.tint = x }
             case "np": nowPlayingLayout = kv[1]
             case "lyrics": showLyrics = kv[1] != "0"
+            case "lyricsize": if let x = LyricSize(rawValue: kv[1]) { lyricSize = x }
+            case "seek": if let x = SeekChoice(rawValue: kv[1]) { seekChoice = x }
+            case "playlistbutton": showPlaylistButton = kv[1] != "0"
+            case "credits": showCredits = kv[1] != "0"
+            case "signaltags": showSignalTags = kv[1] != "0"
             default: break
             }
         }
