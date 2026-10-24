@@ -1014,6 +1014,7 @@ extension LyricsTests {
         let m = PlayerModel()
         lyricsKeepAlive.append(m)
         m.add(urls: [item.url])
+        m.look.showLyrics = false
         m.tab = .player
         let stage = StageModel(); lyricsKeepAlive.append(stage)
         let view = ContentView(stage: stage).environmentObject(m).frame(width: 1100, height: 900).preferredColorScheme(.dark)
@@ -1028,14 +1029,14 @@ extension LyricsTests {
             shared.isOnlineAllowed = online; shared.isGenerationAllowed = gen; shared.show(nil)
             ud.set(savedShow, forKey: "aureon.lyrics.show")
         }
-        // lyrics are not shown, and not looked up, until the lyrics button is on
+        // lyrics are not shown, and not looked up, while they are switched off
         wait(1.5) { shared.phase != .idle }
-        expect(stage.panel == nil && shared.phase == .idle, "no lyrics until asked for: \(shared.phase)")
-        stage.panel = .lyrics
+        expect(shared.phase == .idle, "no lyrics until asked for: \(shared.phase)")
+        m.look.showLyrics = true
         wait(10) { shared.phase == .ready }
         expect(m.focusItem?.path == item.path, "the song is in focus")
-        expect(shared.phase == .ready && shared.lyrics?.synced == true, "opening the lyrics panel started the lookup: \(shared.phase)")
-        stage.panel = nil
+        expect(shared.phase == .ready && shared.lyrics?.synced == true, "switching the lyrics on started the lookup: \(shared.phase)")
+        m.look.showLyrics = false
     }
 
     /// Queries are percent-encoded, so spaces, "+", "&" and accents reach the service as typed.
