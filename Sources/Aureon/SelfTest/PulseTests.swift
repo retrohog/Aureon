@@ -489,6 +489,98 @@ extension PulseTests {
         expect(settled == 10, "the tags of the next ten were read in the background: \(settled)")
     }
 
+    /// Switching between the Aureon window and the mini player, again and again, from every Now Playing layout and into every mini player form, with the real
+    /// window, the real buttons (the top bar's and the controls' of Now Playing) and real mouse events, with the main window put away and left in place.
+    @MainActor func switchingToTheMiniPlayerNeverCrashes() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let ud = UserDefaults.standard
+        let savedOrigin = ud.object(forKey: "aureon.mini.origin"), savedHeight = ud.object(forKey: "aureon.mini.height")
+        let dir = tempDir("npmini")
+        let song = dir.appendingPathComponent("Mini Switch.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 60) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let lrc = (0..<12).map { String(format: "[00:%02d.00]A made-up line number %d for the switch", $0 * 3 + 1, $0) }.joined(separator: "\n")
+        try? Data(("[ti:Mini Switch]\n" + lrc + "\n").utf8).write(to: dir.appendingPathComponent("Mini Switch.lrc"))
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        let saved = LyricsService.shared.isOnlineAllowed
+        LyricsService.shared.isOnlineAllowed = { false }
+        LayoutProbe.enabled = true
+        let size = CGSize(width: 1100, height: 720)
+        let probe = LayoutProbe.begin()
+        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+        host.frame = NSRect(origin: .zero, size: size)
+        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: 80, y: 80)); win.makeKeyAndOrderFront(nil)
+        m.mini.mainWindowProvider = { win }
+        defer {
+            m.mini.shutDown(); win.orderOut(nil); win.contentView = nil; m.clear()
+            LyricsService.shared.isOnlineAllowed = saved; LayoutProbe.enabled = false
+            if let savedOrigin { ud.set(savedOrigin, forKey: "aureon.mini.origin") } else { ud.removeObject(forKey: "aureon.mini.origin") }
+            if let savedHeight { ud.set(savedHeight, forKey: "aureon.mini.height") } else { ud.removeObject(forKey: "aureon.mini.height") }
+        }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        stage.open(m, reduceMotion: true)
+        m.look.mini.rememberPosition = false
+        pumpFor(1.0)
+        var cycles = 0
+        for layout in NowPlayingLayout.allCases {
+            m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = layout != .chillax
+            for mini in MiniLayout.allCases where mini.isWindow {
+                for hide in [true, false] {
+                    m.look.mini.layout = mini; m.look.mini.hideMainWindow = hide
+                    pumpFor(0.3)
+                    for key in ["top.mini", "cluster.mini"] {
+                        guard let r = LayoutProbe.frames[key] else { expect(false, "\(layout.rawValue): the \(key) button is on screen"); continue }
+                        if !win.isVisible { win.makeKeyAndOrderFront(nil); pumpFor(0.2) }
+                        clickMiddle(win, r, height: size.height)                       // switch to the mini player
+                        pumpFor(0.5)
+                        expect(m.mini.isFloatingOpen, "\(layout.rawValue) → \(mini.rawValue), \(key): the mini player opened")
+                        expect(win.isVisible == !hide, "\(layout.rawValue) → \(mini.rawValue), \(key): the Aureon window is \(hide ? "put away" : "left in place")")
+                        if hide { m.mini.openApp() } else { clickMiddle(win, r, height: size.height) }   // and back: the expand button, or the button again
+                        pumpFor(0.4)
+                        expect(!m.mini.isFloatingOpen && win.isVisible, "\(layout.rawValue) → \(mini.rawValue), \(key): back in the Aureon window")
+                        cycles += 1
+                    }
+                }
+            }
+        }
+        expect(cycles == NowPlayingLayout.allCases.count * MiniLayout.allCases.filter(\.isWindow).count * 2 * 2, "every combination was switched: \(cycles)")
+    }
+
+    /// The Aureon window is put away (not closed) while the mini player is open; the app must not quit because it has no other window on screen.
+    @MainActor func theAppStaysOpenWhileTheMiniPlayerHasTheScreen() {
+        guard !NSScreen.screens.isEmpty else { return }
+        expect(AppDelegate.quitsWhenTheLastWindowCloses(appWindowAppeared: true), "with the app's window closed, the app quits (as before)")
+        expect(!AppDelegate.quitsWhenTheLastWindowCloses(appWindowAppeared: true, miniPlayerOpen: true), "but not while the mini player is open")
+        expect(!AppDelegate.quitsWhenTheLastWindowCloses(appWindowAppeared: false), "and not before the app's window has appeared")
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let ud = UserDefaults.standard
+        let savedOrigin = ud.object(forKey: "aureon.mini.origin"), savedHeight = ud.object(forKey: "aureon.mini.height")
+        let main = NSWindow(contentRect: NSRect(x: 220, y: 240, width: 900, height: 600), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        main.orderFront(nil)
+        m.mini.mainWindowProvider = { main }
+        defer {
+            m.mini.shutDown(); main.orderOut(nil); main.contentView = nil
+            if let savedOrigin { ud.set(savedOrigin, forKey: "aureon.mini.origin") } else { ud.removeObject(forKey: "aureon.mini.origin") }
+            if let savedHeight { ud.set(savedHeight, forKey: "aureon.mini.height") } else { ud.removeObject(forKey: "aureon.mini.height") }
+        }
+        m.look.mini.rememberPosition = false
+        expect(!m.mini.keepsAppAlive, "nothing open: nothing to keep the app for")
+        for layout in MiniLayout.allCases where layout.isWindow {
+            for hide in [true, false] {
+                m.look.mini.layout = layout; m.look.mini.hideMainWindow = hide
+                m.mini.showFloating()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                expect(m.mini.keepsAppAlive, "\(layout.rawValue), main window \(hide ? "put away" : "kept"): the app is kept for the mini player")
+                expect(!AppDelegate.quitsWhenTheLastWindowCloses(appWindowAppeared: true, miniPlayerOpen: m.mini.keepsAppAlive), "\(layout.rawValue): the app does not quit")
+                m.mini.closeFloating()
+                expect(!m.mini.keepsAppAlive && main.isVisible, "\(layout.rawValue): closed, the window is back and nothing keeps the app")
+            }
+        }
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -817,6 +909,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

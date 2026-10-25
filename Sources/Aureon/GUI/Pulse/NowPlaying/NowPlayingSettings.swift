@@ -116,6 +116,7 @@ struct NowPlayingSettings: View {
                 toggleRow("Add to playlist button", "Next to the heart.", $m.look.showPlaylistButton)
                 toggleRow("Credits under the artist", "Written by, produced by and the rest, when the file names them.", $m.look.showCredits)
                 toggleRow("Signal path and format tags", "The file, what is done to it, and what the output receives.", $m.look.showSignalTags)
+                toggleRow("Hide the controls when the pointer rests", "Off keeps the top bar and the controls in view on Now Playing. On, they fade after a few seconds and return when you move.", $m.look.restControls)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Seek bar").font(Typo.sans(13, .medium))
                     HStack(spacing: 16) {

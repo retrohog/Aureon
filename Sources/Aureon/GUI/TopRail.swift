@@ -34,6 +34,8 @@ final class IdleTracker: ObservableObject {
 
     private func check() {
         timer = nil
+        // by default the bar and the controls stay in view; resting is a choice in Settings → Now Playing
+        if !Look.current.restControls { if !awake { awake = true }; return }
         let idle = Date().timeIntervalSince(lastPoke)
         if idle < Self.delay { schedule(Self.delay - idle); return }
         if Self.disabled || holdsAwake() { schedule(Self.delay); return }
@@ -119,6 +121,7 @@ struct PulseTopBar: View {
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
                 OutputChip()
+                MiniToggleButton()
                 SettingsButton()
             }
             .padding(.trailing, 16)
@@ -149,6 +152,17 @@ struct HomeButton: View {
         Button { withAnimation(Motion.page) { m.go(.tab(.home)) } } label: { Image(systemName: on ? "house.fill" : "house") }
             .buttonStyle(RoundIconStyle(on: on, size: 40))
             .help("Home").accessibilityLabel("Home").accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+/// The mini player button of the top bar, on every page and in every Now Playing layout: it opens the mini player, or puts it away when it is open.
+struct MiniToggleButton: View {
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        let on = m.mini.isFloatingOpen || m.mini.isPopoverOpen
+        Button { m.mini.toggle() } label: { Image(systemName: "pip") }
+            .buttonStyle(RoundIconStyle(on: on, size: 40)).help("Mini player (⌥⌘M)")
+            .accessibilityLabel("Mini player").accessibilityIdentifier("top.mini").layoutProbe("top.mini")
     }
 }
 

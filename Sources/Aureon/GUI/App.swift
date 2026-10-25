@@ -11,7 +11,7 @@ struct AureonApp: App {
                 .environmentObject(model)
                 .frame(minWidth: model.djMode ? 1280 : 860, minHeight: 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
                 .onOpenURL { model.add(urls: [$0], play: true) }
-                .onAppear { AppDelegate.model = model; model.mini.start(); model.restoreSession() }
+                .onAppear { AppDelegate.model = model; model.mini.start(); model.restoreSession(); MiniCycleCheck.runIfAsked(model) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1080, height: 700)
@@ -30,12 +30,39 @@ struct AureonApp: App {
     }
 }
 
+/// A development aid: `AUREON_MINI_CYCLE=20` switches to the mini player and back twenty times in the real window, from the page named by `AUREON_TAB`, then quits
+/// (exit code 0). Nothing happens without it.
+@MainActor enum MiniCycleCheck {
+    static func runIfAsked(_ model: PlayerModel) {
+        guard let n = Int(ProcessInfo.processInfo.environment["AUREON_MINI_CYCLE"] ?? ""), n > 0 else { return }
+        if let t = ProcessInfo.processInfo.environment["AUREON_TAB"], let tab = Tab(rawValue: t) { model.tab = tab }
+        if let f = ProcessInfo.processInfo.environment["AUREON_MINI_FILE"] { model.add(urls: [URL(fileURLWithPath: f)], play: true) }
+        if let l = ProcessInfo.processInfo.environment["AUREON_MINI"], let layout = MiniLayout(rawValue: l) { model.look.mini.layout = layout }
+        NSLog("mini cycle: starting")
+        func step(_ i: Int) {
+            if i >= n { NSLog("mini cycle: \(n) switches done"); NSApp.terminate(nil); return }
+            model.mini.toggle()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                MainActor.assumeIsolated {
+                    if i % 2 == 0 { model.mini.openApp() } else { model.mini.toggle(); if model.mini.isFloatingOpen { model.mini.closeFloating() } }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { MainActor.assumeIsolated { step(i + 1) } }
+                }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { MainActor.assumeIsolated { step(0) } }
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated(unsafe) static weak var model: PlayerModel?
     /// The app quits when its last window closes, but the launch animation's window is not the last window: if the app's own window is slow to appear (a cold first
     /// launch) the splash must be able to finish and close without taking the app with it.
-    static func quitsWhenTheLastWindowCloses(appWindowAppeared: Bool) -> Bool { appWindowAppeared }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { Self.quitsWhenTheLastWindowCloses(appWindowAppeared: AppDelegate.model != nil) }
+    /// Also not while the mini player is on screen: it takes the Aureon window's place (the window is put away, not closed), and the app has to stay for it.
+    static func quitsWhenTheLastWindowCloses(appWindowAppeared: Bool, miniPlayerOpen: Bool = false) -> Bool { appWindowAppeared && !miniPlayerOpen }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        let mini = MainActor.assumeIsolated { AppDelegate.model?.mini.keepsAppAlive ?? false }
+        return Self.quitsWhenTheLastWindowCloses(appWindowAppeared: AppDelegate.model != nil, miniPlayerOpen: mini)
+    }
 
     /// Unsaved DSP settings are lost on quit: ask first.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
