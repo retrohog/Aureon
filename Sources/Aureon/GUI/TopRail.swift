@@ -268,7 +268,7 @@ struct RailItem: View {
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .animation(Motion.touch, value: hover.v)
         .animation(TabMotion.animation, value: on)
-        .accessibilityLabel(destination.rawValue)
+        .accessibilityLabel(destination.rawValue).layoutProbe("rail.\(destination.rawValue)")
         .accessibilityAddTraits(on ? .isSelected : [])
     }
 
