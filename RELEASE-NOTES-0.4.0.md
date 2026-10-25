@@ -4,7 +4,7 @@
 
 # Aureon 0.4.0
 
-**A new design: thirteen colours in dark and light, a true-black AMOLED, six Now Playing layouts, a mini player and menu bar player, and an app that remembers where you were.**
+**A new design: thirteen colours in dark and light, a true-black AMOLED, seven Now Playing layouts, a mini player and menu bar player, and an app that remembers where you were.**
 
 <img src="https://github.com/retrohog/Aureon/raw/main/Docs/images/pulse/now-playing-stage.png" alt="Now Playing in Aureon 0.4.0" width="100%" />
 
@@ -20,20 +20,21 @@ always shows which state you are in.
 
 ### A new design
 
-- **A new shell.** A search bar, the output chip, the mini player button and Settings across the top, a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound), rounded panels, and a player bar with the cover, title, tags, transport and volume. **Podcasts** has its own place under Radio.
+- **A new shell.** A search bar with an **Add folder** button beside it, the output chip, the mini player button and Settings across the top, a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound), rounded panels, and a player bar with the cover, title, tags, transport and volume. **Podcasts** has its own place under Radio.
 - **Thirteen colours, each in dark and light.** A true-black **AMOLED** (dark only) and twelve colours: Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune and Slate. Choose **Dark**, **Light** or **Auto**, which follows macOS as it changes. A **Pure black** switch puts any dark side on a true black window.
 - **One brightness slider** lightens or darkens the surfaces of every colour, dark and light; the text and the accent do not move and stay readable. AMOLED keeps its black window.
 - **Accent colour.** Pick any colour; text in it is kept readable on every surface.
 - **Pop-ups stay inside the window.** The output list, Add to playlist and the other pop-ups are placed by their button and kept wholly in view, scrolling when the window is small.
 - **Starlight.** A slow field of fine stars behind the pages on dark themes, with intensity, motion, shooting stars and twinkle under your control. Flat, Soft and Album backdrops are still there.
-- **Figtree.** The interface is set in Figtree, bundled with its licence (SIL Open Font License), in Regular by default. Light and Medium are a choice, and so is the text size.
+- **Figtree, and a choice of typeface.** The interface is set in Figtree, bundled with its licence (SIL Open Font License), in Regular by default. Light and Medium are a choice, and so is the text size. Settings → Appearance has a **Typeface** picker: the system font and Figtree today, and any other family whose font file is bundled with the app appears in it automatically.
 - **Density.** Compact is the default and Comfortable gives lists and covers more room. It lives in Settings → Appearance.
 - **Home follows the time of day.** A greeting for the hour, quick picks, and shelves such as Back in rotation, Hi-Res you haven't heard and a mood for the part of the day, all chosen on your Mac from what you play. **Why these?** explains each pick and **Refresh mix** draws a new one.
 - **Folders** lists every library folder with its song count and status, and **Remove** takes one out of the library after asking. Your files are never touched.
 
 ### Now Playing
 
-- **Six layouts**, chosen in Settings → Now Playing with a preview of each: **Stage**, **Classic**, **Full-bleed**, **Carousel**, **Lumen** and **Chillax**. Each is drawn for a large window and scales down to a small one.
+- **Seven layouts**, chosen in Settings → Now Playing with a preview of each: **Chillax** (the default), **Stage**, **Classic**, **Full-bleed**, **Carousel**, **Lumen** and the new **Orbit**. Each is drawn for a large window and scales down to a small one.
+- **Orbit.** The album sits in a circle in the middle, ringed by a live spectrum of 96 bars that move with the music. The ring is also the seek bar: its bright arc shows how far you are, and dragging it seeks. The animation stops when playback pauses, when the window is hidden, with Reduce Motion on, or with the visualiser off.
 - **The controls are always there.** Shuffle, previous, play or pause, next and repeat; the seek bar with both times; the queue, the mini player, the volume and the output chip stay in view in every layout, down to the smallest window. Lyrics and Up next give way first.
 - **Lyrics** stay large and follow the sung line. Their size and timing are in Settings → Now Playing, so nothing floats over the words.
 - **The controls stay in view.** The top bar and the controls no longer fade away; Settings → Now Playing has a switch to let them rest after a few seconds.
@@ -41,6 +42,13 @@ always shows which state you are in.
 - **Add to playlist** from the song on screen: a card with a search, **New playlist**, and a tick beside each playlist that holds the song.
 - **Credits** under the artist (written by, produced by, conductor, ensemble, instruments), the format tags and the signal path, each switchable.
 - **Up next** pictures load ahead of time, so the covers are there when the list opens.
+
+### Settings
+
+- **One page, one menu.** Everything lives in Settings, grouped: **Appearance, Now Playing, Mini player, Pages** · **General, Startup & memory, MIDI** · **Connect, Cloud** · **Intelligence** · **System**. Cloud and Intelligence, which used to be separate pages, are inside it.
+- **Search finds any setting**, by name or by what it does, and takes you to it.
+- **No more clashing headings.** The Sound tab strip no longer shows over Settings → System.
+- **Add folder** sits beside the search on every page, so adding music never needs a trip into Settings.
 
 ### Mini player and menu bar
 
@@ -61,16 +69,20 @@ always shows which state you are in.
 
 - The app no longer quits when you switch to the mini player.
 - Settings no longer jump back to the top when you change something.
+- Settings → System no longer shows the Sound page's tab strip on top of its own headings.
+- Opening Aureon no longer asks for your Keychain password: the phone-sharing key is kept in a private file in Aureon's own folder, and nothing reads the Keychain at start-up.
 - The output list opens inside the window, on every page, and no longer closes the moment it opens on Now Playing.
 - The seek bar choice in Settings is applied everywhere.
 - Lyrics controls no longer overlap the format tags or the buttons beside the title, in any layout.
 - Every Now Playing layout keeps its bottom controls at small window sizes.
 - Shuffle and repeat show clearly when they are on.
-- A fresh install opens in Graphite, dark.
+- A fresh install opens in Graphite, dark, in the Chillax layout.
 - Settings made in earlier builds carry over to the new colours.
 
 ## Known issues
 
+- **Phones paired with an earlier build must pair again once.** The sharing key moved from the Keychain to a private file in Aureon's folder, so a new one is made on first launch.
+- **Only the system font and Figtree are bundled.** The typeface picker lists more families only when their font files are added to the app; none are shipped yet.
 - **Windows is not included.** The Windows version follows separately, built from the same design.
 - **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder has an intermittent index error. Not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS may ask again for music-folder access after an update.
@@ -84,7 +96,8 @@ The README lists what has not been verified on real hardware.
 ## Roadmap
 
 - A theme of its own for the mini player.
-- More Now Playing layouts: Vinyl, Hi-Fi, Orbit, Timeline and Poster.
+- More Now Playing layouts: Vinyl, Hi-Fi, Timeline and Poster.
+- More typefaces in the picker.
 - A Windows version.
 - A signed and notarised app.
 
