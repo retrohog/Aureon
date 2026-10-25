@@ -198,7 +198,7 @@ final class PlayerModel: ObservableObject {
             let env = ProcessInfo.processInfo.environment
             if env["AUREON_SNAPSHOT"] == nil, env["AUREON_TESTING"] == nil { look.save(defaults) }
             resolveTheme(persist: false)
-            lookRevision &+= 1
+            if look.rebuildsInterface(from: oldValue) { lookRevision &+= 1 }
             if look.mini != oldValue.mini { mini.settingsChanged() }
         }
     }

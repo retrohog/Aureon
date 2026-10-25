@@ -134,6 +134,14 @@ struct LookSettings: Codable, Equatable {
     var memory = MemorySettings()
 
     static let defaults = LookSettings()
+
+    /// Whether changing from `old` to this needs the interface built again: the choices that the colours, type and spacing are read from (`Brand`, `Typo`,
+    /// `Metrics`) when a view is made. Everything else (the layout, the lyrics, the tags, the mini player, what is remembered) is read from the model by views that
+    /// redraw by themselves, so changing it leaves the page, and where it is scrolled, alone.
+    func rebuildsInterface(from old: LookSettings) -> Bool {
+        density != old.density || weight != old.weight || textScale != old.textScale || lightBrightness != old.lightBrightness || pureBlack != old.pureBlack
+            || accentHex != old.accentHex || edge != old.edge || motion != old.motion
+    }
     static let textScaleRange = 0.85...1.3
 
     init() {}

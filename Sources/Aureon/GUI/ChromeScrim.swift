@@ -114,7 +114,9 @@ private struct UnderChrome: ViewModifier {
             .onAppear {
                 guard !key.isEmpty, let y = ScrollMemory.shared.offset(key) else { restoring = false; return }
                 // after the page has laid itself out (a grid of covers is built as it is asked for)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { position.scrollTo(y: CGFloat(y)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { restoring = false } }
+                // (a settings page is laid out at once, so it is put back at once: nothing is seen to jump when the interface is rebuilt)
+                let delay = key.hasPrefix(Tab.settings.rawValue + "|") ? 0.02 : 0.25
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { position.scrollTo(y: CGFloat(y)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { restoring = false } }
             }
     }
 }
