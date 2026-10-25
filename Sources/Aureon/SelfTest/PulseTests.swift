@@ -282,7 +282,14 @@ extension PulseTests {
 
 nonisolated(unsafe) private var pulseKeepAlive: [AnyObject] = []
 
-private final class KeyableWindow: NSWindow { override var canBecomeKey: Bool { true } }
+/// A window the tests can make key without the app being active (an ordinary window cannot, and SwiftUI answers drags only in a key window).
+private final class KeyableWindow: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask, backing: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style.union(.nonactivatingPanel), backing: backing, defer: flag)
+    }
+}
 
 extension PulseTests {
     /// The history behind the queue panel's History tab.
@@ -815,6 +822,123 @@ extension PulseTests {
         expect(m.lastPage[.podcasts] == .tab(.podcasts) && m.lastPage[.radio] == .tab(.radio), "each remembers its own last page")
     }
 
+    /// The seek bar choice in Settings (the layout's own, the waveform, or a line) changes the seek bar everywhere it is drawn, at once and without a restart:
+    /// the player bar, every Now Playing layout and the mini player; and seeking with the mouse still works with each.
+    @MainActor func theSeekBarChoiceReachesEverySeekBar() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("seekchoice")
+        let song = dir.appendingPathComponent("Seek Choice.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        LayoutProbe.enabled = true
+        defer { m.clear(); LayoutProbe.enabled = false }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        let size = CGSize(width: 1100, height: 700)
+        var hosts = 0
+        func run(_ what: String, seeks: Bool = false, setup: () -> Void, make: (Int) -> AnyView) {
+            setup()
+            let probe = LayoutProbe.begin()
+            let host = NSHostingView(rootView: make(probe))
+            host.frame = NSRect(origin: .zero, size: size)
+            let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+            win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless(); win.makeKey()
+            defer { win.orderOut(nil); win.contentView = nil }
+            func settle(_ secs: Double) {
+                let end = Date().addingTimeInterval(secs)
+                while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+            }
+            func styles(_ choice: SeekChoice) -> Set<String> {
+                m.look.seekChoice = choice
+                settle(0.8)
+                return LayoutProbe.scrubbers
+            }
+            settle(1.0)
+            let thin = styles(.line)
+            let own = styles(.layout)
+            expect(!own.isEmpty, "\(what): a seek bar is drawn")
+            expect(thin == ["slim"], "\(what): Line draws the thin track: \(thin)")
+            let wave = styles(.waveform)
+            expect(!wave.isEmpty && !wave.contains("slim"), "\(what): Waveform draws a waveform: \(wave)")
+            let again = styles(.layout)
+            expect(again == own, "\(what): back to the layout's own, as it was: \(own) then \(again)")
+            if seeks {
+                for choice in SeekChoice.allCases {
+                    _ = styles(choice)
+                    guard let r = LayoutProbe.frames["scrubber"] else { expect(false, "\(what), \(choice.rawValue): the seek bar is on screen"); continue }
+                    m.player.send(.seekTo(1)); settle(0.5)
+                    // a press in the middle of the bar with a hair of movement, as a real click has: halfway through the song
+                    let at = NSPoint(x: r.midX, y: size.height - r.midY)
+                    for (type, dx) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 3.0), (.leftMouseDragged, 6.0), (.leftMouseDragged, 8.0), (.leftMouseUp, 8.0)] {
+                        if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: at.x + dx, y: at.y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { win.sendEvent(e) }
+                        settle(0.05)
+                    }
+                    settle(1.0)
+                    let half = m.status.position
+                    expect(half > 12 && half < 28, "\(what), \(choice.rawValue): a click in the middle seeks to about the middle: \(String(format: "%.1f", half)) s of 40")
+                }
+            }
+            hosts += 1
+        }
+        run("player bar", seeks: true, setup: { m.tab = .home; stage.immersive = false }, make: { p in AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, p).frame(width: size.width, height: size.height).preferredColorScheme(.dark)) })
+        for layout in NowPlayingLayout.allCases {
+            run("Now Playing, \(layout.rawValue)", seeks: layout == .stage, setup: { m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = false; stage.open(m, reduceMotion: true) }, make: { p in AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, p).frame(width: size.width, height: size.height).preferredColorScheme(.dark)) })
+        }
+        for mini in [MiniLayout.card, .popover] {
+            run("mini player, \(mini.rawValue)", setup: {}, make: { p in AnyView(MiniLayoutView(layout: mini).environment(\.miniActions, MiniActions()).miniEnvironment(m).environment(\.probeToken, p).frame(width: size.width, height: size.height)) })
+        }
+        expect(hosts == 9, "every place was looked at: \(hosts)")
+    }
+
+    /// A bare seek bar: a press and a little drag in its middle seeks to the middle of the song, for each choice.
+    @MainActor func aSeekBarSeeksWhereItIsPressed() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("seekbare")
+        let song = dir.appendingPathComponent("Seek Bare.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        defer { m.clear() }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        let host = NSHostingView(rootView: AnyView(WaveformScrubber(style: .slim, tint: Brand.accent).environmentObject(m).environmentObject(m.progress).frame(width: 600, height: 40)))
+        host.frame = NSRect(x: 0, y: 0, width: 600, height: 40)
+        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless(); win.makeKey()
+        defer { win.orderOut(nil); win.contentView = nil }
+        func settle(_ secs: Double) {
+            let end = Date().addingTimeInterval(secs)
+            while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+        }
+        settle(1.0)
+        for choice in SeekChoice.allCases {
+            m.look.seekChoice = choice
+            m.player.send(.seekTo(1)); settle(0.5)
+            for (type, dx) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 3.0), (.leftMouseDragged, 6.0), (.leftMouseUp, 6.0)] {
+                if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: 300 + dx, y: 20), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { win.sendEvent(e) }
+                settle(0.05)
+            }
+            settle(1.0)
+            expect(m.status.position > 12 && m.status.position < 28, "\(choice.rawValue): pressing the middle seeks to about the middle: \(String(format: "%.1f", m.status.position)) s")
+        }
+    }
+
+    /// The top bar and the controls of Now Playing stay in view unless the listener asks them to rest (and the controls are in every layout, wholly in the window).
+    @MainActor func theControlsStayInViewUnlessAskedToRest() {
+        expect(!LookSettings().restControls, "by default nothing hides")
+        expect(IdleTracker.decision(restControls: false, idle: 60, holds: false, disabled: false) == .stayAwake, "a long quiet spell does not hide anything when resting is off")
+        expect(IdleTracker.decision(restControls: true, idle: 1, holds: false, disabled: false) == .waitMore(IdleTracker.delay - 1), "with resting on, it waits out the delay")
+        expect(IdleTracker.decision(restControls: true, idle: 10, holds: false, disabled: false) == .rest, "and then rests")
+        expect(IdleTracker.decision(restControls: true, idle: 10, holds: true, disabled: false) != .rest && IdleTracker.decision(restControls: true, idle: 10, holds: false, disabled: true) != .rest, "unless something needs it awake (paused, a panel open, a test)")
+        var saved = LookSettings(); saved.restControls = true
+        let data = try? JSONEncoder().encode(saved)
+        expect(data.flatMap { try? JSONDecoder().decode(LookSettings.self, from: $0) }?.restControls == true && (try? JSONDecoder().decode(LookSettings.self, from: Data("{}".utf8)))?.restControls == false, "the choice is saved, and an older record reads as off")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1145,6 +1269,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
