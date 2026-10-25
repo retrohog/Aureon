@@ -183,19 +183,34 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
         shownLayout = layout
     }
 
+    /// The place is remembered for each display, by the display's own identity (the window is brought back to where it was on the display the Aureon window is on).
+    private func displayKey(for window: NSWindow?) -> String {
+        guard let s = window?.screen ?? mainWindow()?.screen ?? NSScreen.main ?? NSScreen.screens.first else { return "none" }
+        return WindowMemoryController.displayKey(s)
+    }
+
     private func restoredOrigin(size: CGSize, layout: MiniLayout) -> CGPoint {
         let screens = NSScreen.screens.map(\.visibleFrame)
-        let fallback = MiniSettings.defaultOrigin(size: size, in: (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
-        guard settings.rememberPosition, let a = defaults.array(forKey: "aureon.mini.origin") as? [Double], a.count == 2 else { return fallback }
-        var o = CGPoint(x: a[0], y: a[1] + (defaults.double(forKey: "aureon.mini.height") - size.height))
+        let fallback = MiniSettings.defaultOrigin(size: size, in: (mainWindow()?.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900))
+        guard settings.rememberPosition else { return fallback }
+        let table = defaults.dictionary(forKey: Self.placesKey) as? [String: [Double]] ?? [:]
+        // a place saved by an earlier build (one place for every display) is used until the window is moved
+        let legacy: [Double]? = (defaults.array(forKey: "aureon.mini.origin") as? [Double]).flatMap { $0.count == 2 ? [$0[0], $0[1], defaults.double(forKey: "aureon.mini.height")] : nil }
+        guard let a = table[displayKey(for: nil)] ?? legacy, a.count == 3 else { return fallback }
+        var o = CGPoint(x: a[0], y: a[1] + (a[2] - size.height))
         o = MiniSettings.onScreen(origin: o, size: size, screens: screens) ?? o
         return o
     }
 
+    static let placesKey = "aureon.mini.places"
+    /// Tests may write the place (it is otherwise not written while testing or taking snapshots).
+    var persistsInTests = false
+
     private func saveOrigin(_ p: NSWindow) {
-        guard settings.rememberPosition, !snapshot else { return }
-        defaults.set([Double(p.frame.origin.x), Double(p.frame.origin.y)], forKey: "aureon.mini.origin")
-        defaults.set(Double(p.frame.height), forKey: "aureon.mini.height")
+        guard settings.rememberPosition, !snapshot || persistsInTests else { return }
+        var table = defaults.dictionary(forKey: Self.placesKey) as? [String: [Double]] ?? [:]
+        table[displayKey(for: p)] = [Double(p.frame.origin.x), Double(p.frame.origin.y), Double(p.frame.height)]
+        defaults.set(table, forKey: Self.placesKey)
     }
 
     func windowDidMove(_ notification: Notification) { if let w = notification.object as? NSWindow, w === panel { saveOrigin(w) } }

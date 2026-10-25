@@ -113,12 +113,12 @@ struct MiniSettings: Codable, Equatable {
     /// Where a window of this size goes when there is no remembered place: the top right of the visible screen, under the menu bar.
     static func defaultOrigin(size: CGSize, in visible: CGRect) -> CGPoint { CGPoint(x: visible.maxX - size.width - 24, y: visible.maxY - size.height - 24) }
 
-    /// A remembered origin, brought back onto a screen if the display it was on is gone: `nil` when it is still fully usable as it was.
+    /// A remembered or dropped origin, pulled back so the whole window is on the screen it is mostly on: `nil` when it already is.
     static func onScreen(origin: CGPoint, size: CGSize, screens: [CGRect]) -> CGPoint? {
         let frame = CGRect(origin: origin, size: size)
         guard let best = screens.max(by: { $0.intersection(frame).width * $0.intersection(frame).height < $1.intersection(frame).width * $1.intersection(frame).height }) else { return nil }
-        let seen = best.intersection(frame)
-        if seen.width >= min(size.width, 120) && seen.height >= min(size.height, 40) { return nil }
+        // fully inside the screen it is mostly on: as it was; otherwise pulled back so the whole window is in view
+        if best.contains(frame) { return nil }
         return CGPoint(x: min(max(origin.x, best.minX), best.maxX - size.width), y: min(max(origin.y, best.minY), best.maxY - size.height))
     }
 }

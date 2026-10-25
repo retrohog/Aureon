@@ -581,6 +581,83 @@ extension PulseTests {
         }
     }
 
+    /// All four windows of the mini player are dragged from their body (the cover, the names, empty space), their controls still answer and never drag, the place
+    /// is kept fully on a screen, written for the display, and read back by a new controller (the next launch), with the Aureon window put away or kept.
+    @MainActor func theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let ud = UserDefaults.standard
+        let saved = ud.object(forKey: MiniPlayerController.placesKey)
+        let main = NSWindow(contentRect: NSRect(x: 220, y: 240, width: 900, height: 600), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        main.orderFront(nil)
+        var models: [PlayerModel] = []
+        defer {
+            for m in models { m.mini.shutDown() }
+            main.orderOut(nil); main.contentView = nil
+            if let saved { ud.set(saved, forKey: MiniPlayerController.placesKey) } else { ud.removeObject(forKey: MiniPlayerController.placesKey) }
+        }
+        // points in the window (origin at the bottom left): on the cover, on the names, in empty space; and one on a control that must not drag
+        let spots: [MiniLayout: (body: [NSPoint], control: NSPoint)] = [
+            .bar: ([NSPoint(x: 48, y: 48), NSPoint(x: 200, y: 60), NSPoint(x: 300, y: 30)], NSPoint(x: 469, y: 77)),
+            .strip: ([NSPoint(x: 24, y: 24), NSPoint(x: 90, y: 24), NSPoint(x: 330, y: 24)], NSPoint(x: 340, y: 24)),
+            .card: ([NSPoint(x: 190, y: 400), NSPoint(x: 100, y: 190), NSPoint(x: 190, y: 120)], NSPoint(x: 337, y: 595)),
+            .cardLyrics: ([NSPoint(x: 100, y: 590), NSPoint(x: 130, y: 400), NSPoint(x: 130, y: 250)], NSPoint(x: 205, y: 594)),
+        ]
+        for hide in [true, false] {
+            for layout in MiniLayout.allCases where layout.isWindow {
+                guard let spot = spots[layout] else { continue }
+                let m = PlayerModel(); pulseKeepAlive.append(m); models.append(m)
+                m.mini.persistsInTests = true; m.mini.mainWindowProvider = { main }
+                m.look.mini.layout = layout; m.look.mini.rememberPosition = true; m.look.mini.hideMainWindow = hide
+                ud.removeObject(forKey: MiniPlayerController.placesKey)
+                m.mini.showFloating()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+                guard let win = m.mini.floatingWindow else { expect(false, "\(layout.rawValue): there is a window"); continue }
+                let area = (win.screen ?? NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+                win.setFrameOrigin(NSPoint(x: area.midX - win.frame.width / 2, y: area.midY - win.frame.height / 2))        // mid-screen, so a drag has room
+                expect(main.isVisible == !hide, "\(layout.rawValue): the Aureon window is \(hide ? "put away" : "kept alongside")")
+                func send(_ type: NSEvent.EventType, _ p: NSPoint) {
+                    if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { win.sendEvent(e) }
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                }
+                for (i, p) in spot.body.enumerated() {
+                    let before = win.frame.origin
+                    send(.leftMouseDown, p)
+                    send(.leftMouseDragged, NSPoint(x: p.x + 30, y: p.y - 12))
+                    send(.leftMouseDragged, NSPoint(x: p.x + 8, y: p.y - 4))
+                    send(.leftMouseUp, NSPoint(x: p.x + 8, y: p.y - 4))
+                    let d = CGSize(width: win.frame.origin.x - before.x, height: win.frame.origin.y - before.y)
+                    expect(abs(d.width - 38) < 2 && abs(d.height + 16) < 2, "\(layout.rawValue), spot \(i): a drag from here moves the window by (38, −16): \(d)")
+                }
+                // a control answers its click and the window stays where it is
+                let at = win.frame.origin
+                send(.leftMouseDown, spot.control); send(.leftMouseUp, spot.control)
+                expect(win.frame.origin == at, "\(layout.rawValue): a click on a control does not move the window")
+                // dropped half off the screen: the whole window is pulled back
+                let screen = (win.screen ?? NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+                win.setFrameOrigin(NSPoint(x: screen.maxX - 40, y: screen.minY + 5))
+                send(.leftMouseDown, spot.body[0]); send(.leftMouseDragged, NSPoint(x: spot.body[0].x + 4, y: spot.body[0].y)); send(.leftMouseUp, NSPoint(x: spot.body[0].x + 4, y: spot.body[0].y))
+                expect(screen.insetBy(dx: -1, dy: -1).contains(win.frame), "\(layout.rawValue): a window left half off the screen is pulled fully back: \(win.frame) in \(screen)")
+                // moved, closed, and read back by a new controller (the next launch): same place
+                let placed = win.frame
+                m.mini.closeFloating()
+                expect(main.isVisible, "\(layout.rawValue): closing brings the Aureon window back")
+                let next = PlayerModel(); pulseKeepAlive.append(next); models.append(next)
+                next.mini.persistsInTests = true; next.mini.mainWindowProvider = { main }
+                next.look.mini.layout = layout; next.look.mini.rememberPosition = true; next.look.mini.hideMainWindow = hide
+                next.mini.showFloating()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                if let again = next.mini.floatingWindow { expect(abs(again.frame.origin.x - placed.origin.x) < 1 && abs(again.frame.maxY - placed.maxY) < 1, "\(layout.rawValue): the next launch opens in the same place: \(again.frame) was \(placed)") }
+                else { expect(false, "\(layout.rawValue): it opens again") }
+                next.mini.closeFloating()
+                main.orderFront(nil)
+            }
+        }
+        // the rule itself: partly off a screen is pulled back; wholly on a screen is left alone
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        expect(MiniSettings.onScreen(origin: CGPoint(x: 1400, y: 100), size: CGSize(width: 520, height: 96), screens: [screen]) == CGPoint(x: 920, y: 100), "partly off the right edge: pulled back in")
+        expect(MiniSettings.onScreen(origin: CGPoint(x: 100, y: 100), size: CGSize(width: 520, height: 96), screens: [screen]) == nil, "wholly on: left alone")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -909,6 +986,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
