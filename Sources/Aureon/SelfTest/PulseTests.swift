@@ -946,6 +946,64 @@ extension PulseTests {
         expect(data.flatMap { try? JSONDecoder().decode(LookSettings.self, from: $0) }?.restControls == true && (try? JSONDecoder().decode(LookSettings.self, from: Data("{}".utf8)))?.restControls == false, "the choice is saved, and an older record reads as off")
     }
 
+    /// Starting the app with the default settings never asks the Keychain for anything (macOS may ask for a password when it is asked).
+    @MainActor func startingUpNeverTouchesTheKeychain() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        KeychainAudit.reset()
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        let size = CGSize(width: 1100, height: 700)
+        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+        host.frame = NSRect(origin: .zero, size: size)
+        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+        defer { win.orderOut(nil); win.contentView = nil }
+        pumpFor(2.0)
+        expect(KeychainAudit.accesses.isEmpty, "launching leaves the Keychain alone: \(KeychainAudit.accesses)")
+        m.restoreSession()
+        pumpFor(1.0)
+        // every page a person can open without asking for a feature that needs a secret
+        for tab in [Tab.home, .albums, .radio, .podcasts, .rooms, .audio, .settings] { m.go(.tab(tab)); pumpFor(0.2); print("DBG", tab, KeychainAudit.accesses.count) }
+        for section in SettingsSection.allCases { m.go(.settings(section)); pumpFor(0.2); print("DBG section", section, KeychainAudit.accesses.count) }
+        expect(KeychainAudit.accesses.isEmpty, "start-up and every page leave the Keychain alone: \(KeychainAudit.accesses)")
+    }
+
+    /// The phone-sharing key is a private file: only this user can open the folder (0700) or the file (0600), it is written whole, it survives a restart, and an upgrade
+    /// from the Keychain never reads the Keychain (a new key is made, and paired phones are told to pair again).
+    @MainActor func theSharingKeyIsAPrivateFile() {
+        KeychainAudit.reset()
+        let root = tempDir("privatekey").appendingPathComponent("Aureon-\(UUID().uuidString.prefix(6))")
+        let folder = root.appendingPathComponent("Private")
+        let store = PrivateFileSecretStore(folder: folder)
+        let perms = { (u: URL) in ((try? FileManager.default.attributesOfItem(atPath: u.path))?[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+        expect(store.get("bridge.key") == nil, "nothing there at first")
+        store.set("first", for: "bridge.key")
+        let file = folder.appendingPathComponent("bridge.key")
+        expect(perms(folder) == 0o700 && perms(file) == 0o600, "folder 0700, file 0600: \(String(perms(folder), radix: 8)) \(String(perms(file), radix: 8))")
+        store.set("second", for: "bridge.key")
+        expect(store.get("bridge.key") == "second" && perms(file) == 0o600, "replaced whole, still private")
+        expect((try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.sorted() == ["bridge.key"], "no half-written file is left behind")
+        expect(PrivateFileSecretStore(folder: folder).get("bridge.key") == "second", "a new start reads it back")
+        store.set("odd", for: "../../escape")
+        expect(!FileManager.default.fileExists(atPath: root.deletingLastPathComponent().appendingPathComponent("escape").path) && (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.count == 2, "an account name cannot reach outside the folder")
+        store.set(nil, for: "bridge.key")
+        expect(store.get("bridge.key") == nil && !FileManager.default.fileExists(atPath: file.path), "removing it removes the file")
+        // an upgrade: phones were paired with a key that lived in the Keychain; the Keychain is not asked, a new key is made and the old pairings are dropped
+        let suite = "aureon.test.upgrade.\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        defer { d.removePersistentDomain(forName: suite) }
+        let reg = BridgeRegistry(); reg.secrets = PrivateFileSecretStore(folder: folder); reg.defaults = d
+        d.set(try? JSONEncoder().encode([PairedDevice(id: "abc", name: "Old phone", tokenHash: "x", pairedAt: 1)]), forKey: "aureon.bridge.devices")
+        let key = reg.bridgeKey
+        expect(key.count == 32 && reg.devices.isEmpty, "a new key; the phone paired with the old key is no longer listed")
+        expect(reg.takeRenewedNotice() && !reg.takeRenewedNotice(), "the notice is given once")
+        expect(reg.bridgeKey == key && perms(folder.appendingPathComponent("bridge.key")) == 0o600, "the key then stays")
+        expect(KeychainAudit.accesses.isEmpty, "none of this asked the Keychain: \(KeychainAudit.accesses)")
+        reg.rotateKey()
+        expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("bridge.key").path), "starting over removes the file")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1276,6 +1334,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

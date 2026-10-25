@@ -360,12 +360,13 @@ final class SocialModel: ObservableObject {
     private func save() { if let d = try? JSONEncoder().encode(settings) { defaults.set(d, forKey: "aureon.connections") } }
 
     // secrets live in the Keychain, never in preferences
-    var lastfmAPIKey: String { get { secrets.get("lastfm.apikey") ?? "" } set { secrets.set(newValue, for: "lastfm.apikey"); applySettings() } }
-    var lastfmSecret: String { get { secrets.get("lastfm.secret") ?? "" } set { secrets.set(newValue, for: "lastfm.secret"); applySettings() } }
-    var listenbrainzToken: String { get { secrets.get("listenbrainz.token") ?? "" } set { secrets.set(newValue, for: "listenbrainz.token"); applySettings() } }
+    // (read only while that service is switched on: with it off nothing here asks the Keychain, and macOS never asks for a password)
+    var lastfmAPIKey: String { get { settings.lastfmEnabled ? (secrets.get("lastfm.apikey") ?? "") : "" } set { secrets.set(newValue, for: "lastfm.apikey"); applySettings() } }
+    var lastfmSecret: String { get { settings.lastfmEnabled ? (secrets.get("lastfm.secret") ?? "") : "" } set { secrets.set(newValue, for: "lastfm.secret"); applySettings() } }
+    var listenbrainzToken: String { get { settings.listenbrainzEnabled ? (secrets.get("listenbrainz.token") ?? "") : "" } set { secrets.set(newValue, for: "listenbrainz.token"); applySettings() } }
 
     private func applySettings() {
-        let sk = secrets.get("lastfm.session")
+        let sk = settings.lastfmEnabled ? secrets.get("lastfm.session") : nil
         lastfm = settings.lastfmEnabled && !lastfmAPIKey.isEmpty ? LastFMClient(apiKey: lastfmAPIKey, secret: lastfmSecret, sessionKey: sk) : nil
         if !settings.lastfmEnabled { lastfmStatus = "Off" }
         else if lastfm?.isConfigured == true { lastfmStatus = settings.lastfmUser.isEmpty ? "Signed in" : "Signed in as " + settings.lastfmUser }

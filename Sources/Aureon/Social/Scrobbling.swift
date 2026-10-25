@@ -330,11 +330,63 @@ final class MemorySecretStore: SecretStore, @unchecked Sendable {
     func set(_ value: String?, for account: String) { l.lock(); d[account] = value; l.unlock() }
 }
 
+/// Secrets kept as small files in a private folder of the app's own support folder: the folder is readable by this user only (0700), each file is too (0600) and is
+/// written whole and moved into place (so a crash never leaves half a key), and nothing about their content is ever logged. Nothing here talks to the Keychain, so
+/// macOS never asks for a password.
+final class PrivateFileSecretStore: SecretStore, @unchecked Sendable {
+    let folder: URL
+    private let lock = NSLock()
+
+    init(folder: URL) { self.folder = folder }
+
+    /// `~/Library/Application Support/Aureon/Private`.
+    static let standard = PrivateFileSecretStore(folder: (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
+        .appendingPathComponent("Aureon", isDirectory: true).appendingPathComponent("Private", isDirectory: true))
+
+    private func url(_ account: String) -> URL {
+        let safe = String(account.map { $0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_" ? $0 : "_" })
+        return folder.appendingPathComponent(safe.isEmpty ? "_" : safe)
+    }
+
+    func get(_ account: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        guard let d = try? Data(contentsOf: url(account)), let s = String(data: d, encoding: .utf8) else { return nil }
+        return s
+    }
+
+    func set(_ value: String?, for account: String) {
+        lock.lock(); defer { lock.unlock() }
+        let target = url(account)
+        guard let value, !value.isEmpty else { try? FileManager.default.removeItem(at: target); return }
+        let fm = FileManager.default
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
+        // written whole to a file only this user can read, then moved over the old one
+        let temp = folder.appendingPathComponent(".\(UUID().uuidString).tmp")
+        let fd = open(temp.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+        guard fd >= 0 else { return }
+        let bytes = Array(value.utf8)
+        var written = 0
+        while written < bytes.count { let n = bytes[written...].withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }; if n <= 0 { break }; written += n }
+        fsync(fd); close(fd)
+        guard written == bytes.count, rename(temp.path, target.path) == 0 else { try? fm.removeItem(at: temp); return }
+    }
+}
+
 /// The macOS Keychain (generic passwords under a service named after the app's bundle identifier, or another service when given).
 ///
 /// Keychain items are guarded by the identity of the app that made them: another build asking for them gets the system's "wants to use your
 /// confidential information" prompt, which wants the login password. So each build keeps its own items: a preview or development build never
 /// asks for the release app's. Snapshot renders and `AUREON_NO_KEYCHAIN=1` never touch the Keychain at all (secrets stay in memory).
+/// Every time something asks the real Keychain (macOS may ask the person for a password when that happens), so a test can prove that start-up never does.
+enum KeychainAudit {
+    nonisolated(unsafe) private static var entries: [String] = []
+    private static let lock = NSLock()
+    static func note(_ what: String) { lock.lock(); entries.append(what); lock.unlock() }
+    static var accesses: [String] { lock.lock(); defer { lock.unlock() }; return entries }
+    static func reset() { lock.lock(); entries = []; lock.unlock() }
+}
+
 final class KeychainSecretStore: SecretStore, @unchecked Sendable {
     private let service: String
     private let memory: MemorySecretStore?
@@ -346,6 +398,7 @@ final class KeychainSecretStore: SecretStore, @unchecked Sendable {
     }
     func get(_ account: String) -> String? {
         if let memory { return memory.get(account) }
+        KeychainAudit.note("get \(service)/\(account)")
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
                                 kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var r: CFTypeRef?
@@ -354,6 +407,7 @@ final class KeychainSecretStore: SecretStore, @unchecked Sendable {
     }
     func set(_ value: String?, for account: String) {
         if let memory { memory.set(value, for: account); return }
+        KeychainAudit.note("set \(service)/\(account)")
         let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(base as CFDictionary)
         guard let value, !value.isEmpty else { return }
