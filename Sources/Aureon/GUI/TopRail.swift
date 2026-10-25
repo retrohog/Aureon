@@ -109,8 +109,12 @@ struct RoundIconStyle: ButtonStyle {
 struct PulseTopBar: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var idle: IdleTracker
+    @State private var width: CGFloat = 1100
+    @State private var rightWidth: CGFloat = 280
 
     private var resting: Bool { !idle.awake && m.tab == .player && !m.djMode }
+    /// In a narrow window the Add folder button is its icon only.
+    private var compact: Bool { width < 1000 }
 
     var body: some View {
         ZStack {
@@ -123,23 +127,61 @@ struct PulseTopBar: View {
             HStack(spacing: 10) {
                 HomeButton()
                 TopSearchField()
+                AddFolderButton(compact: compact)
             }
-            .frame(maxWidth: 520).padding(.horizontal, 250)
+            .frame(maxWidth: 600)
+            // the search sits between the buttons at the left and the controls at the right, whatever their width (they never overlap it)
+            .padding(.leading, 250).padding(.trailing, max(250, rightWidth + 28))
             HStack(spacing: 8) {
-                Spacer(minLength: 0)
-                OutputChip()
+                OutputChip().frame(maxWidth: 230)
                 MiniToggleButton()
                 SettingsButton()
             }
+            .fixedSize()
+            // what the controls at the right need: the search keeps clear of it
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { rightWidth = $0 + 16 }
+            .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, 16)
             // ⌥⌘D: the quick control panel
             Button { withAnimation(Motion.glide) { m.toggleQuickPanel(.rail) } } label: { Color.clear }
                 .buttonStyle(.plain).keyboardShortcut("d", modifiers: [.option, .command]).frame(width: 0, height: 0).accessibilityHidden(true)
         }
         .frame(height: Metrics.topBarHeight)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
         .opacity(resting ? 0 : 1)
         .allowsHitTesting(!resting)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// Add folder, beside the search, on every page: it opens the same choice of folders as the Library's own button. In a narrow window it is the icon alone.
+struct AddFolderButton: View {
+    @EnvironmentObject var m: PlayerModel
+    var compact = false
+    @StateObject private var hover = Box(false)
+
+    var body: some View {
+        Button { m.chooseMusicFolders() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.badge.plus").font(Typo.sans(14, .regular))
+                if !compact { Text("Add folder").font(Typo.sans(13.5, .medium)).lineLimit(1).fixedSize() }
+            }
+            .foregroundStyle(hover.v ? Brand.ink : Brand.inkSecondary)
+            .padding(.horizontal, compact ? 12 : 16).frame(height: 38)
+            .background(Capsule().fill(Brand.panel2))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
+        .help("Add a music folder…").accessibilityLabel("Add folder").layoutProbe("top.addFolder")
+    }
+}
+
+extension PlayerModel {
+    /// The choice of music folders (the one the Library's Add folder button opens).
+    func chooseMusicFolders() {
+        let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false; p.allowsMultipleSelection = true
+        p.message = "Choose the folder(s) that contain your music"
+        DispatchQueue.main.async { [weak self] in if p.runModal() == .OK { p.urls.forEach { self?.library.addFolder($0) } } }
     }
 }
 
@@ -158,7 +200,7 @@ struct HomeButton: View {
         let on = m.currentDestination == .home && m.tab == .home
         Button { withAnimation(Motion.page) { m.go(.tab(.home)) } } label: { Image(systemName: on ? "house.fill" : "house") }
             .buttonStyle(RoundIconStyle(on: on, size: 40))
-            .help("Home").accessibilityLabel("Home").accessibilityAddTraits(on ? .isSelected : [])
+            .help("Home").accessibilityLabel("Home").accessibilityAddTraits(on ? .isSelected : []).layoutProbe("top.home")
     }
 }
 
@@ -178,7 +220,7 @@ struct SettingsButton: View {
     var body: some View {
         let on = m.currentDestination == .settings
         Button { withAnimation(Motion.page) { m.go(.settings(m.settingsSection)) } } label: { Image(systemName: "gearshape") }
-            .buttonStyle(RoundIconStyle(on: on, size: 40)).help("Settings").accessibilityLabel("Settings")
+            .buttonStyle(RoundIconStyle(on: on, size: 40)).help("Settings").accessibilityLabel("Settings").layoutProbe("top.settings")
     }
 }
 
@@ -202,7 +244,7 @@ struct TopSearchField: View {
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
         .keyboardShortcut("k", modifiers: .command)
-        .help("Find anything (⌘K)").accessibilityLabel("Search")
+        .help("Find anything (⌘K)").accessibilityLabel("Search").layoutProbe("top.search")
     }
 }
 

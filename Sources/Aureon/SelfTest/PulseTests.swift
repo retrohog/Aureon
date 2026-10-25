@@ -1080,6 +1080,44 @@ extension PulseTests {
         expect(m.status.position >= before - 0.5, "a press on the cover leaves the song where it is: \(String(format: "%.1f", before)) → \(String(format: "%.1f", m.status.position))")
     }
 
+    /// The top bar: Add folder sits beside the search on every page (and on Now Playing), and at the smallest window and a usual one nothing in the bar overlaps
+    /// anything else.
+    @MainActor func theTopBarKeepsEverythingApart() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        m.pageTransitions = .none
+        LayoutProbe.enabled = true
+        defer { LayoutProbe.enabled = false }
+        var looked = 0
+        for width in [860.0, 1100.0] {
+            let size = CGSize(width: width, height: 640)
+            for tab in [Tab.home, .albums, .radio, .podcasts, .rooms, .settings, .player] {
+                m.go(.tab(tab))
+                if tab == .player { stage.open(m, reduceMotion: true) } else { stage.immersive = false }
+                let probe = LayoutProbe.begin()
+                let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+                host.frame = NSRect(origin: .zero, size: size)
+                let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+                let end = Date().addingTimeInterval(0.9)
+                while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+                let keys = ["top.home", "top.search", "top.addFolder", "output.rail", "top.mini", "top.settings"]
+                let rects = keys.compactMap { k in LayoutProbe.frames[k].map { (k, $0) } }
+                let what = "\(Int(width)) wide, \(tab.rawValue)"
+                expect(rects.count == keys.count, "\(what): the whole bar is there (\(rects.map(\.0)))")
+                let window = CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1)
+                for (k, r) in rects { expect(window.contains(r), "\(what): \(k) is inside the window: \(r)") }
+                for i in rects.indices { for j in rects.indices where j > i { expect(!rects[i].1.intersects(rects[j].1.insetBy(dx: 1, dy: 1)), "\(what): \(rects[i].0) and \(rects[j].0) overlap: \(rects[i].1) \(rects[j].1)") } }
+                if let s = LayoutProbe.frames["top.search"], let a = LayoutProbe.frames["top.addFolder"] { expect(abs(a.minX - s.maxX) < 24 && abs(a.midY - s.midY) < 6, "\(what): Add folder is right next to the search") }
+                win.orderOut(nil); win.contentView = nil
+                looked += 1
+            }
+        }
+        expect(looked == 14, "every page at both widths: \(looked)")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1410,6 +1448,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
