@@ -99,6 +99,8 @@ struct StarlightSettings: Codable, Equatable {
 struct LookSettings: Codable, Equatable {
     var density = UIDensity.compact
     var weight = TypeWeight.regular
+    /// The family the interface is set in (a `FontFamily` id). A family that is not bundled falls back to Figtree.
+    var fontFamily = FontFamily.figtree.rawValue
     /// Text size as a factor of the designed sizes (0.85…1.3).
     var textScale = 1.0
     /// How light the surfaces are, for every theme: −1 (darker) … 0 (as designed) … +1 (lighter). See `Theme.adjusted(brightness:)`.
@@ -143,7 +145,7 @@ struct LookSettings: Codable, Equatable {
     /// `Metrics`) when a view is made. Everything else (the layout, the lyrics, the tags, the mini player, what is remembered) is read from the model by views that
     /// redraw by themselves, so changing it leaves the page, and where it is scrolled, alone.
     func rebuildsInterface(from old: LookSettings) -> Bool {
-        density != old.density || weight != old.weight || textScale != old.textScale || brightness != old.brightness || pureBlack != old.pureBlack
+        density != old.density || weight != old.weight || fontFamily != old.fontFamily || textScale != old.textScale || brightness != old.brightness || pureBlack != old.pureBlack
             || accentHex != old.accentHex || edge != old.edge || motion != old.motion
     }
     static let textScaleRange = 0.85...1.3
@@ -155,6 +157,7 @@ struct LookSettings: Codable, Equatable {
         let d = LookSettings()
         density = try c.decodeIfPresent(UIDensity.self, forKey: .density) ?? d.density
         weight = try c.decodeIfPresent(TypeWeight.self, forKey: .weight) ?? d.weight
+        fontFamily = try c.decodeIfPresent(String.self, forKey: .fontFamily) ?? d.fontFamily
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? d.textScale
         // an earlier build had a light-only brightness from 0 to 1 with 0.35 as the designed tone: the middle stays the middle
         brightness = try c.decodeIfPresent(Double.self, forKey: .brightness)
@@ -182,7 +185,7 @@ struct LookSettings: Codable, Equatable {
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, nowPlayingLayoutChosen, orbitSpin, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, fontFamily, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, nowPlayingLayoutChosen, orbitSpin, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -201,6 +204,7 @@ struct LookSettings: Codable, Equatable {
             switch kv[0] {
             case "density": if let x = UIDensity(rawValue: kv[1]) { density = x }
             case "weight": if let x = TypeWeight(rawValue: kv[1]) { weight = x }
+            case "font": if let x = FontFamily(rawValue: kv[1]) { fontFamily = x.rawValue }
             case "scale": if let v { textScale = v }
             case "brightness": if let v { brightness = v }
             case "black": pureBlack = kv[1] != "0"
@@ -236,6 +240,7 @@ struct LookSettings: Codable, Equatable {
     func clamped() -> LookSettings {
         func c(_ v: Double) -> Double { min(1, max(0, v)) }
         var s = self
+        if FontFamily(rawValue: s.fontFamily) == nil { s.fontFamily = FontFamily.figtree.rawValue }
         s.textScale = min(Self.textScaleRange.upperBound, max(Self.textScaleRange.lowerBound, textScale))
         s.brightness = min(1, max(-1, brightness)); s.edge = c(edge); s.backdrop = c(backdrop); s.motion = c(motion)
         s.starlight.intensity = c(starlight.intensity); s.starlight.motion = c(starlight.motion); s.starlight.reaction = c(starlight.reaction)

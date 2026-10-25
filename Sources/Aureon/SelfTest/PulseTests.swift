@@ -1118,6 +1118,53 @@ extension PulseTests {
         expect(looked == 14, "every page at both widths: \(looked)")
     }
 
+    /// Every family offered in Settings loads, applies to the interface, keeps its weights, and is remembered; a family that is not bundled is not offered and falls
+    /// back to Figtree; each bundled family has its licence beside it, and Chillax is never in the repository.
+    @MainActor func everyFontFamilyLoadsAppliesAndSurvivesARestart() {
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        defer { m.look.fontFamily = FontFamily.figtree.rawValue }
+        let here = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        expect(FontFamily.available.contains(.system) && FontFamily.available.contains(.figtree) && FontFamily.available.count >= 2, "the system font and Figtree are always offered: \(FontFamily.available.map(\.title))")
+        expect(FontFamily.allCases.filter { !$0.isAvailable }.allSatisfy { !FontFamily.available.contains($0) }, "a family whose font is not there is not offered")
+        for f in FontFamily.available {
+            m.look.fontFamily = f.rawValue
+            expect(TypeFace.chosen == f && Look.current.fontFamily == f.rawValue, "\(f.title): it applies")
+            if let n = f.name {
+                expect(NSFont(name: n, size: 14) != nil, "\(f.title): the font loads")
+                let axes = CTFontCopyVariationAxes(CTFontCreateWithName(n as CFString, 14, nil)) as? [Any]
+                expect((axes?.count ?? 0) > 0, "\(f.title): it is a variable font, so Light, Regular and Medium all exist")
+            }
+            // the text size scales it
+            let saved = m.look.textScale
+            m.look.textScale = 1.3
+            expect(Typo.sized(14) > 14 * 1.29, "\(f.title): the text size still works")
+            m.look.textScale = saved
+            // it is remembered
+            let suite = "aureon.test.font.\(UUID().uuidString)"
+            let d = UserDefaults(suiteName: suite)!
+            defer { d.removePersistentDomain(forName: suite) }
+            m.look.save(d)
+            expect(LookSettings.load(d, environment: [:]).fontFamily == f.rawValue, "\(f.title): it survives a restart")
+            // a change of family rebuilds the interface
+            var other = m.look; other.fontFamily = f == .figtree ? FontFamily.system.rawValue : FontFamily.figtree.rawValue
+            expect(other.rebuildsInterface(from: m.look), "\(f.title): changing the family rebuilds the interface at once")
+            if let file = f.licenceFile { expect(FileManager.default.fileExists(atPath: here.appendingPathComponent("Packaging/Fonts/" + file).path), "\(f.title): its licence \(file) is bundled with it") }
+        }
+        // one that is not there falls back to Figtree, and an unknown name reads as Figtree
+        for f in FontFamily.allCases where !f.isAvailable {
+            m.look.fontFamily = f.rawValue
+            expect(TypeFace.chosen == .figtree, "\(f.title) is not bundled: Figtree is used")
+        }
+        expect(LookSettings.load(UserDefaults(suiteName: "aureon.test.font.none")!, environment: ["AUREON_LOOK": "font=nonsense"]).fontFamily == "figtree", "an unknown family reads as Figtree")
+        // Chillax is only ever a local build font: not in the repository, its folder is ignored
+        let tracked = (try? FileManager.default.contentsOfDirectory(atPath: here.appendingPathComponent("Packaging/Fonts").path)) ?? []
+        expect(!tracked.contains { $0.lowercased().contains("chillax") }, "no Chillax file in Packaging/Fonts: \(tracked)")
+        let ignore = (try? String(contentsOf: here.appendingPathComponent(".gitignore"), encoding: .utf8)) ?? ""
+        expect(ignore.contains("Packaging/Fonts-local/"), "the local fonts folder is ignored by git")
+        let script = (try? String(contentsOf: here.appendingPathComponent("Packaging/build_app.sh"), encoding: .utf8)) ?? ""
+        expect(script.contains("Packaging/Fonts-local"), "the build bundles local fonts only when they are there")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1448,6 +1495,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.fontFamilies", { MainActor.assumeIsolated { t.everyFontFamilyLoadsAppliesAndSurvivesARestart() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

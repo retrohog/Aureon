@@ -14,6 +14,30 @@ import CoreText
 // roles, never `.system(size:)` directly. `Typo.serif` is kept for titles and names: it is the same family, set one step heavier. The roles are
 // computed, so they follow the weight and size settings the next time a view is built (the root view is rebuilt when either changes).
 
+/// The families the interface can be set in. The system font (SF Pro) is always there; the others are fonts bundled with the app (each with its own licence file in
+/// `Contents/Resources/Fonts`) and are offered only when their file is there. Chillax is added by a build that has it in a local folder that is not part of the
+/// source (`Packaging/Fonts-local`), and is never in the repository.
+enum FontFamily: String, CaseIterable, Identifiable, Codable {
+    case system, figtree, plusJakartaSans, dmSans, manrope, inter, chillax
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .system: "System"; case .figtree: "Figtree"; case .plusJakartaSans: "Plus Jakarta Sans"; case .dmSans: "DM Sans"; case .manrope: "Manrope"; case .inter: "Inter"; case .chillax: "Chillax"
+        }
+    }
+    /// The family as the font system knows it (nil for the system font).
+    var name: String? { self == .system ? nil : title }
+    /// What the licence is called, for the Settings line.
+    var licence: String { self == .system ? "SF Pro, part of macOS" : (self == .chillax ? "ITF Free Font License" : "SIL Open Font License") }
+    /// Whether it can be used: the system font always, the others when their font is bundled (or installed).
+    var isAvailable: Bool { name.map(TypeFace.has) ?? true }
+    static var available: [FontFamily] { allCases.filter(\.isAvailable) }
+    /// The licence file kept with the font in `Packaging/Fonts` (nil for the system font and for Chillax, which is never in the repository).
+    var licenceFile: String? {
+        switch self { case .system, .chillax: nil; case .figtree: "OFL.txt"; default: "OFL-" + title.replacingOccurrences(of: " ", with: "") + ".txt" }
+    }
+}
+
 /// Finding and registering the interface font.
 enum TypeFace {
     static let preferred = "Figtree"
@@ -33,30 +57,46 @@ enum TypeFace {
                 if CTFontManagerRegisterFontsForURL(f as CFURL, .process, &err) { n += 1 }
             }
         }
-        cached = nil
+        cached = nil; known = [:]
         return n
     }
 
-    /// The bundled fonts are registered the first time the family is asked for, before any view is built. When the app runs from a build folder
-    /// (no bundle), `AUREON_FONTS` or `Packaging/Fonts` in the working directory is read instead.
+    /// The bundled fonts are registered the first time a family is asked for, before any view is built. When the app runs from a build folder
+    /// (no bundle), `AUREON_FONTS`, `Packaging/Fonts` or `Packaging/Fonts-local` in the working directory is read instead.
     private static let registeredOnce: Int = {
         var extra: [URL] = []
         if let e = ProcessInfo.processInfo.environment["AUREON_FONTS"] { extra.append(URL(fileURLWithPath: e)) }
-        extra.append(URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("Packaging/Fonts"))
+        let here = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        extra.append(here.appendingPathComponent("Packaging/Fonts")); extra.append(here.appendingPathComponent("Packaging/Fonts-local"))
         return registerBundled(extraFolders: extra)
     }()
 
     nonisolated(unsafe) private static var cached: Bool?
+    nonisolated(unsafe) private static var known: [String: Bool] = [:]
+    /// Whether a family can be found (bundled or installed).
+    static func has(_ family: String) -> Bool {
+        _ = registeredOnce
+        if let k = known[family] { return k }
+        let ok = NSFont(name: family, size: 12) != nil || NSFontManager.shared.availableFontFamilies.contains(family)
+        known[family] = ok
+        return ok
+    }
     /// Whether Figtree can be found (bundled or installed).
     static var hasPreferred: Bool {
         _ = registeredOnce
         if let c = cached { return c }
-        let ok = NSFont(name: preferred, size: 12) != nil || NSFontManager.shared.availableFontFamilies.contains(preferred)
+        let ok = has(preferred)
         cached = ok
         return ok
     }
-    /// The family in use.
-    static var family: String { hasPreferred ? preferred : fallback }
+    /// The family in use: the one chosen in Settings when it can be found, else Figtree, else the system font.
+    static var chosen: FontFamily {
+        let want = FontFamily(rawValue: Look.current.fontFamily) ?? .figtree
+        if want.isAvailable { return want }
+        return hasPreferred ? .figtree : .system
+    }
+    /// The name of the family in use (the system font is "System"; Avenir Next stands in only when neither Figtree nor a choice is there).
+    static var family: String { chosen == .system && !hasPreferred && Look.current.fontFamily != FontFamily.system.rawValue ? fallback : chosen.title }
 }
 
 enum Typo {
@@ -92,9 +132,12 @@ enum Typo {
         }
     }
 
-    /// The interface face at a final size and weight. Avenir Next has no Light: it is read in Regular.
+    /// The interface face at a final size and weight, in the family chosen in Settings. The system font and the bundled variable fonts have every weight; Avenir
+    /// Next (which stands in only when Figtree cannot be found) has no Light and is read in Regular.
     static func face(_ size: CGFloat, _ w: Font.Weight) -> Font {
-        if TypeFace.hasPreferred { return .custom(TypeFace.preferred, size: size).weight(w) }
+        let c = TypeFace.chosen
+        if c == .system { return TypeFace.hasPreferred || Look.current.fontFamily == FontFamily.system.rawValue ? .system(size: size, weight: w) : .custom(TypeFace.fallback, size: size).weight(w == .light ? .regular : w) }
+        if let n = c.name { return .custom(n, size: size).weight(w) }
         return .custom(TypeFace.fallback, size: size).weight(w == .light ? .regular : w)
     }
 
