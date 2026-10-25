@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// A colour theme: the surfaces, the ink drawn on them and the accent. Pulse has five colour families (Graphite, Midnight, Forest, Plum,
-/// Cocoa), each with a dark half and a softened light half, and a pure black version of every dark half. Three surfaces carry the layout: the window behind everything (`sidebarRGB`, also the
-/// colour of the top bar and the rail), the main panel (`canvasRGB`, the page itself and the player bar) and the raised surface (`panel2RGB`: cards,
-/// chips, the selected rail item). Everything the interface paints with comes from here (through `Brand`).
+/// A colour theme: the surfaces, the ink drawn on them and the accent. Pulse has thirteen colour families (see `ThemeTable`), each with a dark half and a light
+/// half (AMOLED has only a dark one), and a pure black version of every dark half. Three surfaces carry the layout: the window behind everything (`sidebarRGB`,
+/// also the colour of the top bar and the rail), the main panel (`canvasRGB`, the page itself and the player bar) and the raised surface (`panel2RGB`: cards,
+/// chips, the selected rail item); a fourth step (`surface3RGB`) and the divider colour (`lineRGB`) complete the set. Everything the interface paints with
+/// comes from here (through `Brand`).
 ///
 /// The values are stored as `RGB` so contrast can be computed on them: `ink`, its two lighter steps and the accent are all held to WCAG AA
 /// against every surface, for every theme.
 struct Theme: Identifiable, Equatable {
     /// "graphite" (dark), "graphite.light", and "graphite.black" for the dark one on pure black.
     let id: String
-    /// The family: "graphite", "midnight", "forest", "plum", "cocoa".
+    /// The family: "graphite", "amoled", "midnight" and so on (see `ThemeTable`).
     let family: String
     /// The family's name (the same for its dark and light halves).
     let name: String
@@ -21,6 +22,8 @@ struct Theme: Identifiable, Equatable {
     var canvasRGB: RGB            // the main panel: pages and the player bar
     var sidebarRGB: RGB           // the window behind the panels: top bar and rail
     var panel2RGB: RGB            // raised surfaces: cards, chips, the selected rail item
+    var surface3RGB: RGB          // the step above the raised surface
+    var lineRGB: RGB              // dividers
     var inkRGB: RGB               // text and hairlines: warm white on dark themes, near-black on light ones
     var accentRGB: RGB
     var accent2RGB: RGB           // the other end of the accent gradient: a neighbouring hue, never a complementary one
@@ -28,6 +31,8 @@ struct Theme: Identifiable, Equatable {
     var canvas: Color { canvasRGB.color }
     var sidebar: Color { sidebarRGB.color }
     var panel2: Color { panel2RGB.color }
+    var surface3: Color { surface3RGB.color }
+    var line: Color { lineRGB.color }
     var ink: Color { inkRGB.color }
     var accent: Color { accentRGB.color }
     var accent2: Color { accent2RGB.color }
@@ -76,13 +81,10 @@ struct Theme: Identifiable, Equatable {
     static func rgbValue(_ hex: UInt32) -> RGB { RGB(Double((hex >> 16) & 255) / 255, Double((hex >> 8) & 255) / 255, Double(hex & 255) / 255) }
     static func rgb(_ hex: UInt32) -> Color { rgbValue(hex).color }
 
-    /// window, panel, raised surface, ink, accent
-    typealias Palette = (window: UInt32, panel: UInt32, panel2: UInt32, ink: UInt32, accent: UInt32)
-
-    private static func make(_ family: String, _ name: String, _ blurb: String, light: Bool, _ p: Palette) -> Theme {
-        let accent = rgbValue(p.accent)
-        return Theme(id: light ? family + ".light" : family, family: family, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(p.panel), sidebarRGB: rgbValue(p.window), panel2RGB: rgbValue(p.panel2),
-                     inkRGB: rgbValue(p.ink), accentRGB: accent, accent2RGB: companion(of: accent))
+    private static func make(_ family: String, _ name: String, _ blurb: String, light: Bool, _ k: ThemeTokens) -> Theme {
+        let accent = rgbValue(k.accent)
+        return Theme(id: light ? family + ".light" : family, family: family, name: name, blurb: blurb, isLight: light, canvasRGB: rgbValue(k.surface), sidebarRGB: rgbValue(k.bg), panel2RGB: rgbValue(k.surface2),
+                     surface3RGB: rgbValue(k.surface3), lineRGB: rgbValue(k.line), inkRGB: rgbValue(k.text), accentRGB: accent, accent2RGB: companion(of: accent))
     }
 
     /// The second end of an accent gradient: the same colour family, a few degrees along the wheel and a little deeper.
@@ -98,36 +100,37 @@ struct Theme: Identifiable, Equatable {
         let name: String
         let blurb: String
         let dark: Theme
+        /// The light half; for a family without one (AMOLED) it is the light half of Graphite.
         let light: Theme
+        /// Whether the family has a light half of its own.
+        let hasLight: Bool
     }
 
-    /// The five families. The light halves are muted on purpose: panels sit a step darker than paper white (see `Look.lightBrightness`).
-    static let families: [Family] = [
-        family("graphite", "Graphite", "Warm charcoal with amber; warm grey by day", dark: (0x0C0C0E, 0x161619, 0x222227, 0xF6F3EC, 0xF2B84B), light: (0xC0BEB6, 0xCBC9C1, 0xB5B3AA, 0x201D18, 0x6A4300)),
-        family("midnight", "Midnight", "Deep navy with a clear blue; blue-grey by day", dark: (0x080B14, 0x0F1424, 0x1A2036, 0xEEF2FF, 0x7FA6FF), light: (0xB4BDCB, 0xC2CAD6, 0xA6B0C0, 0x121827, 0x2F4F9E)),
-        family("forest", "Forest", "Green-black with soft leaf green; sage by day", dark: (0x0A110D, 0x111B15, 0x1B2A21, 0xEEF4EA, 0x9ED38A), light: (0xB9C0B2, 0xC5CCBE, 0xABB3A3, 0x181D16, 0x2B5436)),
-        family("plum", "Plum", "Aubergine with rose; lilac-grey by day", dark: (0x100A12, 0x1A1220, 0x28192F, 0xF7EEF6, 0xF09AD0), light: (0xC4BBC9, 0xD0C8D5, 0xB6ACBC, 0x1E1424, 0x7A2E6E)),
-        family("cocoa", "Cocoa", "Dark roast with apricot; warm paper by day", dark: (0x120D0A, 0x1D1511, 0x2B201A, 0xF6EEE6, 0xF0A36B), light: (0xCAC0AC, 0xD4CBB8, 0xBDB39E, 0x1E1913, 0x7E3418)),
-    ]
-
-    private static func family(_ id: String, _ name: String, _ blurb: String, dark: Palette, light: Palette) -> Family {
-        Family(id: id, name: name, blurb: blurb, dark: make(id, name, blurb, light: false, dark), light: make(id, name, blurb, light: true, light))
+    /// Every family, from the table: AMOLED first, then the others.
+    static let families: [Family] = ThemeTable.families.map { spec in
+        let dark = make(spec.id, spec.name, spec.blurb, light: false, spec.dark)
+        let light: Theme
+        if let k = spec.light { light = make(spec.id, spec.name, spec.blurb, light: true, k) }
+        else { light = make(ThemeTable.lightFallback, "Graphite", "", light: true, ThemeTable.families.first { $0.id == ThemeTable.lightFallback }!.light!) }
+        return Family(id: spec.id, name: spec.name, blurb: spec.blurb, dark: dark, light: light, hasLight: spec.light != nil)
     }
 
-    /// Every theme: each family's dark half and its light half.
-    static let all: [Theme] = families.flatMap { [$0.dark, $0.light] }
+    /// Every theme: each family's dark half and its light half (a family with no light half of its own is not counted twice).
+    static let all: [Theme] = families.flatMap { $0.hasLight ? [$0.dark, $0.light] : [$0.dark] }
     static let dark: [Theme] = all.filter { !$0.isLight }
     static let light: [Theme] = all.filter { $0.isLight }
 
     /// The theme used before anything is chosen and when an id is unknown: Graphite.
-    static let aureon = families[0].dark
-    static let defaultLight = families[0].light
+    static let aureon = families.first { $0.id == "graphite" }!.dark
+    static let defaultLight = families.first { $0.id == "graphite" }!.light
 
-    /// This dark theme on pure black: the window is #000000 and the panels are the family's own, taken most of the way down, so the tint stays.
+    /// This dark theme on pure black: the window is #000000 and the other surfaces are the family's own, taken most of the way down, so the tint stays.
     var onPureBlack: Theme {
         guard !isLight else { return self }
-        var t = Theme(id: family + ".black", family: family, name: name, blurb: blurb, isLight: false, pureBlack: true, canvasRGB: canvasRGB.mixed(with: RGB(0, 0, 0), 0.55),
-                      sidebarRGB: RGB(0, 0, 0), panel2RGB: panel2RGB.mixed(with: RGB(0, 0, 0), 0.32), inkRGB: inkRGB, accentRGB: accentRGB, accent2RGB: accent2RGB)
+        let black = RGB(0, 0, 0)
+        var t = Theme(id: family + ".black", family: family, name: name, blurb: blurb, isLight: false, pureBlack: true, canvasRGB: canvasRGB.mixed(with: black, 0.55),
+                      sidebarRGB: black, panel2RGB: panel2RGB.mixed(with: black, 0.32), surface3RGB: surface3RGB.mixed(with: black, 0.25), lineRGB: lineRGB.mixed(with: black, 0.2),
+                      inkRGB: inkRGB, accentRGB: accentRGB, accent2RGB: accent2RGB)
         t.isLight = false
         return t
     }
@@ -138,7 +141,7 @@ struct Theme: Identifiable, Equatable {
         "obsidian.light": "graphite.light", "light": "graphite.light", "aureon.light": "graphite.light", "bespoke.light": "forest.light", "evergreen.light": "forest.light",
         "nord.light": "midnight.light", "gruvbox.light": "cocoa.light",
         // the nine themes of the first Pulse builds
-        "amoled": "graphite.black", "stone": "graphite.light", "sage": "forest.light", "paper": "cocoa.light",
+        "stone": "graphite.light", "sage": "forest.light", "paper": "cocoa.light",
     ]
 
     /// A theme by id (earlier ids are carried over; anything else is Graphite).
@@ -151,8 +154,10 @@ struct Theme: Identifiable, Equatable {
 
     /// The theme to show for a family in a mode (pure black only applies to the dark half).
     static func resolve(family: String, light: Bool, pureBlack: Bool) -> Theme {
-        let f = families.first { $0.id == family } ?? families[0]
-        return light ? f.light : (pureBlack ? f.dark.onPureBlack : f.dark)
+        let f = families.first { $0.id == family } ?? families.first { $0.id == "graphite" }!
+        if light { return f.light }
+        return pureBlack && f.id != "amoled" ? f.dark.onPureBlack : f.dark          // AMOLED is already on true black
+
     }
 
     /// An old saved choice (a theme id, with the appearance it was shown in) as a family, a mode and the pure black switch.
@@ -161,15 +166,41 @@ struct Theme: Identifiable, Equatable {
         return (t.family, light ?? t.isLight, t.pureBlack)
     }
 
-    /// The light themes at a brightness between 0 and 1 (0.35 is the designed tone): towards a quieter grey below it, towards paper above it.
-    /// Dark themes are returned as they are.
-    func adjusted(lightBrightness b: Double) -> Theme {
-        guard isLight else { return self }
-        let d = min(1, max(0, b)) - 0.35
-        func tone(_ c: RGB) -> RGB { d >= 0 ? c.mixed(with: RGB(1, 1, 1), d * 0.55) : c.mixed(with: RGB(0, 0, 0), -d * 0.2) }
+    /// How far the brightness slider moves the surfaces at its ends, in OKLab lightness (0…1).
+    static let brightnessSpan = 0.04
+    /// The window may not get lighter or darker than this (OKLab L), in dark and in light themes.
+    static let darkWindowRange = 0.10...0.26, lightWindowRange = 0.90...0.995
+
+    /// The theme with its surfaces made lighter (slider above 0) or darker (below 0): the window, the panel, the raised surfaces and the dividers all move by
+    /// the same amount of perceived lightness, limited so the window stays in its range and the text keeps its contrast; the text and the accent do not move.
+    /// On true black (AMOLED, or pure black) the window stays #000000 and only the surfaces above it move, and only upwards by much.
+    func adjusted(brightness slider: Double) -> Theme {
+        let b = min(1, max(-1, slider))
+        guard b != 0 else { return self }
         var t = self
-        t.canvasRGB = tone(canvasRGB); t.sidebarRGB = tone(sidebarRGB); t.panel2RGB = tone(panel2RGB)
-        return t
+        func apply(_ d: Double, window: Bool) {
+            if window { t.sidebarRGB = OKLab.lightened(sidebarRGB, by: d) }
+            t.canvasRGB = OKLab.lightened(canvasRGB, by: d); t.panel2RGB = OKLab.lightened(panel2RGB, by: d)
+            t.surface3RGB = OKLab.lightened(surface3RGB, by: d); t.lineRGB = OKLab.lightened(lineRGB, by: d)
+        }
+        func holds(_ x: Theme) -> Bool { x.surfaces.allSatisfy { WCAG.contrast(x.inkRGB, $0) >= 7 } }
+        var d: Double
+        if !isLight && (family == "amoled" || pureBlack) {
+            d = b > 0 ? b * 0.03 : b * 0.012
+        } else {
+            let range = isLight ? Self.lightWindowRange : Self.darkWindowRange
+            let from = OKLab.lch(sidebarRGB).L, want = b * Self.brightnessSpan
+            let to = min(range.upperBound, max(range.lowerBound, from + want))
+            d = (to - from) * want >= 0 ? to - from : 0
+        }
+        // never at the cost of the text: halve the step until the ink reads at 7:1 on every surface
+        for _ in 0..<8 {
+            t = self
+            apply(d, window: !(family == "amoled" || pureBlack))
+            if holds(t) { return t }
+            d /= 2
+        }
+        return self
     }
 
     /// The same theme with another accent colour (the accent picker). The label on it and its text colour are derived again.
@@ -267,11 +298,10 @@ struct ThemePicker: View {
                     ForEach(Theme.families) { f in swatch(f) }
                 }
             }
-            if m.appearance != .dark {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Light brightness").microLabel().foregroundStyle(Brand.inkTertiary)
-                    LookSliderRow(title: "Brightness", hint: "From a quiet grey to paper. The default is easy on the eyes.", value: $m.look.lightBrightness, defaultValue: LookSettings.defaults.lightBrightness, deferred: true)
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Brightness").microLabel().foregroundStyle(Brand.inkTertiary)
+                LookSliderRow(title: "Surfaces", hint: "Lighter or darker panels, in every colour, dark and light. The middle is as designed; text and the accent do not move.", value: brightnessBinding, defaultValue: 0.5, deferred: true,
+                              format: { v in let p = Int(((v * 2 - 1) * 100).rounded()); return p == 0 ? "0" : String(format: "%+d", p) })
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Accent").microLabel().foregroundStyle(Brand.inkTertiary)
@@ -336,10 +366,15 @@ struct ThemePicker: View {
         return Binding(get: { (m.look.textScale - r.lowerBound) / (r.upperBound - r.lowerBound) }, set: { m.look.textScale = r.lowerBound + $0 * (r.upperBound - r.lowerBound) })
     }
 
+    /// The brightness (−1…+1) as a 0…1 position on the slider, with the middle as the designed look.
+    private var brightnessBinding: Binding<Double> {
+        Binding(get: { (m.look.brightness + 1) / 2 }, set: { m.look.brightness = min(1, max(-1, $0 * 2 - 1)) })
+    }
+
     private var modeHint: String {
         switch m.appearance {
         case .dark: "Always the dark half of the colour you choose"
-        case .light: "Always the light half; light themes are soft on purpose"
+        case .light: "Always the light half of the colour you choose"
         case .system: "Follows your Mac: the dark half at night, the light half by day"
         }
     }
@@ -361,28 +396,31 @@ struct ThemePicker: View {
         }
     }
 
-    /// A family as one tile split in two: its dark half on the left and its light half on the right.
+    /// A family as one tile split in two: its dark half on the left and its light half on the right (a family with only a dark half fills the tile).
     private func swatch(_ f: Theme.Family) -> some View {
         let on = m.themeFamily == f.id
-        let dark = m.look.pureBlack ? f.dark.onPureBlack : f.dark
-        let light = f.light.adjusted(lightBrightness: m.look.lightBrightness)
+        let dark = (m.look.pureBlack ? f.dark.onPureBlack : f.dark).adjusted(brightness: m.look.brightness)
+        let light = f.light.adjusted(brightness: m.look.brightness)
         return Button { withAnimation(.easeOut(duration: 0.2)) { m.choose(family: f.id) } } label: {
             VStack(alignment: .leading, spacing: 8) {
                 ZStack {
                     miniature(dark)
-                    miniature(light).mask(HStack(spacing: 0) { Color.clear; Rectangle() })
-                    Rectangle().fill(Brand.rule).frame(width: Metrics.hairline)
+                    if f.hasLight {
+                        miniature(light).mask(HStack(spacing: 0) { Color.clear; Rectangle() })
+                        Rectangle().fill(Brand.rule).frame(width: Metrics.hairline)
+                    }
                 }
                 .frame(height: 92).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(on ? Brand.accentText : Brand.rule, lineWidth: on ? 2 : Metrics.hairline))
                 HStack(spacing: 4) {
                     Text(f.name).font(Typo.sans(13.5, .regular))
+                    if !f.hasLight { Text("dark only").font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary) }
                     if on { Image(systemName: "checkmark").font(Typo.sans(10, .medium)).foregroundStyle(Brand.accentText) }
                 }
             }
             .padding(.vertical, 4).contentShape(Rectangle())
         }.buttonStyle(.plain)
-        .accessibilityLabel("\(f.name), dark and light").accessibilityAddTraits(on ? .isSelected : [])
+        .accessibilityLabel(f.hasLight ? "\(f.name), dark and light" : "\(f.name), dark only").accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

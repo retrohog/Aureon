@@ -18,7 +18,7 @@ struct PulseTests {
     func settingsAreSavedAndRestored() {
         let suite = UserDefaults(suiteName: "aureon.test.look.\(UUID().uuidString)")!
         var s = LookSettings()
-        expect(s.density == .compact && s.weight == .regular && s.lightBrightness == 0.35 && s.accentHex == nil && s.textScale == 1, "defaults: Compact, Regular, soft light, the theme's own accent")
+        expect(s.density == .compact && s.weight == .regular && s.brightness == 0 && s.accentHex == nil && s.textScale == 1, "defaults: Compact, Regular, brightness in the middle, the theme's own accent")
         s.density = .comfortable; s.weight = .medium; s.accentHex = "3FA7FF"; s.starlight.shooting = .often; s.starlight.tint = .cover; s.starlight.twinkle = false; s.nowPlayingLayout = "carousel"; s.showLyrics = false
         s.save(suite)
         let back = LookSettings.load(suite, environment: [:])
@@ -31,8 +31,8 @@ struct PulseTests {
         suite.set(Data("not json".utf8), forKey: LookSettings.storageKey)
         expect(LookSettings.load(suite, environment: [:]) == LookSettings(), "an unreadable record is the defaults")
         // the environment lays over the record (for screenshots and tests), and numbers and colours are held in range
-        let env = LookSettings.load(suite, environment: ["AUREON_LOOK": "density=comfortable,weight=light,accent=zzz,light=4,scale=9,shooting=off,np=vinyl,lyrics=0"])
-        expect(env.density == .comfortable && env.weight == .light && env.accentHex == nil && env.lightBrightness == 1 && env.textScale == LookSettings.textScaleRange.upperBound && env.starlight.shooting == .off && env.nowPlayingLayout == "vinyl" && !env.showLyrics, "environment overlay is clamped")
+        let env = LookSettings.load(suite, environment: ["AUREON_LOOK": "density=comfortable,weight=light,accent=zzz,brightness=4,scale=9,shooting=off,np=vinyl,lyrics=0"])
+        expect(env.density == .comfortable && env.weight == .light && env.accentHex == nil && env.brightness == 1 && env.textScale == LookSettings.textScaleRange.upperBound && env.starlight.shooting == .off && env.nowPlayingLayout == "vinyl" && !env.showLyrics, "environment overlay is clamped")
         expect(UIDensity.compact.cover < UIDensity.comfortable.cover && UIDensity.compact.rowHeight < UIDensity.comfortable.rowHeight, "Compact is smaller")
         expect(TypeWeight.allCases.allSatisfy { $0.emphasis == .light || $0.emphasis == .regular || $0.emphasis == .medium }, "nothing is heavier than Medium")
     }
@@ -349,7 +349,7 @@ extension PulseTests {
         }
         check([:], "graphite", .dark, "a fresh install is Graphite, dark")
         check(["aureon.appearance": "dark", "aureon.darkTheme": "graphite"], "graphite", .dark, "Graphite")
-        check(["aureon.appearance": "dark", "aureon.darkTheme": "amoled"], "graphite", .dark, black: true, "AMOLED is Graphite on pure black")
+        check(["aureon.appearance": "dark", "aureon.darkTheme": "amoled"], "amoled", .dark, "AMOLED is the AMOLED theme")
         for f in ["midnight", "forest", "plum", "cocoa"] { check(["aureon.appearance": "dark", "aureon.darkTheme": f], f, .dark, "\(f) keeps its name") }
         check(["aureon.appearance": "light", "aureon.lightTheme": "stone", "aureon.darkTheme": "plum"], "graphite", .light, "Stone is Graphite, light")
         check(["aureon.appearance": "light", "aureon.lightTheme": "sage"], "forest", .light, "Sage is Forest, light")
@@ -381,10 +381,12 @@ extension PulseTests {
                     let dark = m.theme
                     systemLight = true; m.resolveTheme(persist: false)
                     let day = m.theme
+                    // a family with no light half (AMOLED) shows Graphite's light half by day, and is already on true black
+                    let lightFamily = f.hasLight ? f.id : "graphite", blackShown = black && f.id != "amoled"
                     switch mode {
-                    case .dark: expect(dark.family == f.id && !dark.isLight && dark.pureBlack == black && day == dark, "\(f.id) dark, black \(black)")
-                    case .light: expect(dark.isLight && dark == day && !day.pureBlack && day.family == f.id, "\(f.id) light ignores pure black")
-                    case .system: expect(!dark.isLight && dark.pureBlack == black && day.isLight && !day.pureBlack && day.family == f.id, "\(f.id) Auto: dark at night (black \(black)), light by day")
+                    case .dark: expect(dark.family == f.id && !dark.isLight && dark.pureBlack == blackShown && day == dark, "\(f.id) dark, black \(black)")
+                    case .light: expect(dark.isLight && dark == day && !day.pureBlack && day.family == lightFamily, "\(f.id) light ignores pure black")
+                    case .system: expect(!dark.isLight && dark.pureBlack == blackShown && day.isLight && !day.pureBlack && day.family == lightFamily, "\(f.id) Auto: dark at night (black \(black)), light by day")
                     }
                     expect(Theme.current == m.theme, "\(f.id): the theme in use is the one shown")
                 }
@@ -395,13 +397,18 @@ extension PulseTests {
         expect(m.theme.sidebarRGB == RGB(0, 0, 0) && m.theme.family == "midnight", "Midnight on pure black")
         m.look.pureBlack = false
         expect(m.theme.sidebarRGB != RGB(0, 0, 0), "and off again")
-        // the light half stays dimmed by the brightness slider
-        m.appearance = .light
-        m.look.lightBrightness = 0
-        let dim = WCAG.luminance(m.theme.canvasRGB)
-        m.look.lightBrightness = 1
-        expect(dim < WCAG.luminance(m.theme.canvasRGB), "the light half is brighter at 1 than at 0")
-        m.look.lightBrightness = LookSettings.defaults.lightBrightness
+        // the brightness slider moves the surfaces of the dark and of the light half, and AMOLED keeps its black window
+        for mode in [AppearanceMode.dark, .light] {
+            m.appearance = mode; m.choose(family: "ocean")
+            m.look.brightness = -1
+            let dim = WCAG.luminance(m.theme.canvasRGB)
+            m.look.brightness = 1
+            expect(dim < WCAG.luminance(m.theme.canvasRGB), "\(mode.rawValue): the surfaces are lighter at +1 than at −1")
+            m.look.brightness = 0
+        }
+        m.appearance = .dark; m.choose(family: "amoled")
+        for b in [-1.0, 0.0, 1.0] { m.look.brightness = b; expect(m.theme.sidebarRGB == RGB(0, 0, 0), "AMOLED keeps a black window at brightness \(b)") }
+        m.look.brightness = 0
     }
 
     @MainActor private func pumpFor(_ secs: Double) {
@@ -683,7 +690,7 @@ extension PulseTests {
                 ("density", { m.look.density = .comfortable }), ("density back", { m.look.density = .compact }),
                 ("font weight", { m.look.weight = .medium }), ("font back", { m.look.weight = .regular }),
                 ("accent", { m.look.accentHex = "3FA7FF" }), ("accent off", { m.look.accentHex = nil }),
-                ("brightness", { m.appearance = .light; m.look.lightBrightness = 0.8 }), ("brightness back", { m.look.lightBrightness = 0.35; m.appearance = .dark }),
+                ("brightness", { m.look.brightness = 0.8 }), ("brightness back", { m.look.brightness = 0 }), ("amoled", { m.choose(family: "amoled") }), ("graphite", { m.choose(family: "graphite") }),
                 ("backdrop", { m.backdrop = .album }), ("backdrop flat", { m.backdrop = .off }),
                 ("starlight", { m.look.starlight.twinkle.toggle() }),
             ]),
