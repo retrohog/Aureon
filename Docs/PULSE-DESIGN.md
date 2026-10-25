@@ -13,7 +13,7 @@ interface from the same numbers. On the Mac the values live in `Sources/Aureon/G
 | Main panel | Rounded (16), on the window colour; the pages of a destination are pill chips along its top (Library: Albums, Artists, Songs, Composers, Works, Conductors, Ensembles, Folders, Deep Dive). |
 | Queue | A rounded panel (340 wide) beside the main panel with three tabs (a pill switch under the title): **Queue** (add, clear, drag to reorder, ⌫ removes), **History** (songs played since the app opened, newest first, 200 at most, a click plays one again, a trash button clears it) and **Output** (the device and its rate, then the steps Source → Player → Output from the signal path, and a link to the output settings). |
 | Player bar | 96 pt, three columns: cover 68 (radius 10), title 16 medium with the heart and add-to-playlist beside it, artist 14, format tags; transport (shuffle, previous, a 46 pt accent play circle, next, repeat) with a 5 pt slider; lyrics, queue, output, volume (96 wide). |
-| Now Playing | The whole window. The top bar and the controls stay in view (a setting lets them rest after 3.5 s without the pointer). Six layouts (below). |
+| Now Playing | The whole window. The top bar and the controls stay in view (a setting lets them rest after 3.5 s without the pointer). Seven layouts (below). |
 
 Corners: panel 16, card 14, control 10, tag 6, pills fully round. Spacing on an 8 pt grid. Hairlines: the ink at 14 % (18 % on light themes).
 
@@ -134,7 +134,7 @@ leaves the files alone.
 
 ## Now Playing
 
-Six layouts, chosen in Settings → Now Playing (a grid of previews, with lyrics on and off) and remembered. Each is drawn for a 1440 × 900 window and scaled by
+Seven layouts, chosen in Settings → Now Playing (a grid of previews, with lyrics on and off) and remembered. Each is drawn for a 1440 × 900 window and scaled by
 `min(width / 1440, height / 900)` limited to 0.62 … 1.25; the window never has to be larger than 860 × 540 for anything to be reachable.
 
 **The frame every layout shares.** Top to bottom: the top bar's space (56); the **body**, given exactly the room that is left and clipped to it; and the **dock**,
@@ -148,7 +148,7 @@ lyrics on or off: the dock is inside the window and uncovered, and nothing in th
 **Margins**: `max(28, 64 × scale)` left and right; the dock sits 14 × scale above the bottom edge. The controls stay in view; with "Hide the controls when the pointer rests" on, they and the top
 bar fade after 3.5 s without the pointer and return on movement.
 
-- **Stage** (default): tabs **Lyrics / Up next / Credits / Signal path** across the top, 46 pt centred lyrics in the middle, the waveform seek bar, the song
+- **Stage**: tabs **Lyrics / Up next / Credits / Signal path** across the top, 46 pt centred lyrics in the middle, the waveform seek bar, the song
   (cover 120, title 30) at the foot of the dock's left side. Lyrics off: credits at the left, a 420 cover with its names in the middle, up next at the right.
 - **Classic**: a 500 cover on the left; title 54, credits, tags, the tabs and 38 pt lyrics on the right. Lyrics off: a 580 cover, title 60, tags, credits, up next.
 - **Full-bleed**: the cover is the whole window under a veil in the panel colour (35 % at the top to 78 % at the bottom); title 58 (108 with lyrics off) low on
@@ -157,8 +157,11 @@ bar fade after 3.5 s without the pointer and return on movement.
 - **Lumen**: a 420 cover with a radius of 38 on the left, title and credits and the heart / playlist / More under it; the words in the middle; up next on the right
   (only when the body is wider than 980); a rounded dock (radius 32, the raised colour) holding the times, a slim seek bar, the transport and the cluster in one row.
   Credits under the artist are dropped when the body is shorter than 500.
-- **Chillax**: a 540 cover; a 76 pt title with the heart / playlist / More beside it, the format tags, the signal path; the queue as a shelf of five cards under the
+- **Chillax** (default): a 540 cover; a 76 pt title with the heart / playlist / More beside it, the format tags, the signal path; the queue as a shelf of five cards under the
   cover (dropped when the body is shorter than 470); the dock has a slim seek bar, the output chip on the left and the cluster without it.
+- **Orbit**: the cover in a circle at the centre of the body, ringed by 96 bars that follow the spectrum. The ring is also the seek bar: a bright arc
+  shows the played part, and a press or a drag on the ring seeks. The bars and the arc rest when playback pauses, when the window is hidden, with
+  Reduce Motion on, or with the visualiser off.
 
 On every layout: heart, **Add to playlist** (a card with a search, New playlist, and a tick on each playlist that holds the song), **More** (Analyser, Booklet,
 Show lyrics, the lyrics actions — look again, write by listening, save to tags, save as .lrc — and the layout), credits under the artist (written by, produced by,
@@ -215,4 +218,4 @@ Settings has a search field and nine pages: General, **Appearance** (mode, pure 
 ## Not in this version
 
 Designed but not built: a colour theme of its own for the mini player and the menu bar player (they follow the app's), and the Now Playing layouts Vinyl, Hi-Fi,
-Orbit, Timeline and Poster. A native build should treat the six layouts above as the complete set.
+Timeline and Poster. A native build should treat the seven layouts above as the complete set.

@@ -35,9 +35,8 @@ always shows which state you are in.
 
 - **Seven layouts**, chosen in Settings → Now Playing with a preview of each: **Chillax** (the default), **Stage**, **Classic**, **Full-bleed**, **Carousel**, **Lumen** and the new **Orbit**. Each is drawn for a large window and scales down to a small one.
 - **Orbit.** The album sits in a circle in the middle, ringed by a live spectrum of 96 bars that move with the music. The ring is also the seek bar: its bright arc shows how far you are, and dragging it seeks. The animation stops when playback pauses, when the window is hidden, with Reduce Motion on, or with the visualiser off.
-- **The controls are always there.** Shuffle, previous, play or pause, next and repeat; the seek bar with both times; the queue, the mini player, the volume and the output chip stay in view in every layout, down to the smallest window. Lyrics and Up next give way first.
+- **The controls stay in view.** Shuffle, previous, play or pause, next and repeat; the seek bar with both times; the queue, the mini player, the volume and the output chip stay in view in every layout, down to the smallest window. The top bar and the controls no longer fade away, though a switch in Settings → Now Playing lets them rest after a few seconds. Lyrics and Up next give way first.
 - **Lyrics** stay large and follow the sung line. Their size and timing are in Settings → Now Playing, so nothing floats over the words.
-- **The controls stay in view.** The top bar and the controls no longer fade away; Settings → Now Playing has a switch to let them rest after a few seconds.
 - **Seek bar choice.** Settings → Now Playing → Seek bar (the layout's own, a waveform or a line) now applies to the player bar, the mini player and every layout.
 - **Add to playlist** from the song on screen: a card with a search, **New playlist**, and a tick beside each playlist that holds the song.
 - **Credits** under the artist (written by, produced by, conductor, ensemble, instruments), the format tags and the signal path, each switchable.

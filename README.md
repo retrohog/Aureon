@@ -42,7 +42,7 @@ switch them on; when they are off they are out of the path, not set to neutral.
 |:--|:--|
 | **New design** | A new shell with a search bar, an output chip and a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound). Set in Figtree, with Compact and Comfortable density. |
 | **Colours** | A true-black **AMOLED** and twelve colours (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each in dark and light. **Dark**, **Light** or **Auto** (follows macOS), a **Pure black** switch, one **Brightness** slider, any accent colour, and the Starlight backdrop. |
-| **Now Playing** | Six layouts (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax) with the transport, seek bar, queue and volume always in view. Add to playlist, credits, large synced lyrics. |
+| **Now Playing** | Seven layouts (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax, Orbit) with the transport, seek bar, queue and volume always in view. Add to playlist, credits, large synced lyrics. |
 | **Mini player** | A floating player in four forms, dragged from anywhere on it, that takes the place of the main window, and a menu bar player with a popover. |
 | **Memory** | Reopens with your queue, song and position, page, window place on each display, output, theme and layout. |
 | **Home and Folders** | A Home that follows the time of day, and a Folders page that can remove a library folder safely. |
@@ -113,7 +113,7 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 | **Colours** | A true-black **AMOLED** and twelve families (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each with a dark and a light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, one **Brightness** slider that lightens or darkens the surfaces in every colour (text and accent stay put), and any accent colour. |
 | **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and **Starlight**, a field of fine stars with settings for intensity, motion, shooting stars and twinkle. |
 | **Type** | Figtree, bundled with its licence, in Light, Regular or Medium, with a text size from 85 % to 130 %, and Compact or Comfortable density. |
-| **Now Playing** | Six layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen and Chillax. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size, and a setting lets them rest after a few seconds. The seek bar can be the layout's own, a waveform or a line, everywhere. |
+| **Now Playing** | Seven layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen, Chillax and Orbit. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size, and a setting lets them rest after a few seconds. The seek bar can be the layout's own, a waveform or a line, everywhere. |
 | **Lyrics** | Large, time-synced lines in every layout, from a `.lrc` file, the file's tags or LRCLIB. Their size and ±2 s timing are in Settings. |
 | **Song details** | Add to playlist, credits under the artist, format tags (Lossless, FLAC, 24-bit, rates, shared or exclusive) and the signal path. |
 | **Mini player** | Four forms: a bar, a strip, a card and a menu bar popover. Dragged from the cover, the names or any empty space, and kept wholly on a screen; its place is remembered for each display. Opening it puts the main window away. |
@@ -232,7 +232,7 @@ swift build -c release
 | **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
 | **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
 | **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
-| **More layouts** | Vinyl, Hi-Fi, Orbit, Timeline and Poster layouts for Now Playing. |
+| **More layouts** | Vinyl, Hi-Fi, Timeline and Poster layouts for Now Playing. |
 | **Mini player theme** | A colour theme of its own for the mini player and the menu bar player. |
 | **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 
