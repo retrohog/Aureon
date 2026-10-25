@@ -101,8 +101,8 @@ struct LookSettings: Codable, Equatable {
     var weight = TypeWeight.regular
     /// Text size as a factor of the designed sizes (0.85…1.3).
     var textScale = 1.0
-    /// Light themes only: from a quiet grey (0) to paper (1); 0.35 is the designed tone.
-    var lightBrightness = 0.35
+    /// How light the surfaces are, for every theme: −1 (darker) … 0 (as designed) … +1 (lighter). See `Theme.adjusted(brightness:)`.
+    var brightness = 0.0
     /// Dark themes only: the window is true black (for OLED screens) and the panels sit just above it. Any colour family can use it.
     var pureBlack = false
     /// The accent chosen by the user as "RRGGBB"; nil keeps each theme's own.
@@ -139,7 +139,7 @@ struct LookSettings: Codable, Equatable {
     /// `Metrics`) when a view is made. Everything else (the layout, the lyrics, the tags, the mini player, what is remembered) is read from the model by views that
     /// redraw by themselves, so changing it leaves the page, and where it is scrolled, alone.
     func rebuildsInterface(from old: LookSettings) -> Bool {
-        density != old.density || weight != old.weight || textScale != old.textScale || lightBrightness != old.lightBrightness || pureBlack != old.pureBlack
+        density != old.density || weight != old.weight || textScale != old.textScale || brightness != old.brightness || pureBlack != old.pureBlack
             || accentHex != old.accentHex || edge != old.edge || motion != old.motion
     }
     static let textScaleRange = 0.85...1.3
@@ -152,7 +152,9 @@ struct LookSettings: Codable, Equatable {
         density = try c.decodeIfPresent(UIDensity.self, forKey: .density) ?? d.density
         weight = try c.decodeIfPresent(TypeWeight.self, forKey: .weight) ?? d.weight
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? d.textScale
-        lightBrightness = try c.decodeIfPresent(Double.self, forKey: .lightBrightness) ?? d.lightBrightness
+        // an earlier build had a light-only brightness from 0 to 1 with 0.35 as the designed tone: the middle stays the middle
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness)
+            ?? (try c.decodeIfPresent(Double.self, forKey: .lightBrightness)).map { min(1, max(-1, ($0 - 0.35) * 2)) } ?? d.brightness
         pureBlack = try c.decodeIfPresent(Bool.self, forKey: .pureBlack) ?? d.pureBlack
         accentHex = try c.decodeIfPresent(String.self, forKey: .accentHex)
         edge = try c.decodeIfPresent(Double.self, forKey: .edge) ?? d.edge
@@ -172,7 +174,7 @@ struct LookSettings: Codable, Equatable {
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -192,7 +194,7 @@ struct LookSettings: Codable, Equatable {
             case "density": if let x = UIDensity(rawValue: kv[1]) { density = x }
             case "weight": if let x = TypeWeight(rawValue: kv[1]) { weight = x }
             case "scale": if let v { textScale = v }
-            case "light": if let v { lightBrightness = v }
+            case "brightness": if let v { brightness = v }
             case "black": pureBlack = kv[1] != "0"
             case "accent": accentHex = kv[1].isEmpty || kv[1] == "none" ? nil : kv[1]
             case "edge": if let v { edge = v }
@@ -227,7 +229,7 @@ struct LookSettings: Codable, Equatable {
         func c(_ v: Double) -> Double { min(1, max(0, v)) }
         var s = self
         s.textScale = min(Self.textScaleRange.upperBound, max(Self.textScaleRange.lowerBound, textScale))
-        s.lightBrightness = c(lightBrightness); s.edge = c(edge); s.backdrop = c(backdrop); s.motion = c(motion)
+        s.brightness = min(1, max(-1, brightness)); s.edge = c(edge); s.backdrop = c(backdrop); s.motion = c(motion)
         s.starlight.intensity = c(starlight.intensity); s.starlight.motion = c(starlight.motion); s.starlight.reaction = c(starlight.reaction)
         s.mini.strength = c(mini.strength); s.mini.opacity = min(1, max(0.4, mini.opacity))
         if !MenuBarSettings.autoCloseChoices.contains(mini.menuBar.autoCloseSeconds) { s.mini.menuBar.autoCloseSeconds = MenuBarSettings().autoCloseSeconds }
@@ -258,7 +260,7 @@ enum Look {
 
     /// The theme as it is shown: the chosen palette with the light brightness and the user's accent applied.
     static func themed(_ t: Theme, _ s: LookSettings = Look.current) -> Theme {
-        t.adjusted(lightBrightness: s.lightBrightness).withAccent(s.accentHex.flatMap(color(hex:)))
+        t.adjusted(brightness: s.brightness).withAccent(s.accentHex.flatMap(color(hex:)))
     }
 
     // MARK: derived tokens
