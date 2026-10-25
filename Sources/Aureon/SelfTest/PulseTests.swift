@@ -397,8 +397,6 @@ extension PulseTests {
         m.look.lightBrightness = LookSettings.defaults.lightBrightness
     }
 
-    @MainActor private func popoverShown() -> Bool { NSApp.windows.contains { String(describing: type(of: $0)).contains("Popover") && $0.isVisible } }
-
     @MainActor private func pumpFor(_ secs: Double) {
         let end = Date().addingTimeInterval(secs)
         while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
@@ -443,16 +441,16 @@ extension PulseTests {
             pumpFor(1.2)
             for (what, key) in [("output popover", "output.stage"), ("playlist card", "playlistButton")] {
                 guard let r = LayoutProbe.frames[key] else { expect(false, "\(layout.rawValue): the \(what) button is on screen"); continue }
-                expect(!popoverShown(), "\(layout.rawValue): nothing is open before the \(what) is opened")
+                expect(!m.popovers.isOpen, "\(layout.rawValue): nothing is open before the \(what) is opened")
                 clickMiddle(win, r, height: size.height)
                 pumpFor(0.1)
-                expect(popoverShown(), "\(layout.rawValue): the \(what) opened")
+                expect(m.popovers.isOpen, "\(layout.rawValue): the \(what) opened")
                 if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover belongs to the stage chip") }
+                expect(CGRect(origin: .zero, size: size).insetBy(dx: -0.5, dy: -0.5).contains(m.popovers.shownFrame) && m.popovers.shownFrame.width > 50, "\(layout.rawValue): the \(what) is inside the window: \(m.popovers.shownFrame)")
                 pumpFor(1.6)                                           // the lyrics tick and redraw meanwhile
-                expect(popoverShown(), "\(layout.rawValue): the \(what) is still open after the lyrics redraw")
+                expect(m.popovers.isOpen, "\(layout.rawValue): the \(what) is still open after the lyrics redraw")
                 if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover was not closed by a redraw") }
-                m.quickPanel = nil
-                for w in NSApp.windows where String(describing: type(of: w)).contains("Popover") { w.close() }
+                m.popovers.dismiss(); m.quickPanel = nil
                 pumpFor(0.3)
             }
             win.orderOut(nil); win.contentView = nil
@@ -726,6 +724,51 @@ extension PulseTests {
             }
         }
         expect(flips > 30, "every control was changed: \(flips)")
+    }
+
+    /// Every popover that can be opened from the top bar and the player bar is wholly inside the window, at the smallest window, a usual one and a large one.
+    @MainActor func popoversNeverLeaveTheWindow() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("popframe")
+        let song = dir.appendingPathComponent("Popover Frame.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 30) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        LayoutProbe.enabled = true
+        defer { m.clear(); LayoutProbe.enabled = false }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        m.tab = .home
+        var opened = 0
+        for size in [CGSize(width: 860, height: 540), CGSize(width: 1100, height: 700), CGSize(width: 1700, height: 1000)] {
+            let probe = LayoutProbe.begin()
+            let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+            host.frame = NSRect(origin: .zero, size: size)
+            let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+            func settle(_ secs: Double) {
+                let end = Date().addingTimeInterval(secs)
+                while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+            }
+            settle(1.2)
+            let window = CGRect(origin: .zero, size: size).insetBy(dx: -0.5, dy: -0.5)
+            func check(_ what: String) {
+                settle(0.4)
+                let f = m.popovers.shownFrame
+                expect(m.popovers.isOpen && f.width > 50 && window.contains(f), "\(Int(size.width))×\(Int(size.height)): \(what) opens wholly inside the window: \(f)")
+                opened += 1
+                m.popovers.dismiss(); m.quickPanel = nil
+                settle(0.3)
+                expect(!m.popovers.isOpen, "\(what) closes")
+            }
+            if let r = LayoutProbe.frames["output.rail"] { clickMiddle(win, r, height: size.height); check("the output list of the top bar") } else { expect(false, "the top bar's output chip is on screen") }
+            m.quickPanel = .bar; check("the output list of the player bar")
+            if let r = LayoutProbe.frames["shuffle"] { clickMiddle(win, r, height: size.height); check("the shuffle choices") } else { expect(false, "the shuffle button is on screen") }
+            win.orderOut(nil); win.contentView = nil
+            settle(0.1)
+        }
+        expect(opened == 9, "every popover was opened: \(opened)")
     }
 
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
@@ -1058,6 +1101,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

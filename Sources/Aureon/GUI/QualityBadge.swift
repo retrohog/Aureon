@@ -167,7 +167,7 @@ struct NowPlayingBadge: View {
                 }
             }
             .onTapGesture { open.v.toggle() }
-            .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .top) {
+            .windowPopover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), edge: .top) {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(mark.kind == .lossy ? "Lossy source" : (mark.kind == .hiRes ? "Hi-Res" : "Lossless")).microLabel().foregroundStyle(Brand.inkTertiary)
                     ReadoutBlock()

@@ -139,7 +139,7 @@ struct NPPlaylistButton: View {
         Button { open.v.toggle() } label: { Image(systemName: "text.badge.plus") }
             .buttonStyle(RoundIconStyle(on: open.v, size: size)).disabled(path == nil)
             .help("Add to a playlist").accessibilityLabel("Add to a playlist").layoutProbe("playlistButton")
-            .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .bottom) { if let path { PlaylistPicker(path: path) } }
+            .windowPopover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), edge: .bottom) { if let path { PlaylistPicker(path: path) } }
     }
 }
 

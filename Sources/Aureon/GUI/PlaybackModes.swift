@@ -29,8 +29,8 @@ struct ShuffleButton: View {
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .help(m.shuffle == .off ? "Shuffle is off" : "Shuffle: \(m.shuffle.title) is on")
-        .accessibilityLabel("Shuffle: \(m.shuffle.title)")
-        .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .top) {
+        .accessibilityLabel("Shuffle: \(m.shuffle.title)").layoutProbe("shuffle")
+        .windowPopover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), edge: .top) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Shuffle").microLabel().foregroundStyle(Brand.inkTertiary).padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 8)
                 ForEach(ShuffleChoices.rows(current: m.shuffle)) { row in

@@ -131,7 +131,7 @@ struct DSPTab: View {
     private var pluginCard: some View {
         Card(title: "Audio Unit plugins", subtitle: "Host third-party effects such as room correction (Dirac, Sonarworks), in signal order after the EQ") {
             Button { picking.v = true } label: { Label("Add plugin…", systemImage: "plus") }
-                .popover(isPresented: $picking.v, arrowEdge: .bottom) { PluginPicker(done: { picking.v = false }).environmentObject(m) }
+                .windowPopover(isPresented: $picking.v, edge: .bottom) { PluginPicker(done: { picking.v = false }).environmentObject(m) }
 
             if m.hosted.isEmpty {
                 Note(text: "No plugins loaded. \(m.availableEffects.count) effect(s) are installed on this Mac.")

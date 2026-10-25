@@ -614,7 +614,7 @@ struct DJView: View {
                 Label("Layout", systemImage: "rectangle.3.group").font(Typo.sans(12, .medium))
                     .padding(.horizontal, 12).padding(.vertical, 4).background(Slab().fill(Brand.ink.opacity(0.08)))
             }.buttonStyle(.plain).help("Show, hide and reorder the parts of the console")
-                .popover(isPresented: Binding(get: { layoutOpen.v }, set: { layoutOpen.v = $0 }), arrowEdge: .bottom) { DJLayoutEditor().environmentObject(dj) }
+                .windowPopover(isPresented: Binding(get: { layoutOpen.v }, set: { layoutOpen.v = $0 }), edge: .bottom) { DJLayoutEditor().environmentObject(dj) }
             Spacer()
             if let e = dj.outputError { Text(e).font(Typo.sans(11.5)).foregroundStyle(Brand.caution).lineLimit(1) }
             Button {
