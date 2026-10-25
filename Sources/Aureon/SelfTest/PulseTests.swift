@@ -771,6 +771,50 @@ extension PulseTests {
         expect(opened == 9, "every popover was opened: \(opened)")
     }
 
+    /// Podcasts has its own place on the rail, directly under Radio, and its own page; choosing it opens that page and the rail marks it.
+    @MainActor func podcastsHaveTheirOwnPlaceOnTheRail() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        setenv("AUREON_NULLSINK", "1", 1)
+        m.pageTransitions = .none
+        expect(RailDestination.rail.map(\.rawValue) == ["Library", "Playlists", "Radio", "Podcasts", "Rooms", "Sound"], "the rail reads Library, Playlists, Radio, Podcasts, Rooms, Sound")
+        LayoutProbe.enabled = true
+        defer { LayoutProbe.enabled = false }
+        let size = CGSize(width: 1100, height: 700)
+        m.go(.tab(.radio))
+        let probe = LayoutProbe.begin()
+        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+        host.frame = NSRect(origin: .zero, size: size)
+        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless()
+        defer { win.orderOut(nil); win.contentView = nil }
+        func settle(_ secs: Double) {
+            let end = Date().addingTimeInterval(secs)
+            while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+        }
+        settle(1.0)
+        // the rail items, top to bottom, are in that order and the same size and spacing
+        let frames = RailDestination.rail.compactMap { d in LayoutProbe.frames["rail.\(d.rawValue)"].map { (d, $0) } }
+        expect(frames.count == 6, "all six rail items are on screen: \(frames.count)")
+        let rects = frames.map(\.1)
+        expect(zip(rects, rects.dropFirst()).allSatisfy { $0.1.minY > $0.0.minY }, "in order from top to bottom: \(frames.map { $0.0.rawValue })")
+        expect(Set(rects.map { Int($0.width) }).count == 1 && Set(rects.map { Int($0.height) }).count == 1 && rects.allSatisfy { $0.width <= Metrics.railWidth }, "the same size, inside the \(Int(Metrics.railWidth)) point rail")
+        let gaps = zip(rects, rects.dropFirst()).map { Int(($0.1.minY - $0.0.maxY).rounded()) }
+        expect(Set(gaps).count == 1, "the same spacing between all of them: \(gaps)")
+        expect(m.currentDestination == .radio, "Radio is marked on the Radio page")
+        // choosing Podcasts opens the page of podcasts and the rail marks it, not Radio
+        if let r = LayoutProbe.frames["rail.Podcasts"] {
+            clickMiddle(win, r, height: size.height)
+            settle(0.6)
+            expect(m.tab == .podcasts && m.currentDestination == .podcasts, "Podcasts opens its own page and the rail marks it: \(m.tab)")
+        } else { expect(false, "Podcasts is on the rail") }
+        // and Radio opens stations again, remembering where each one was
+        m.go(.tab(.radio)); m.go(.tab(.podcasts)); m.go(.tab(.home))
+        expect(m.lastPage[.podcasts] == .tab(.podcasts) && m.lastPage[.radio] == .tab(.radio), "each remembers its own last page")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1101,6 +1145,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

@@ -13,7 +13,7 @@ struct NavigationTests {
             for t in d.tabs { expect(seen[t] == nil, "\(t) belongs to two destinations"); seen[t] = d }
         }
         for t in Tab.allCases { expect(seen[t] != nil && RailDestination.of(t) == seen[t], "\(t) has no destination") }
-        expect(RailDestination.rail.map(\.rawValue) == ["Library", "Playlists", "Radio", "Rooms", "Sound"], "the rail's five destinations, in plain words")
+        expect(RailDestination.rail.map(\.rawValue) == ["Library", "Playlists", "Radio", "Podcasts", "Rooms", "Sound"], "the rail's six destinations, in plain words")
         expect(!RailDestination.rail.contains(.home) && !RailDestination.rail.contains(.listen) && !RailDestination.rail.contains(.settings), "Home, Now Playing and Settings are not on the rail")
         // …and can be reached from it: every page is the destination's home or an item of its one-line sub-header (nothing hides behind a menu)
         for d in RailDestination.allCases {
@@ -29,7 +29,10 @@ struct NavigationTests {
         expect(Set(sound.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test", "Diagnostics"], "\(sound.map(\.title))")
         expect(RailDestination.library.subNav.map(\.title).starts(with: ["Albums", "Artists", "Songs"]), "album-first")
         expect(RailDestination.library.subNav.count == 9, "the whole library is in the line")
-        expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked"] && RailDestination.radio.subNav.map(\.title) == ["Radio", "Podcasts"])
+        expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked"] && RailDestination.radio.subNav.isEmpty && RailDestination.podcasts.subNav.isEmpty)
+        // Radio keeps its stations; Podcasts has its own place, page and icon
+        expect(RailDestination.radio.tabs == [.radio] && RailDestination.podcasts.tabs == [.podcasts] && RailDestination.of(.podcasts) == .podcasts && RailDestination.of(.radio) == .radio, "Podcasts is not inside Radio")
+        expect(RailDestination.podcasts.icon != RailDestination.radio.icon && RailDestination.podcasts.home == .tab(.podcasts) && RailDestination.radio.home == .tab(.radio), "its own icon, and the rail goes to it")
         // the rooms page holds what was spread over other pages
         expect(Tab.rooms.rawValue == "Rooms" && RailDestination.of(.rooms) == .rooms)
         // labels are plain words
