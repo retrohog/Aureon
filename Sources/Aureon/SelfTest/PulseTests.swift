@@ -1165,6 +1165,48 @@ extension PulseTests {
         expect(script.contains("Packaging/Fonts-local"), "the build bundles local fonts only when they are there")
     }
 
+    /// Settings is one page with one grouped menu: every section shows its own heading below the top bar, never the tab strip of the Sound page or any chips of another
+    /// page, and the search finds any setting by name.
+    @MainActor func settingsIsOnePageWithOneMenu() {
+        // the index: every section can be found, names are found by any of their words, and nothing points nowhere
+        let items = SettingsIndex.items
+        expect(Set(items.map(\.id)).count == items.count, "no setting is listed twice")
+        expect(Set(SettingsSection.allCases).isSubset(of: Set(items.map(\.section))), "every section has settings that can be found: \(Set(SettingsSection.allCases).subtracting(items.map(\.section)))")
+        for (q, section) in [("pure black", SettingsSection.appearance), ("amoled", .appearance), ("lyrics timing", .nowPlaying), ("seek bar", .nowPlaying), ("menu bar", .miniPlayer), ("volume safety", .general),
+                             ("resume", .startup), ("midi learn", .midi), ("last.fm", .connect), ("navidrome", .cloud), ("phone", .cloud), ("api keys", .intelligence), ("freeze", .system), ("diagnostics", .system), ("font", .appearance)] {
+            expect(SettingsIndex.search(q).contains { $0.section == section }, "searching \"\(q)\" finds a setting in \(section.rawValue): \(SettingsIndex.search(q).map(\.title))")
+        }
+        expect(SettingsIndex.search("").isEmpty && SettingsIndex.search("zzzqqq").isEmpty, "nothing for an empty or an unknown search")
+        // every section in a real window
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        m.pageTransitions = .none
+        LayoutProbe.enabled = true
+        defer { LayoutProbe.enabled = false }
+        for section in SettingsSection.allCases {
+            m.go(.settings(section))
+            let size = CGSize(width: 1100, height: 700)
+            let probe = LayoutProbe.begin()
+            let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+            host.frame = NSRect(origin: .zero, size: size)
+            let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+            let end = Date().addingTimeInterval(1.0)
+            while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+            expect(m.currentDestination == .settings && m.tab == .settings, "\(section.rawValue): the rail and the page agree that this is Settings")
+            expect(LayoutProbe.frames["sound.tabs"] == nil && LayoutProbe.frames["subnav"] == nil, "\(section.rawValue): no tab strip or chips of another page: \(LayoutProbe.frames.keys.sorted())")
+            if let page = LayoutProbe.frames["page.content"], let bar = LayoutProbe.frames["top.search"] {
+                expect(page.minY >= bar.maxY - 1 || page.minY >= 0, "\(section.rawValue): the page starts below the top bar: \(page.minY)")
+            }
+            win.orderOut(nil); win.contentView = nil
+        }
+        // the sound page still has its own tab strip, and only the tools in it
+        m.go(.tab(.audio))
+        expect(m.currentDestination == .sound && RailDestination.sound.subNav.count == 6, "the Sound page keeps its tools")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1495,6 +1537,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.fontFamilies", { MainActor.assumeIsolated { t.everyFontFamilyLoadsAppliesAndSurvivesARestart() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.fontFamilies", { MainActor.assumeIsolated { t.everyFontFamilyLoadsAppliesAndSurvivesARestart() } }), ("pulse.settingsOnePage", { MainActor.assumeIsolated { t.settingsIsOnePageWithOneMenu() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

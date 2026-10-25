@@ -19,14 +19,16 @@ struct NavigationTests {
         for d in RailDestination.allCases {
             let nav = d.subNav
             let reachable = Set(nav.compactMap { t -> Tab? in if case .tab(let tab) = t { tab } else { nil } } + [{ if case .tab(let t) = d.home { t } else { .home } }()])
-            for t in d.tabs where !(d == .home && t == .search) { expect(reachable.contains(t), "\(t) cannot be reached from \(d)") }       // Search is the field in the top bar
+            for t in d.tabs where !(d == .home && t == .search) && !(d == .settings && (t == .cloud || t == .intelligence)) { expect(reachable.contains(t), "\(t) cannot be reached from \(d)") }       // Search is the field in the top bar
             for t in nav { expect(t.destination == d, "\(t.id) sits under the wrong destination") }
             expect(Set(nav.map(\.id)).count == nav.count, "\(d) lists something twice")
         }
-        // the DJ console and the diagnostics belong to Sound, and every sub-section of it is in the one line
+        // the DJ console belongs to Sound, which keeps only the tools; cloud, intelligence and diagnostics are sections of Settings
         let sound = RailDestination.sound.subNav
-        expect(sound.contains(.dj) && sound.contains(.settings(.system)), "DJ and diagnostics are in Sound")
-        expect(Set(sound.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test", "Diagnostics"], "\(sound.map(\.title))")
+        expect(sound.contains(.dj) && !sound.contains(.settings(.system)), "DJ is in Sound, diagnostics are not")
+        expect(Set(sound.map(\.title)) == ["Sound", "Equaliser", "DJ", "Rip CD", "Convert", "ABX Test"], "\(sound.map(\.title))")
+        expect(RailDestination.settings.tabs.contains(.cloud) && RailDestination.settings.tabs.contains(.intelligence) && !RailDestination.sound.tabs.contains(.cloud) && !RailDestination.sound.tabs.contains(.intelligence), "Cloud and Intelligence belong to Settings")
+        expect(SettingsGroup.allCases.map(\.rawValue) == ["Look", "Playback and sound", "Connected", "Intelligence", "Advanced"] && SettingsGroup.allCases.flatMap(\.sections) == SettingsSection.allCases, "five groups holding every section once, in menu order")
         expect(RailDestination.library.subNav.map(\.title).starts(with: ["Albums", "Artists", "Songs"]), "album-first")
         expect(RailDestination.library.subNav.count == 9, "the whole library is in the line")
         expect(RailDestination.playlists.subNav.map(\.title) == ["Playlists", "Liked"] && RailDestination.radio.subNav.isEmpty && RailDestination.podcasts.subNav.isEmpty)
@@ -51,7 +53,9 @@ struct NavigationTests {
                 if case .tab(let tab) = t, tab != .settings { expect(m.currentDestination == RailDestination.of(tab), "\(t.id): the rail marks \(m.currentDestination)") }
                 if t == .dj { expect(m.currentDestination == .sound && m.djMode) }
             }
-            m.go(.settings(.system)); expect(m.currentDestination == .sound, "diagnostics are in Sound")
+            m.go(.settings(.system)); expect(m.currentDestination == .settings && !m.djMode, "System and diagnostics are in Settings, not in Sound")
+            m.go(.tab(.cloud)); expect(m.tab == .settings && m.settingsSection == .cloud && m.isCurrent(.tab(.cloud)) && m.currentDestination == .settings, "Cloud opens as a section of Settings")
+            m.go(.tab(.intelligence)); expect(m.tab == .settings && m.settingsSection == .intelligence && m.currentDestination == .settings, "Intelligence too")
             m.go(.settings(.midi)); expect(m.currentDestination == .settings && m.settingsSection == .midi)
             m.go(.tab(.albums)); expect(!m.djMode && m.currentDestination == .library && m.lastPage[.library] == .tab(.albums), "the last page of a destination is remembered")
         }

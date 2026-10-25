@@ -104,6 +104,6 @@ struct SoundTabBar: View {
 
     var body: some View {
         TabLine(items: SoundSection.allCases.map { TabLineItem(id: $0, title: $0.title) }, selection: Binding(get: { m.soundSection }, set: { s in withAnimation(TabMotion.animation) { m.soundSection = s } }), tracking: 1.6, spacing: 24, height: 28, labelPrefix: "Sound")
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity).layoutProbe("sound.tabs")
     }
 }

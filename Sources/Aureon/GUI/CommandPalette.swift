@@ -29,7 +29,7 @@ enum PaletteCatalog {
     }
 
     private static func name(_ t: NavTarget) -> String {
-        switch t { case .tab(let tab): tab == .player ? "Now Playing" : tab.rawValue; case .dj: "DJ console"; case .settings(let s): s == .system ? "Diagnostics" : "Settings · " + (s == .sidebar ? "Pages" : s.rawValue) }
+        switch t { case .tab(let tab): tab == .player ? "Now Playing" : tab.rawValue; case .dj: "DJ console"; case .settings(let s): "Settings · " + (s == .sidebar ? "Pages" : s == .system ? "System and diagnostics" : s.rawValue) }
     }
 
     private static func keywords(_ t: NavTarget) -> String {
@@ -51,7 +51,7 @@ enum PaletteCatalog {
             default: ""
             }
         case .dj: "mix decks crossfader turntable"
-        case .settings(let s): s == .system ? "diagnostics system stethoscope" : ""
+        case .settings(let s): s == .system ? "diagnostics system stethoscope quiet mode freeze recorder hardware path" : s == .cloud ? "s3 b2 navidrome subsonic storage" : s == .intelligence ? "models enhancer api keys" : ""
         }
     }
 
