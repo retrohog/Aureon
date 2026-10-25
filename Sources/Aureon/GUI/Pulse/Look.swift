@@ -118,7 +118,11 @@ struct LookSettings: Codable, Equatable {
     var rowTags = true
     var starlight = StarlightSettings()
     /// The Now Playing layout chosen in Settings (an id of `NowPlayingLayout`), and whether synchronised lyrics are shown in it.
-    var nowPlayingLayout = "stage"
+    var nowPlayingLayout = "chillax" { didSet { nowPlayingLayoutChosen = true } }
+    /// Whether the listener has picked a layout (a record from before there was a choice, or one that never picked, shows the default, Chillax).
+    var nowPlayingLayoutChosen = false
+    /// Orbit: the round cover turns slowly while the music plays.
+    var orbitSpin = false
     var showLyrics = true
     var lyricSize = LyricSize.large
     var seekChoice = SeekChoice.layout
@@ -163,7 +167,11 @@ struct LookSettings: Codable, Equatable {
         formatTags = try c.decodeIfPresent(FormatTagMode.self, forKey: .formatTags) ?? d.formatTags
         rowTags = try c.decodeIfPresent(Bool.self, forKey: .rowTags) ?? d.rowTags
         starlight = try c.decodeIfPresent(StarlightSettings.self, forKey: .starlight) ?? d.starlight
-        nowPlayingLayout = try c.decodeIfPresent(String.self, forKey: .nowPlayingLayout) ?? d.nowPlayingLayout
+        let chosen = try c.decodeIfPresent(Bool.self, forKey: .nowPlayingLayoutChosen) ?? false
+        nowPlayingLayoutChosen = chosen
+        nowPlayingLayout = chosen ? (try c.decodeIfPresent(String.self, forKey: .nowPlayingLayout) ?? d.nowPlayingLayout) : d.nowPlayingLayout
+        nowPlayingLayoutChosen = chosen
+        orbitSpin = try c.decodeIfPresent(Bool.self, forKey: .orbitSpin) ?? d.orbitSpin
         showLyrics = try c.decodeIfPresent(Bool.self, forKey: .showLyrics) ?? d.showLyrics
         lyricSize = try c.decodeIfPresent(LyricSize.self, forKey: .lyricSize) ?? d.lyricSize
         seekChoice = try c.decodeIfPresent(SeekChoice.self, forKey: .seekChoice) ?? d.seekChoice
@@ -174,7 +182,7 @@ struct LookSettings: Codable, Equatable {
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, nowPlayingLayoutChosen, orbitSpin, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 

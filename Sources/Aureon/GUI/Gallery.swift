@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Now Playing as the whole window. Which of the layouts is drawn (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax) is the listener's choice in
+// Now Playing as the whole window. Which of the layouts is drawn (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax, Orbit) is the listener's choice in
 // Settings → Now Playing; each is its own view (Pulse/NowPlaying). The queue, the analyser and the booklet open as a card over the layout.
 
 /// The panels that open beside the cover.
@@ -37,6 +37,7 @@ struct NowPlayingView: View {
                     case .carousel: NPCarousel(c: canvas)
                     case .lumen: NPLumen(c: canvas)
                     case .chillax: NPChillax(c: canvas)
+                    case .orbit: NPOrbit(c: canvas)
                     }
                 }
                 .environment(\.npScale, canvas.s)

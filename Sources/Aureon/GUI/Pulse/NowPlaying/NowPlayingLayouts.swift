@@ -553,3 +553,68 @@ struct NPChillax: View {
         return n == 0 ? "" : "\(min(n, 5)) of \(n) songs"
     }
 }
+
+
+// MARK: - Orbit
+
+/// A round cover in the middle, a ring of bars that move with the music around it, and a thin arc outside them that is the seek bar. The title (or the words) is
+/// under it and the controls are in the dock, as in every other layout.
+struct NPOrbit: View {
+    let c: NPCanvas
+    @EnvironmentObject var m: PlayerModel
+    @EnvironmentObject var info: NPTrackInfo
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        NPFrame(c, content: { size in
+            body(size).padding(.horizontal, c.margin).padding(.top, 8 * c.s)
+        }, dock: {
+            NPDock(c, seek: .slim, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+        })
+    }
+
+    private func body(_ size: CGSize) -> some View {
+        let s = c.s
+        let lyrics = m.look.showLyrics
+        let below: CGFloat = (lyrics ? 150 : 118) * s                          // the title block and, with the words on, two lines of them
+        let side = max(160, min(size.height - below, size.width * 0.9, 640 * s))
+        let r = OrbitRing.radii(side: side)
+        return VStack(spacing: 6 * s) {
+            ZStack {
+                OrbitRingView(side: side)
+                OrbitCover(diameter: r.cover * 2, spins: m.look.orbitSpin && !reduceMotion)
+                    .allowsHitTesting(false)
+            }
+            .frame(width: side, height: side)
+            NPTitleBlock(titleSize: 30, artistSize: 17, credits: false, tags: true, centered: true).fixedSize(horizontal: false, vertical: true)
+            if lyrics {
+                GeometryReader { g in NPLyrics(style: LyricStyle(size: 22, centered: true, gap: 6, rest: 0.4), height: g.size.height) }.frame(maxHeight: .infinity)
+            } else {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// The round cover: a circle, with a slow turn when the listener has asked for one (never with Reduce Motion, never while paused).
+struct OrbitCover: View {
+    @EnvironmentObject var m: PlayerModel
+    let diameter: CGFloat
+    let spins: Bool
+
+    var body: some View {
+        let item = m.focusItem
+        let playing = m.isActive && m.status.state == .playing
+        TimelineView(.animation(minimumInterval: OrbitRing.frameInterval, paused: !(spins && playing))) { t in
+            let turns = spins ? (t.date.timeIntervalSinceReferenceDate / OrbitRing.spinSeconds).truncatingRemainder(dividingBy: 1) : 0
+            CoverView(image: m.hero.image ?? item?.thumb, palette: m.hero.palette, corner: 0, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
+                .frame(width: diameter, height: diameter)
+                .clipShape(Circle())
+                .rotationEffect(.degrees(360 * turns))
+                .shadow(color: .black.opacity(0.3), radius: 22, y: 8)
+        }
+        .frame(width: diameter, height: diameter)
+        .accessibilityElement(children: .ignore).accessibilityLabel("Cover")
+    }
+}

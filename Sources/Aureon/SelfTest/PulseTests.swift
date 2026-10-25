@@ -26,7 +26,7 @@ struct PulseTests {
         // a record from an earlier version (missing keys) reads with the defaults in their place
         suite.set(Data(#"{"density":"comfortable"}"#.utf8), forKey: LookSettings.storageKey)
         let old = LookSettings.load(suite, environment: [:])
-        expect(old.density == .comfortable && old.weight == .regular && old.starlight == StarlightSettings() && old.nowPlayingLayout == "stage" && old.showLyrics, "missing keys take defaults")
+        expect(old.density == .comfortable && old.weight == .regular && old.starlight == StarlightSettings() && old.nowPlayingLayout == "chillax" && old.showLyrics, "missing keys take defaults")
         // garbage is not trusted
         suite.set(Data("not json".utf8), forKey: LookSettings.storageKey)
         expect(LookSettings.load(suite, environment: [:]) == LookSettings(), "an unreadable record is the defaults")
@@ -152,10 +152,17 @@ struct PulseTests {
 
 extension PulseTests {
     func theLayoutsAreChosenAndRemembered() {
-        expect(NowPlayingLayout.allCases.map(\.rawValue) == ["stage", "classic", "fullbleed", "carousel", "lumen", "chillax"], "six layouts, Stage first")
-        expect(NowPlayingLayout.standard == .stage && LookSettings().nowPlayingLayout == "stage", "Stage is the default")
-        expect(NowPlayingLayout.resolve("lumen") == .lumen && NowPlayingLayout.resolve("vinyl") == .stage && NowPlayingLayout.resolve(nil) == .stage && NowPlayingLayout.resolve("") == .stage, "an unknown id is Stage")
-        expect(NowPlayingLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty } && Set(NowPlayingLayout.allCases.map(\.title)).count == 6, "each has a name and a line")
+        expect(NowPlayingLayout.allCases.map(\.rawValue) == ["stage", "classic", "fullbleed", "carousel", "lumen", "chillax", "orbit"], "seven layouts")
+        expect(NowPlayingLayout.standard == .chillax && LookSettings().nowPlayingLayout == "chillax" && !LookSettings().nowPlayingLayoutChosen, "Chillax is the default")
+        // a record that never picked a layout shows the default; one that picked shows the pick (Stage included)
+        let never = try? JSONDecoder().decode(LookSettings.self, from: Data(#"{"nowPlayingLayout":"stage"}"#.utf8))
+        let picked = try? JSONDecoder().decode(LookSettings.self, from: Data(#"{"nowPlayingLayout":"stage","nowPlayingLayoutChosen":true}"#.utf8))
+        expect(never?.nowPlayingLayout == "chillax" && picked?.nowPlayingLayout == "stage", "an old record shows the default; a chosen layout is kept")
+        var chosen = LookSettings(); chosen.nowPlayingLayout = "orbit"
+        let again = (try? JSONEncoder().encode(chosen)).flatMap { try? JSONDecoder().decode(LookSettings.self, from: $0) }
+        expect(chosen.nowPlayingLayoutChosen && again?.nowPlayingLayout == "orbit" && again?.nowPlayingLayoutChosen == true, "choosing a layout is remembered")
+        expect(NowPlayingLayout.resolve("lumen") == .lumen && NowPlayingLayout.resolve("vinyl") == .chillax && NowPlayingLayout.resolve(nil) == .chillax && NowPlayingLayout.resolve("") == .chillax, "an unknown id is the default")
+        expect(NowPlayingLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty } && Set(NowPlayingLayout.allCases.map(\.title)).count == 7, "each has a name and a line")
         expect(NowPlayingLayout.stage.hasTabs && NowPlayingLayout.classic.hasTabs && !NowPlayingLayout.lumen.hasTabs && !NowPlayingLayout.chillax.hasTabs, "tabs where the layout has them")
         let suite = UserDefaults(suiteName: "aureon.test.np.\(UUID().uuidString)")!
         var s = LookSettings(); s.nowPlayingLayout = "chillax"; s.lyricSize = .huge; s.seekChoice = .line; s.showPlaylistButton = false; s.showCredits = false; s.showSignalTags = false
@@ -1004,6 +1011,75 @@ extension PulseTests {
         expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("bridge.key").path), "starting over removes the file")
     }
 
+    /// The Orbit layout: the ring's sums, its frame rate cap and its rest, and a press on the ring seeks.
+    @MainActor func theOrbitRingDrawsAndSeeks() {
+        // the sums
+        let flat = OrbitRing.heights(bands: [])
+        expect(flat.count == OrbitRing.barCount && Set(flat).count == 1, "no bands: a static ring of even bars")
+        let bands: [Float] = (0..<192).map { Float(-90 + 90 * Double($0) / 191) }          // rising from silence to full scale
+        let h = OrbitRing.heights(bands: bands)
+        expect(h.count == 96 && h.allSatisfy { $0 >= 0 && $0 <= 1 } && (0..<96).allSatisfy { abs(h[$0] - h[95 - $0]) < 1e-9 }, "bars are in range and the ring is symmetrical")
+        expect(h[0] < h[47] && h[47] > 0.9, "louder bands, longer bars")
+        let r = OrbitRing.radii(side: 500)
+        expect(r.cover < r.barsInner && r.barsInner < r.barsOuter && r.barsOuter < r.arc && r.arc < 250, "the cover, the bars and the arc sit one inside the other, inside the square: \(r)")
+        let c = CGPoint(x: 250, y: 250)
+        expect(abs(OrbitRing.fraction(of: CGPoint(x: 250, y: 0), around: c) - 0) < 1e-9 && abs(OrbitRing.fraction(of: CGPoint(x: 500, y: 250), around: c) - 0.25) < 1e-9
+               && abs(OrbitRing.fraction(of: CGPoint(x: 250, y: 500), around: c) - 0.5) < 1e-9 && abs(OrbitRing.fraction(of: CGPoint(x: 0, y: 250), around: c) - 0.75) < 1e-9, "from the top, clockwise")
+        expect(OrbitRing.hits(CGPoint(x: 250 + r.arc, y: 250), around: c, radii: r) && !OrbitRing.hits(c, around: c, radii: r) && !OrbitRing.hits(CGPoint(x: 250 + r.cover * 0.5, y: 250), around: c, radii: r), "a press on the ring counts, one on the cover does not")
+        // frame rate cap and rest
+        expect(OrbitRing.frameInterval >= 1.0 / 60.0 - 1e-9, "never redrawn more than 60 times a second: \(OrbitRing.frameInterval)")
+        expect(!OrbitRing.paused(playing: true, visible: true, reduceMotion: false, analyserOn: true), "it moves while the music plays and the window is seen")
+        expect(OrbitRing.paused(playing: false, visible: true, reduceMotion: false, analyserOn: true) && OrbitRing.paused(playing: true, visible: false, reduceMotion: false, analyserOn: true)
+               && OrbitRing.paused(playing: true, visible: true, reduceMotion: true, analyserOn: true) && OrbitRing.paused(playing: true, visible: true, reduceMotion: false, analyserOn: false), "it stands still when paused, hidden, with Reduce Motion on, or with the analyser off")
+        // the layout, in a real window: the ring is there, the controls are, and a press on the ring seeks
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("orbit")
+        let song = dir.appendingPathComponent("Orbit Check.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        LayoutProbe.enabled = true
+        defer { m.clear(); LayoutProbe.enabled = false }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        m.look.nowPlayingLayout = "orbit"; m.look.showLyrics = false
+        stage.open(m, reduceMotion: true)
+        let size = CGSize(width: 1100, height: 700)
+        let probe = LayoutProbe.begin()
+        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+        host.frame = NSRect(origin: .zero, size: size)
+        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless(); win.makeKey()
+        defer { win.orderOut(nil); win.contentView = nil }
+        func settle(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+        settle(1.2)
+        guard let ring = LayoutProbe.frames["orbit.ring"], let dock = LayoutProbe.frames["dock"], let transport = LayoutProbe.frames["transport"] else { expect(false, "the ring, the dock and the transport are on screen: \(LayoutProbe.frames.keys.sorted())"); return }
+        let window = CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1)
+        expect(window.contains(ring) && window.contains(dock) && window.contains(transport) && ring.maxY <= dock.minY + 1 && abs(ring.width - ring.height) < 1, "the ring is a square inside the window, above the dock: \(ring) \(dock)")
+        // a press on the arc a quarter of the way round (3 o'clock) seeks to a quarter of the song
+        let rr = OrbitRing.radii(side: ring.width)
+        let at = NSPoint(x: ring.midX + rr.arc, y: size.height - ring.midY)
+        m.player.send(.seekTo(1)); settle(0.5)
+        for (type, dy) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 1.0), (.leftMouseUp, 1.0)] {
+            if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: at.x, y: at.y + dy), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { win.sendEvent(e) }
+            settle(0.05)
+        }
+        settle(1.0)
+        expect(m.status.position > 7 && m.status.position < 14, "a press at 3 o'clock seeks to about a quarter of 40 s: \(String(format: "%.1f", m.status.position)) s")
+        // a press on the cover does not seek
+        m.player.send(.seekTo(30)); settle(0.5)
+        let before = m.status.position
+        let cover = NSPoint(x: ring.midX, y: size.height - ring.midY)
+        for (type, dx) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 1.0), (.leftMouseUp, 1.0)] {
+            if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: cover.x + dx, y: cover.y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { win.sendEvent(e) }
+            settle(0.05)
+        }
+        settle(0.5)
+        expect(m.status.position >= before - 0.5, "a press on the cover leaves the song where it is: \(String(format: "%.1f", before)) → \(String(format: "%.1f", m.status.position))")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -1334,6 +1410,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
