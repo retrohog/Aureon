@@ -252,70 +252,12 @@ struct MiniCardView: View {
                 MiniTransport(play: 54, side: 40, modes: true).padding(.top, 4)
                 Spacer(minLength: 0)
                 HStack {
-                    HStack(spacing: 0) {
-                        Button { m.look.mini.layout = .cardLyrics } label: { Image(systemName: "quote.bubble") }.buttonStyle(RoundIconStyle(size: 34)).help("Lyrics").accessibilityLabel("Lyrics")
-                        Button { actions.openApp() } label: { Image(systemName: "list.bullet") }.buttonStyle(RoundIconStyle(size: 34)).help("Queue").accessibilityLabel("Queue")
-                    }
+                    Button { actions.openApp() } label: { Image(systemName: "list.bullet") }.buttonStyle(RoundIconStyle(size: 34)).help("Queue").accessibilityLabel("Queue")
                     Spacer()
                     VolumeControl(width: 80, readout: false)
                 }.padding(.horizontal, 18).frame(height: 36).padding(.bottom, 8)
             }
         }
-    }
-}
-
-struct MiniCardLyricsView: View {
-    @EnvironmentObject var m: PlayerModel
-    @Environment(\.miniActions) private var actions
-    var body: some View {
-        MiniSurface(layout: .cardLyrics) {
-            ZStack {
-                if let img = m.hero.image ?? m.focusItem?.thumb {
-                    Image(nsImage: img).resizable().scaledToFill().frame(width: 460, height: 900).blur(radius: 28).opacity(0.6)
-                }
-                Brand.panel.opacity(0.55)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top) {
-                        MiniNames(titleSize: 17, artistSize: 13)
-                        Spacer(minLength: 8)
-                        MiniCornerButtons(size: 28)
-                    }
-                    .padding(.top, 16)
-                    MiniLyricLines().frame(maxHeight: .infinity).padding(.vertical, 8)
-                    MiniTransport(play: 48, side: 36).frame(maxWidth: .infinity)
-                    HStack {
-                        Button { m.look.mini.layout = .card } label: { Image(systemName: "photo") }.buttonStyle(RoundIconStyle(size: 34)).help("Back to the card").accessibilityLabel("Show the cover")
-                        Spacer()
-                        VolumeControl(width: 70, readout: false)
-                    }.padding(.top, 6)
-                }
-                .padding(.horizontal, 20).padding(.bottom, 12)
-            }
-        }
-    }
-}
-
-/// The lines of the song around the one being sung, small and centred. The lookup is only asked for while this is on screen.
-struct MiniLyricLines: View {
-    @EnvironmentObject var m: PlayerModel
-    @ObservedObject private var service = LyricsService.shared
-    var body: some View {
-        Group {
-            if service.phase == .ready, let l = service.lyrics, l.synced {
-                GeometryReader { g in
-                    LyricsStage(lyrics: l, accent: Brand.accent, height: g.size.height)
-                        .environment(\.lyricStyle, LyricStyle(size: 19, centered: true, gap: 12, rest: 0.4))
-                }
-            } else {
-                Text(message).font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).multilineTextAlignment(.center).frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .task(id: LyricsDriver.trigger(for: m, show: true)) { await LyricsDriver.ask(m, show: true) }
-    }
-    private var message: String {
-        if m.focusItem == nil { return "Play a song to see its words." }
-        if m.focusItem?.isStream == true { return "Radio has no lyrics." }
-        switch service.phase { case .loading: return "Looking for the lyrics…"; case .instrumental: return "Instrumental"; case .ready: return "These lyrics are not timed."; default: return "No lyrics found." }
     }
 }
 
@@ -364,7 +306,6 @@ struct MiniLayoutView: View {
         case .bar: MiniBarView()
         case .strip: MiniStripView()
         case .card: MiniCardView()
-        case .cardLyrics: MiniCardLyricsView()
         case .popover: MiniPopoverView()
         }
     }

@@ -173,7 +173,7 @@ sharp and the others fade.
 
 ## Mini player and menu bar
 
-Five layouts: Compact bar 520 × 96, Thin strip 520 × 48, Card 380 × 620, Card with lyrics 260 × 620, Menu bar popover 340 × 236. It is dragged by its body (the title strip is not needed). **Opening the mini player puts the main window away** (a setting, on by default; the window's size and place are remembered) and **closing the mini player — its expand button, a click on the Dock icon, the menu — brings the main window back exactly where it was**, so only one of the two is on screen, as in other music apps. A floating window stays above
+Four layouts: Compact bar 520 × 96, Thin strip 520 × 48, Card 380 × 620, Menu bar popover 340 × 236. It is dragged by its body (the title strip is not needed). **Opening the mini player puts the main window away** (a setting, on by default; the window's size and place are remembered) and **closing the mini player — its expand button, a click on the Dock icon, the menu — brings the main window back exactly where it was**, so only one of the two is on screen, as in other music apps. A floating window stays above
 others (an option), can follow to every desktop, remembers its place, and its opacity is a setting (40–100 %). Backgrounds: Solid, Gradient (from the cover's colour),
 Blur and glow; a strength slider. Live preview only while that settings page is open. The menu bar item shows the logo, the logo and title, or the title; the popover
 opens on click or on hover, closes on a click elsewhere, closes by itself after Never / 3 / 5 / 10 / 30 s (5 by default) and waits while the pointer is over it.

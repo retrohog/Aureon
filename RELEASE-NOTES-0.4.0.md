@@ -52,7 +52,7 @@ always shows which state you are in.
 
 ### Mini player and menu bar
 
-- **A mini player** in five forms: a compact bar, a thin strip, a card, a card with lyrics, and a menu bar popover. Drag it from the cover, the names or any empty space; it stays wholly on a screen and remembers its place for each display. Opening it puts the main window away and bringing the main window back puts the mini player away, as in other music apps.
+- **A mini player** in four forms: a compact bar, a thin strip, a card and a menu bar popover. Drag it from the cover, the names or any empty space; it stays wholly on a screen and remembers its place for each display. Opening it puts the main window away and bringing the main window back puts the mini player away, as in other music apps.
 - It can stay above other windows, follow you to every desktop, and remember its place. Its background is solid, a gradient from the cover or a blur, and its opacity is yours to set.
 - **A menu bar player** shows the logo, the logo and title, or the title. The popover opens on a click or on hover and closes by itself after a time you choose.
 

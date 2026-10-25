@@ -5,26 +5,29 @@ import SwiftUI
 
 /// The ways the mini player can look. The popover lives under the menu bar item; the rest are windows that float.
 enum MiniLayout: String, CaseIterable, Identifiable, Codable {
-    case bar, strip, card, cardLyrics, popover
+    case bar, strip, card, popover
     var id: String { rawValue }
+    /// A record saved by a build that had a form since removed (the card with lyrics) reads as the card.
+    init(from decoder: Decoder) throws {
+        self = MiniLayout(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .card
+    }
     var title: String {
-        switch self { case .bar: "Compact bar"; case .strip: "Thin strip"; case .card: "Card"; case .cardLyrics: "Card with lyrics"; case .popover: "Menu bar popover" }
+        switch self { case .bar: "Compact bar"; case .strip: "Thin strip"; case .card: "Card"; case .popover: "Menu bar popover" }
     }
     var blurb: String {
         switch self {
         case .bar: "Cover, title, tags and controls in one bar."
         case .strip: "One line that sits on the edge of a screen."
         case .card: "Large cover and full controls in a small window."
-        case .cardLyrics: "Narrow window with the lyric line in view."
         case .popover: "Lives in the menu bar, opens on click."
         }
     }
     /// The size of the window or popover.
     var size: CGSize {
         switch self { case .bar: CGSize(width: 520, height: 96); case .strip: CGSize(width: 520, height: 48); case .card: CGSize(width: 380, height: 620)
-                      case .cardLyrics: CGSize(width: 260, height: 620); case .popover: CGSize(width: 340, height: 236) }
+                      case .popover: CGSize(width: 340, height: 236) }
     }
-    var cornerRadius: CGFloat { switch self { case .bar: 16; case .strip: 14; case .card, .cardLyrics: 22; case .popover: 16 } }
+    var cornerRadius: CGFloat { switch self { case .bar: 16; case .strip: 14; case .card: 22; case .popover: 16 } }
     /// Whether it is a window (the others are shown from the menu bar item).
     var isWindow: Bool { self != .popover }
 }
