@@ -73,7 +73,8 @@ struct PairedDevice: Codable, Identifiable, Equatable {
 }
 
 final class BridgeRegistry: @unchecked Sendable {
-    var secrets: SecretStore = KeychainSecretStore()
+    /// The Mac's key is kept in a private file in Aureon's support folder, not in the Keychain (reading the Keychain can make macOS ask for a password).
+    var secrets: SecretStore = PrivateFileSecretStore.standard
     var defaults = UserDefaults.standard
     private let lock = NSLock()
 
@@ -82,13 +83,24 @@ final class BridgeRegistry: @unchecked Sendable {
         set { defaults.set(try? JSONEncoder().encode(newValue), forKey: "aureon.bridge.devices") }
     }
 
-    /// The Mac's long-term key: created on first use, kept in the Keychain.
+    /// The Mac's long-term key: created on first use and kept in a private file. An older version kept it in the Keychain; that item is never read (reading it is
+    /// what made macOS ask for a password), so the first key made here is a new one, and phones paired with the old key have to pair again.
     var bridgeKey: Data {
         lock.lock(); defer { lock.unlock() }
         if let s = secrets.get("bridge.key"), let d = Data(base64Encoded: s), d.count == 32 { return d }
         let d = Data((0..<32).map { _ in UInt8.random(in: 0...255) })
         secrets.set(d.base64EncodedString(), for: "bridge.key")
+        if !devices.isEmpty { devices = []; defaults.set(true, forKey: Self.renewedKey) }
         return d
+    }
+
+    static let renewedKey = "aureon.bridge.keyRenewed"
+    /// Whether the key was made again while phones were paired (they must pair again). Reading it clears it: the notice is shown once.
+    func takeRenewedNotice() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        let renewed = defaults.bool(forKey: Self.renewedKey)
+        if renewed { defaults.removeObject(forKey: Self.renewedKey) }
+        return renewed
     }
 
     static func hash(_ token: String) -> String { SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined() }

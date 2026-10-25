@@ -503,7 +503,8 @@ struct Phase5Tests {
         for i in 0..<big.count { big[i] = UInt8(truncatingIfNeeded: i &* 31 &+ (i >> 8)) }
         let file = dir.appendingPathComponent("bridge-track.flac"); try! big.write(to: file)
         let src = FakeSource(); src.files = ["t1": file]
-        let reg = BridgeRegistry(); reg.secrets = MemorySecretStore(); reg.defaults = UserDefaults(suiteName: "aureon.bridgetest.\(UUID().uuidString.prefix(6))")!
+        let suite = "aureon.bridgetest.\(UUID().uuidString.prefix(6))"; let keyFolder = dir.appendingPathComponent("bridge-private-\(UUID().uuidString.prefix(6))")
+        let reg = BridgeRegistry(); reg.secrets = PrivateFileSecretStore(folder: keyFolder); reg.defaults = UserDefaults(suiteName: suite)!
         let server = BridgeServer(source: src, registry: reg, serviceName: "Test Mac", advertise: false)
         var paired: PairedDevice?; let lk = NSLock()
         server.onPaired = { lk.lock(); paired = $0; lk.unlock() }
@@ -556,6 +557,14 @@ struct Phase5Tests {
         let raw = BridgeLink(NWConnection(to: ep(sp), using: .tcp))
         if case .success = runAsync(timeout: 10, { try await raw.start(queue: DispatchQueue(label: "raw")); try await raw.send(.hello, Data("{}".utf8)); _ = try await raw.receive() }) { expect(false, "plain TCP must not be answered") }
         raw.close()
+        // the key is a private file, and a new start of the app (a new registry on the same folder) knows the same key and the same paired devices
+        let keyFile = keyFolder.appendingPathComponent("bridge.key")
+        let perms = { (u: URL) in ((try? FileManager.default.attributesOfItem(atPath: u.path))?[.posixPermissions] as? NSNumber)?.intValue ?? -1 }
+        expect(perms(keyFolder) == 0o700 && perms(keyFile) == 0o600, "the folder is private to the user (0700) and so is the key file (0600): \(String(perms(keyFolder), radix: 8)) \(String(perms(keyFile), radix: 8))")
+        let again = BridgeRegistry(); again.secrets = PrivateFileSecretStore(folder: keyFolder); again.defaults = UserDefaults(suiteName: suite)!
+        expect(again.bridgeKey == reg.bridgeKey && again.bridgeKey.count == 32, "the key survives a restart")
+        guard case .success(let creds2) = runAsync(timeout: 10, { try await BridgeClient.pair(endpoint: ep(sp), tokenText: (try server.beginPairing()).0, deviceName: "Second phone") }) else { return }
+        expect(again.verify(id: creds2.deviceID, token: creds2.token), "a device paired before the restart is still known after it")
     }
 }
 

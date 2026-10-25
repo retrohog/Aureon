@@ -22,7 +22,7 @@ final class BridgeModel: ObservableObject {
             guard server == nil, let store = library?.store else { return }
             let s = BridgeServer(source: StoreBridgeSource(store: store), registry: registry)
             s.onPaired = { [weak self] d in Task { @MainActor in self?.devices = self?.registry.devices ?? []; self?.token = nil; self?.message = "\(d.name) is paired." } }
-            do { port = try s.start(); server = s; message = nil }
+            do { port = try s.start(); server = s; message = registry.takeRenewedNotice() ? "Sharing now has a new key, kept in a private file instead of the Keychain. Phones that were paired need to pair again." : nil }
             catch { sharing = false; message = "Could not start sharing: \(error.localizedDescription)" }
         } else {
             server?.stop(); server = nil; token = nil; port = 0
