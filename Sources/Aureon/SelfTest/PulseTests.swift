@@ -216,7 +216,7 @@ extension PulseTests {
         let suite = UserDefaults(suiteName: "aureon.test.mini.\(UUID().uuidString)")!
         var s = LookSettings()
         expect(s.mini.layout == .bar && s.mini.background == .gradient && s.mini.alwaysOnTop && s.mini.formatTags && !s.mini.menuBar.show && s.mini.menuBar.autoCloseSeconds == 5 && s.mini.menuBar.closeOnOutsideClick && s.mini.keepFloating && s.mini.rememberPosition && !s.mini.onEveryDesktop, "defaults: the bar, a gradient, on top, closes after five seconds")
-        s.mini.layout = .cardLyrics; s.mini.background = .blur; s.mini.strength = 0.3; s.mini.opacity = 0.7; s.mini.menuBar.show = true; s.mini.menuBar.shows = .title; s.mini.menuBar.openOn = .hover; s.mini.menuBar.autoCloseSeconds = 30; s.mini.menuBar.keepOpenWhileOver = false
+        s.mini.layout = .card; s.mini.background = .blur; s.mini.strength = 0.3; s.mini.opacity = 0.7; s.mini.menuBar.show = true; s.mini.menuBar.shows = .title; s.mini.menuBar.openOn = .hover; s.mini.menuBar.autoCloseSeconds = 30; s.mini.menuBar.keepOpenWhileOver = false
         s.save(suite)
         expect(LookSettings.load(suite, environment: [:]).mini == s.clamped().mini, "everything comes back")
         suite.set(Data(#"{"mini":{"layout":"strip"}}"#.utf8), forKey: LookSettings.storageKey)
@@ -227,9 +227,11 @@ extension PulseTests {
         expect(c.strength == 1 && c.opacity == 0.4 && c.menuBar.autoCloseSeconds == 5, "values are held in range: \(c.strength) \(c.opacity) \(c.menuBar.autoCloseSeconds)")
         expect(LookSettings.load(suite, environment: ["AUREON_LOOK": "mini=card,minibg=solid,menubar=1"]).mini.layout == .card, "the environment overlay reaches it")
         // the layouts
-        expect(MiniLayout.allCases.map(\.rawValue) == ["bar", "strip", "card", "cardLyrics", "popover"] && MiniLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty }, "five layouts")
+        expect(MiniLayout.allCases.map(\.rawValue) == ["bar", "strip", "card", "popover"] && MiniLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty }, "four layouts")
+        suite.set(Data(#"{"mini":{"layout":"cardLyrics"}}"#.utf8), forKey: LookSettings.storageKey)
+        expect(LookSettings.load(suite, environment: [:]).mini.layout == .card, "a record that chose the removed card with lyrics reads as the card")
         expect(MiniLayout.bar.size == CGSize(width: 520, height: 96) && MiniLayout.strip.size.height == 48 && MiniLayout.card.size == CGSize(width: 380, height: 620) && MiniLayout.popover.size == CGSize(width: 340, height: 236), "the sizes of the boards")
-        expect(MiniLayout.allCases.filter(\.isWindow).count == 4 && !MiniLayout.popover.isWindow, "the popover is the one that is not a window")
+        expect(MiniLayout.allCases.filter(\.isWindow).count == 3 && !MiniLayout.popover.isWindow, "the popover is the one that is not a window")
     }
 
     func positionsComeBackOnScreen() {
@@ -619,7 +621,6 @@ extension PulseTests {
             .bar: ([NSPoint(x: 48, y: 48), NSPoint(x: 200, y: 60), NSPoint(x: 300, y: 30)], NSPoint(x: 469, y: 77)),
             .strip: ([NSPoint(x: 24, y: 24), NSPoint(x: 90, y: 24), NSPoint(x: 330, y: 24)], NSPoint(x: 340, y: 24)),
             .card: ([NSPoint(x: 190, y: 400), NSPoint(x: 100, y: 190), NSPoint(x: 190, y: 120)], NSPoint(x: 337, y: 595)),
-            .cardLyrics: ([NSPoint(x: 100, y: 590), NSPoint(x: 130, y: 400), NSPoint(x: 130, y: 250)], NSPoint(x: 205, y: 594)),
         ]
         for hide in [true, false] {
             for layout in MiniLayout.allCases where layout.isWindow {

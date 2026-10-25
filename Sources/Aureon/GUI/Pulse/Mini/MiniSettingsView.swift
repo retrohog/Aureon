@@ -16,7 +16,7 @@ struct MiniPlayerSettings: View {
         }
     }
 
-    private var previewWidth: CGFloat { m.look.mini.layout == .cardLyrics ? 300 : 360 }
+    private var previewWidth: CGFloat { 360 }
 
     // MARK: layouts
 
@@ -47,7 +47,7 @@ struct MiniPlayerSettings: View {
     }
 
     private func icon(_ l: MiniLayout) -> String {
-        switch l { case .bar: "rectangle.bottomhalf.inset.filled"; case .strip: "minus"; case .card: "rectangle.portrait"; case .cardLyrics: "text.quote"; case .popover: "menubar.rectangle" }
+        switch l { case .bar: "rectangle.bottomhalf.inset.filled"; case .strip: "minus"; case .card: "rectangle.portrait"; case .popover: "menubar.rectangle" }
     }
 
     private var look: some View {
@@ -74,7 +74,7 @@ struct MiniPlayerSettings: View {
     // MARK: preview
 
     private var preview: some View {
-        let l = m.look.mini.layout, scale: CGFloat = l == .card || l == .cardLyrics ? 0.72 : (previewWidth - 40) / max(l.size.width, 1)
+        let l = m.look.mini.layout, scale: CGFloat = l == .card ? 0.72 : (previewWidth - 40) / max(l.size.width, 1)
         return VStack(alignment: .leading, spacing: 12) {
             HStack { Text("Live preview").font(Typo.sans(15, .medium)); Spacer(); Text("playing now").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary) }
             MiniLayoutView(layout: l)
