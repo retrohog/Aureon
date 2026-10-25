@@ -97,10 +97,10 @@ Open the disk image and drag **Aureon** to **Applications**, or run the matching
 **Apple Silicon Macs:** `Aureon-0.4.0.dmg` or `.pkg`. **Intel Macs:** `Aureon-0.4.0-universal.dmg` or `.pkg` (also runs on Apple Silicon).
 
 ```
-SHA256 (Aureon-0.4.0.dmg)            e6548b3fdbf5f50ca7f74f31626422926738df40130f1509de6609bc0ad0d571   23,659,354 bytes
-SHA256 (Aureon-0.4.0.pkg)            5bb4032d6b9e4ab58490aac5981d7f7d1c092d08884bc05b8987fd8ee9266e00   20,328,056 bytes
-SHA256 (Aureon-0.4.0-universal.dmg)  160af3ab091dc0d8c582697fe37bfa05f6b46d808239902c164a906690115c2a   36,355,489 bytes
-SHA256 (Aureon-0.4.0-universal.pkg)  5da7c039579b986597c5319cde5b5ea70752cb8aa727364af4526199cf2542a3   31,582,256 bytes
+SHA256 (Aureon-0.4.0.dmg)            ff93ad8caa36fb69d64611504658d12c91f75e3c0071a7a0e326f0827452435e   23,761,700 bytes
+SHA256 (Aureon-0.4.0.pkg)            be351efcd38fd52611fbb2e522398ec98fe20d51e165f8bb8d0234bc5515dbd9   20,424,443 bytes
+SHA256 (Aureon-0.4.0-universal.dmg)  08dda272f11d2cd5080891d3e535cf45e10554683b0e246c617dc9b8c5bede6c   36,638,528 bytes
+SHA256 (Aureon-0.4.0-universal.pkg)  413189f631ed93578fc57e061141e25e66a3b28fd0ebdf786345ff188778e522   31,814,334 bytes
 ```
 
 Earlier changes are in [RELEASE-NOTES-0.3.0.md](RELEASE-NOTES-0.3.0.md) and [RELEASE-NOTES-0.2.0.md](RELEASE-NOTES-0.2.0.md).

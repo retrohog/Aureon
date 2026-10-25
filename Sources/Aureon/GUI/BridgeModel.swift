@@ -9,7 +9,9 @@ final class BridgeModel: ObservableObject {
     @Published private(set) var port: UInt16 = 0
 
     let registry = BridgeRegistry()
-    weak var library: LibraryModel? { didSet { if sharing { apply() } } }
+    /// Sharing starts one turn of the run loop after the library is attached, not inside the model's own start-up: reading the Mac's key can make macOS ask
+    /// for permission, and the window must already be on screen when it does.
+    weak var library: LibraryModel? { didSet { if sharing { DispatchQueue.main.async { [weak self] in MainActor.assumeIsolated { if self?.sharing == true { self?.apply() } } } } } }
     private var server: BridgeServer?
     private var pairingTimer: Timer?
 
