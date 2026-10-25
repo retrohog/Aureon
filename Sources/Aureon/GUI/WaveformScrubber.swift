@@ -154,13 +154,24 @@ struct WaveformScrubber: View {
     @StateObject private var dragging = Box(false)
     @StateObject private var commit = Box<DispatchWorkItem?>(nil)
     @StateObject private var pulse = Box(SeekPulse())
+    @State private var traceID = UUID()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var pitch: CGFloat { style == .bar || style == .slim ? 3 : 4 }
-    private var barWidth: CGFloat { style == .bar ? 1 : 1.5 }
+    /// What is drawn: the style the place asks for, unless Settings → Now Playing → Seek bar chose one for every place. A line is the thin track everywhere; a
+    /// waveform replaces the thin track with the compact waveform where there is one to replace (the places that already draw a waveform keep theirs).
+    private var shown: Style {
+        switch (m.look.seekChoice, style) {
+        case (.line, _): return .slim
+        case (.waveform, .slim): return .bar
+        default: return style
+        }
+    }
+    private var pitch: CGFloat { shown == .bar || shown == .slim ? 3 : 4 }
+    private var barWidth: CGFloat { shown == .bar ? 1 : 1.5 }
 
     var body: some View {
         let item = m.focusItem
+        let _: Void = LayoutProbe.note(scrubber: traceID, style: "\(shown)")
         let path = item.flatMap { $0.isStream ? nil : $0.path }
         let live = m.status.sourceInfo?.isLive == true && m.isActive
         let enabled = m.isActive && !live && progress.duration > 0
@@ -172,12 +183,12 @@ struct WaveformScrubber: View {
         GeometryReader { g in
             let w = g.size.width, h = g.size.height
             ZStack(alignment: .leading) {
-                if style == .slim {
+                if shown == .slim {
                     // the player bar's slider: a 5-point rounded track filled with the progress, and a 13-point thumb while the pointer is near
                     Capsule().fill(Brand.ink.opacity(0.18)).frame(height: 5)
                     Capsule().fill(hoverX.v != nil || dragging.v ? Brand.accent : Brand.ink.opacity(0.9)).frame(width: max(5, w * f), height: 5).opacity(enabled || live ? 1 : 0.35)
                     if enabled { Circle().fill(Brand.ink).frame(width: 13, height: 13).offset(x: min(max(0, w * f - 6.5), w - 13)).opacity(hoverX.v != nil || dragging.v ? 1 : 0).allowsHitTesting(false) }
-                } else if style == .line {
+                } else if shown == .line {
                     WaveformLineArt(overview: ov, color: wc.unplayed.color).equatable()
                     WaveformLineArt(overview: ov, color: wc.played.color, gradient: [wc.played.color, wc.played2.color]).equatable()
                         .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
@@ -190,15 +201,15 @@ struct WaveformScrubber: View {
                         .mask(alignment: .leading) { Rectangle().frame(width: max(0, w * f)) }
                         .opacity(enabled || live ? 1 : 0.35)
                 }
-                if pulse.v.count > 0, style != .slim { SeekPulseMark(x: pulse.v.x, height: h + (style == .line ? 8 : 4)).id(pulse.v.count) }
-                if let x = hoverX.v, enabled, !dragging.v, style != .slim {
+                if pulse.v.count > 0, shown != .slim { SeekPulseMark(x: pulse.v.x, height: h + (shown == .line ? 8 : 4)).id(pulse.v.count) }
+                if let x = hoverX.v, enabled, !dragging.v, shown != .slim {
                     Rectangle().fill(Brand.ink.opacity(0.4)).frame(width: Metrics.hairline, height: h).offset(x: min(max(0, x), w) - 0.25).allowsHitTesting(false)
                 }
-                if enabled, style != .slim {
-                    if style == .line {
+                if enabled, shown != .slim {
+                    if shown == .line {
                         Circle().fill(Brand.accent).frame(width: 6, height: 6).offset(x: w * f - 3).allowsHitTesting(false)
                     } else {
-                        Rectangle().fill(Brand.accent).frame(width: 1, height: h + (style == .bar ? 4 : 8))
+                        Rectangle().fill(Brand.accent).frame(width: 1, height: h + (shown == .bar ? 4 : 8))
                             .offset(x: w * f - 0.5, y: 0)
                             .allowsHitTesting(false)
                     }
@@ -209,7 +220,7 @@ struct WaveformScrubber: View {
                         .padding(.horizontal, 8).padding(.vertical, 4)
                         .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(Brand.panel2))
                         .foregroundStyle(Brand.ink).fixedSize()
-                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: style == .bar || style == .slim ? -(h / 2 + 16) : -(h / 2 + 20))
+                        .offset(x: min(max(0, (dragging.v ? w * f : x) - 22), max(0, w - 46)), y: shown == .bar || shown == .slim ? -(h / 2 + 16) : -(h / 2 + 20))
                         .allowsHitTesting(false).transition(.opacity)
                 }
             }
@@ -247,7 +258,9 @@ struct WaveformScrubber: View {
                 return true
             }
         }
-        .frame(height: style == .bar || style == .slim ? 16 : (style == .line ? 40 : 46))
+        .frame(height: shown == .bar || shown == .slim ? 16 : (shown == .line ? 40 : 46))
+        .layoutProbe("scrubber")
+        .onDisappear { LayoutProbe.drop(scrubber: traceID) }
         .onAppear { prefetch() }
         .onChange(of: path) { _, _ in prefetch() }
         .accessibilityElement()

@@ -9,6 +9,11 @@ enum LayoutProbe {
     private(set) static var frames: [String: CGRect] = [:]
     /// Starts a new measurement and returns the token its window's root view must carry (`.environment(\.probeToken, token)`).
     static func begin() -> Int { token += 1; frames = [:]; return token }
+    /// The style each seek bar on screen is drawn in (a seek bar leaves the list when it leaves the window).
+    private static var scrubberList: [UUID: String] = [:]
+    static var scrubbers: Set<String> { Set(scrubberList.values) }
+    static func note(scrubber id: UUID, style: String) { if enabled { scrubberList[id] = style } }
+    static func drop(scrubber id: UUID) { scrubberList[id] = nil }
     fileprivate static func record(_ name: String, _ frame: CGRect, token t: Int) { if t == token { frames[name] = frame } }
 }
 

@@ -32,14 +32,21 @@ final class IdleTracker: ObservableObject {
         }
     }
 
+    /// What to do when the timer fires: keep the interface in view (resting is off, a snapshot or test, or something needs it), wait for the rest of the delay, or rest.
+    enum Decision: Equatable { case stayAwake, waitMore(TimeInterval), rest }
+    static func decision(restControls: Bool, idle: TimeInterval, holds: Bool, disabled: Bool) -> Decision {
+        if !restControls { return .stayAwake }
+        if idle < delay { return .waitMore(delay - idle) }
+        return disabled || holds ? .waitMore(delay) : .rest
+    }
+
     private func check() {
         timer = nil
-        // by default the bar and the controls stay in view; resting is a choice in Settings → Now Playing
-        if !Look.current.restControls { if !awake { awake = true }; return }
-        let idle = Date().timeIntervalSince(lastPoke)
-        if idle < Self.delay { schedule(Self.delay - idle); return }
-        if Self.disabled || holdsAwake() { schedule(Self.delay); return }
-        withAnimation(Motion.carpet) { awake = false }
+        switch Self.decision(restControls: Look.current.restControls, idle: Date().timeIntervalSince(lastPoke), holds: holdsAwake(), disabled: Self.disabled) {
+        case .stayAwake: if !awake { awake = true }
+        case .waitMore(let t): schedule(t)
+        case .rest: withAnimation(Motion.carpet) { awake = false }
+        }
     }
 
     /// Starts resting at once (a snapshot of the resting state).
