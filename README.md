@@ -32,7 +32,7 @@ switch them on; when they are off they are out of the path, not set to neutral.
 |  |  |  |
 |:--|:--|:--|
 | **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | **Sound shaping, opt-in**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | **Signal path**<br/>Shows every stage, and marks the first one that changes a sample. |
-| **New interface**<br/>Five colours in dark and light, six Now Playing layouts, a mini player and a menu bar player. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
+| **New interface**<br/>Thirteen colours in dark and light, with a true-black AMOLED, six Now Playing layouts, a mini player and a menu bar player. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
 
 <br/>
 
@@ -40,10 +40,10 @@ switch them on; when they are off they are out of the path, not set to neutral.
 
 | | |
 |:--|:--|
-| **New design** | A new shell with a search bar, an output chip and a rail of five places. Set in Figtree, with Compact and Comfortable density. |
-| **Colours** | Graphite, Midnight, Forest, Plum and Cocoa, each in dark and light. **Dark**, **Light** or **Auto** (follows macOS), a **Pure black** switch for OLED, any accent colour, and the Starlight backdrop. |
+| **New design** | A new shell with a search bar, an output chip and a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound). Set in Figtree, with Compact and Comfortable density. |
+| **Colours** | A true-black **AMOLED** and twelve colours (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each in dark and light. **Dark**, **Light** or **Auto** (follows macOS), a **Pure black** switch, one **Brightness** slider, any accent colour, and the Starlight backdrop. |
 | **Now Playing** | Six layouts (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax) with the transport, seek bar, queue and volume always in view. Add to playlist, credits, large synced lyrics. |
-| **Mini player** | A floating player in five forms, dragged by its body, that takes the place of the main window, and a menu bar player with a popover. |
+| **Mini player** | A floating player in five forms, dragged from anywhere on it, that takes the place of the main window, and a menu bar player with a popover. |
 | **Memory** | Reopens with your queue, song and position, page, window place on each display, output, theme and layout. |
 | **Home and Folders** | A Home that follows the time of day, and a Folders page that can remove a library folder safely. |
 | **Queue** | Queue, History and Output in one panel. |
@@ -64,7 +64,7 @@ The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.4.0.md).
 <td width="50%"><img src="Docs/images/pulse/now-playing-carousel.png" alt="Now Playing in the Carousel layout" /><br/><sub><b>Carousel.</b> The cover among its neighbours.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/pulse/settings-appearance.png" alt="Settings, Appearance: mode, pure black and the five colour families" /><br/><sub><b>Appearance.</b> Dark, Light or Auto, Pure black, and five colours shown in both halves.</sub></td>
+<td width="50%"><img src="Docs/images/pulse/settings-appearance.png" alt="Settings, Appearance: mode, pure black and the colour families" /><br/><sub><b>Appearance.</b> Dark, Light or Auto, Pure black, AMOLED and twelve colours shown in both halves, and one brightness slider.</sub></td>
 <td width="50%"><img src="Docs/images/pulse/queue-light.png" alt="The queue panel with Queue, History and Output tabs" /><br/><sub><b>Queue.</b> With History and Output beside it.</sub></td>
 </tr>
 </table>
@@ -109,14 +109,14 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 
 | | |
 |:--|:--|
-| **Shell** | A search bar (⌘K reaches every page and main action), the output chip, and a rail of five places: Library, Playlists, Radio, Rooms and Sound. A quick control panel opens from the output chip (⌥⌘D). |
-| **Colours** | Five families (Graphite, Midnight, Forest, Plum, Cocoa), each with a dark and a soft light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, any accent colour, and a brightness control for the light sides. |
+| **Shell** | A search bar (⌘K reaches every page and main action), the output chip, the mini player button and Settings across the top, and a rail of six places: Library, Playlists, Radio, Podcasts, Rooms and Sound. A quick control panel opens from the output chip (⌥⌘D); every pop-up opens inside the window and never over its edge. |
+| **Colours** | A true-black **AMOLED** and twelve families (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each with a dark and a light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, one **Brightness** slider that lightens or darkens the surfaces in every colour (text and accent stay put), and any accent colour. |
 | **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and **Starlight**, a field of fine stars with settings for intensity, motion, shooting stars and twinkle. |
 | **Type** | Figtree, bundled with its licence, in Light, Regular or Medium, with a text size from 85 % to 130 %, and Compact or Comfortable density. |
-| **Now Playing** | Six layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen and Chillax. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size. |
+| **Now Playing** | Six layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen and Chillax. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size, and a setting lets them rest after a few seconds. The seek bar can be the layout's own, a waveform or a line, everywhere. |
 | **Lyrics** | Large, time-synced lines in every layout, from a `.lrc` file, the file's tags or LRCLIB. Their size and ±2 s timing are in Settings. |
 | **Song details** | Add to playlist, credits under the artist, format tags (Lossless, FLAC, 24-bit, rates, shared or exclusive) and the signal path. |
-| **Mini player** | Five forms: a bar, a strip, a card, a card with lyrics and a menu bar popover. Dragged by its body; opening it puts the main window away. |
+| **Mini player** | Five forms: a bar, a strip, a card, a card with lyrics and a menu bar popover. Dragged from the cover, the names or any empty space, and kept wholly on a screen; its place is remembered for each display. Opening it puts the main window away. |
 | **Menu bar** | The logo, the logo and title, or the title; a popover that opens on a click or on hover and closes by itself. |
 | **Home** | Follows the part of the day, with quick picks and shelves chosen on your Mac from what you play. |
 | **Queue** | Queue, History and Output tabs. |

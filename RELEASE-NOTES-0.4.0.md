@@ -4,7 +4,7 @@
 
 # Aureon 0.4.0
 
-**A new design: five colours in dark and light, six Now Playing layouts, a mini player and menu bar player, and an app that remembers where you were.**
+**A new design: thirteen colours in dark and light, a true-black AMOLED, six Now Playing layouts, a mini player and menu bar player, and an app that remembers where you were.**
 
 <img src="https://github.com/retrohog/Aureon/raw/main/Docs/images/pulse/now-playing-stage.png" alt="Now Playing in Aureon 0.4.0" width="100%" />
 
@@ -20,9 +20,11 @@ always shows which state you are in.
 
 ### A new design
 
-- **A new shell.** A search bar and the output chip across the top, a rail of five places (Library, Playlists, Radio, Rooms, Sound), rounded panels, and a player bar with the cover, title, tags, transport and volume.
-- **Five colours, each in dark and light.** Graphite, Midnight, Forest, Plum and Cocoa. Every colour has a dark side and a soft light side; choose **Dark**, **Light** or **Auto**, which follows macOS as it changes. A **Pure black** switch puts any dark side on a true black window for OLED screens.
-- **Accent colour.** Pick any colour; text in it is kept readable on every surface. The light sides have a brightness control.
+- **A new shell.** A search bar, the output chip, the mini player button and Settings across the top, a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound), rounded panels, and a player bar with the cover, title, tags, transport and volume. **Podcasts** has its own place under Radio.
+- **Thirteen colours, each in dark and light.** A true-black **AMOLED** (dark only) and twelve colours: Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune and Slate. Choose **Dark**, **Light** or **Auto**, which follows macOS as it changes. A **Pure black** switch puts any dark side on a true black window.
+- **One brightness slider** lightens or darkens the surfaces of every colour, dark and light; the text and the accent do not move and stay readable. AMOLED keeps its black window.
+- **Accent colour.** Pick any colour; text in it is kept readable on every surface.
+- **Pop-ups stay inside the window.** The output list, Add to playlist and the other pop-ups are placed by their button and kept wholly in view, scrolling when the window is small.
 - **Starlight.** A slow field of fine stars behind the pages on dark themes, with intensity, motion, shooting stars and twinkle under your control. Flat, Soft and Album backdrops are still there.
 - **Figtree.** The interface is set in Figtree, bundled with its licence (SIL Open Font License), in Regular by default. Light and Medium are a choice, and so is the text size.
 - **Density.** Compact is the default and Comfortable gives lists and covers more room. It lives in Settings → Appearance.
@@ -34,13 +36,15 @@ always shows which state you are in.
 - **Six layouts**, chosen in Settings → Now Playing with a preview of each: **Stage**, **Classic**, **Full-bleed**, **Carousel**, **Lumen** and **Chillax**. Each is drawn for a large window and scales down to a small one.
 - **The controls are always there.** Shuffle, previous, play or pause, next and repeat; the seek bar with both times; the queue, the mini player, the volume and the output chip stay in view in every layout, down to the smallest window. Lyrics and Up next give way first.
 - **Lyrics** stay large and follow the sung line. Their size and timing are in Settings → Now Playing, so nothing floats over the words.
+- **The controls stay in view.** The top bar and the controls no longer fade away; Settings → Now Playing has a switch to let them rest after a few seconds.
+- **Seek bar choice.** Settings → Now Playing → Seek bar (the layout's own, a waveform or a line) now applies to the player bar, the mini player and every layout.
 - **Add to playlist** from the song on screen: a card with a search, **New playlist**, and a tick beside each playlist that holds the song.
 - **Credits** under the artist (written by, produced by, conductor, ensemble, instruments), the format tags and the signal path, each switchable.
 - **Up next** pictures load ahead of time, so the covers are there when the list opens.
 
 ### Mini player and menu bar
 
-- **A mini player** in five forms: a compact bar, a thin strip, a card, a card with lyrics, and a menu bar popover. Drag it by its body. Opening it puts the main window away and bringing the main window back puts the mini player away, as in other music apps.
+- **A mini player** in five forms: a compact bar, a thin strip, a card, a card with lyrics, and a menu bar popover. Drag it from the cover, the names or any empty space; it stays wholly on a screen and remembers its place for each display. Opening it puts the main window away and bringing the main window back puts the mini player away, as in other music apps.
 - It can stay above other windows, follow you to every desktop, and remember its place. Its background is solid, a gradient from the cover or a blur, and its opacity is yours to set.
 - **A menu bar player** shows the logo, the logo and title, or the title. The popover opens on a click or on hover and closes by itself after a time you choose.
 
@@ -55,7 +59,10 @@ always shows which state you are in.
 
 ## Fixes
 
-- The output list on Now Playing no longer closes the moment it opens.
+- The app no longer quits when you switch to the mini player.
+- Settings no longer jump back to the top when you change something.
+- The output list opens inside the window, on every page, and no longer closes the moment it opens on Now Playing.
+- The seek bar choice in Settings is applied everywhere.
 - Lyrics controls no longer overlap the format tags or the buttons beside the title, in any layout.
 - Every Now Playing layout keeps its bottom controls at small window sizes.
 - Shuffle and repeat show clearly when they are on.
