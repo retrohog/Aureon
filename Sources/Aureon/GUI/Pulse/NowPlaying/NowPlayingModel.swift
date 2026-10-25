@@ -5,11 +5,11 @@ import SwiftUI
 
 /// The ways Now Playing can be laid out. Each one is a separate view; the choice is made in Settings → Now Playing and remembered.
 enum NowPlayingLayout: String, CaseIterable, Identifiable {
-    case stage, classic, fullBleed = "fullbleed", carousel, lumen, chillax
+    case stage, classic, fullBleed = "fullbleed", carousel, lumen, chillax, orbit
 
     var id: String { rawValue }
     var title: String {
-        switch self { case .stage: "Stage"; case .classic: "Classic"; case .fullBleed: "Full-bleed"; case .carousel: "Carousel"; case .lumen: "Lumen"; case .chillax: "Chillax" }
+        switch self { case .stage: "Stage"; case .classic: "Classic"; case .fullBleed: "Full-bleed"; case .carousel: "Carousel"; case .lumen: "Lumen"; case .chillax: "Chillax"; case .orbit: "Orbit" }
     }
     var blurb: String {
         switch self {
@@ -19,14 +19,15 @@ enum NowPlayingLayout: String, CaseIterable, Identifiable {
         case .carousel: "The cover among its neighbours in the queue, the words beneath"
         case .lumen: "A rounded cover, the words in the middle, the queue on the right and a dock below"
         case .chillax: "A big cover and a very large title, with the queue as a shelf along the bottom"
+        case .orbit: "A round cover with a ring of moving bars around it; the ring is also the seek bar"
         }
     }
     /// The layouts that have a row of tabs (Lyrics, Up next, Credits, Signal path) over the middle of the screen.
     var hasTabs: Bool { self == .stage || self == .classic }
 
-    /// The default: Stage.
-    static let standard = NowPlayingLayout.stage
-    /// A saved id (also those of layouts that do not exist yet) read as a layout; anything unknown is Stage.
+    /// The default: Chillax.
+    static let standard = NowPlayingLayout.chillax
+    /// A saved id (also those of layouts that do not exist yet) read as a layout; anything unknown is the default.
     static func resolve(_ raw: String?) -> NowPlayingLayout { raw.flatMap(NowPlayingLayout.init(rawValue:)) ?? .standard }
 }
 

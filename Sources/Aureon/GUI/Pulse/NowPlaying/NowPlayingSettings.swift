@@ -74,6 +74,12 @@ struct NPLayoutThumb: View {
             if lyrics { lines(w * 0.4, h * 0.14, w * 0.3, h * 0.1, centered: false, 4) } else { block(w * 0.4, h * 0.14, w * 0.3, h * 0.2, 3); block(w * 0.4, h * 0.4, w * 0.3, h * 0.2, 3) }
             ForEach(0..<4, id: \.self) { i in block(w * 0.76, h * 0.12 + CGFloat(i) * h * 0.14, w * 0.19, h * 0.1, 3) }
             block(w * 0.04, h * 0.76, w * 0.92, h * 0.2, 9, Brand.panel2)
+        case .orbit:
+            Circle().fill(Brand.ink.opacity(0.3)).frame(width: h * 0.34, height: h * 0.34).position(x: w / 2, y: h * 0.3)
+            Circle().strokeBorder(style: StrokeStyle(lineWidth: h * 0.07, dash: [1.6, 2.2])).foregroundStyle(Brand.accent.opacity(0.75)).frame(width: h * 0.52, height: h * 0.52).position(x: w / 2, y: h * 0.3)
+            Circle().trim(from: 0, to: 0.38).stroke(Brand.accent, lineWidth: 2).rotationEffect(.degrees(-90)).frame(width: h * 0.6, height: h * 0.6).position(x: w / 2, y: h * 0.3)
+            block(w * 0.36, h * 0.64, w * 0.28, h * 0.06, 2, Brand.ink.opacity(0.8))
+            if lyrics { lines(w * 0.25, h * 0.74, w * 0.5, h * 0.05, centered: true, 2) }
         case .chillax:
             block(w * 0.05, h * 0.08, h * 0.54, h * 0.54, 10, Brand.ink.opacity(0.3))
             block(w * 0.44, h * 0.1, w * 0.46, h * 0.14, 3, Brand.ink.opacity(0.85))
