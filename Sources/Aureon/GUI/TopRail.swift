@@ -189,7 +189,6 @@ extension PlayerModel {
     /// The destination that is on screen. Diagnostics are a section of the settings page that belongs to Sound.
     var currentDestination: RailDestination {
         if djMode { return .sound }
-        if tab == .settings && settingsSection == .system && settingsPage == nil { return .sound }
         return RailDestination.of(tab)
     }
 }
@@ -349,5 +348,6 @@ struct SubNavBar: View {
                 .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.94), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
         }
         .padding(.horizontal, 24).frame(height: ChromeInset.subNav)
+        .layoutProbe("subnav")
     }
 }

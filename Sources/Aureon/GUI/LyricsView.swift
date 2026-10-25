@@ -249,7 +249,7 @@ struct LyricsSection: View {
                     else { RuleButton(title: service.onlineUnreachable ? "Try Again" : "Look Again", symbol: "arrow.clockwise") { service.reload() } }
                     if service.canOfferGeneration { RuleButton(title: "Write the Lyrics…", symbol: "waveform.badge.mic") { service.generate() } }
                     else if service.request?.isLocalFile == true, !ai.isActive(.lyricsGeneration) {
-                        RuleButton(title: "Intelligence Settings", symbol: "brain") { m.tab = .intelligence }
+                        RuleButton(title: "Intelligence Settings", symbol: "brain") { m.go(.settings(.intelligence)) }
                     }
                 }
                 if !ai.isActive(.lyricsGeneration), service.request?.isLocalFile == true {

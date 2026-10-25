@@ -93,10 +93,37 @@ enum Tab: String, CaseIterable, Identifiable {
     }
 }
 
+/// The sections of Settings, in the order of the menu, which is in five groups. Everything that is a setting is one of these; the Sound page keeps only the tools.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", startup = "Startup & memory", sidebar = "Pages", connect = "Connect", midi = "MIDI", system = "System"
+    case appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", sidebar = "Pages"
+    case general = "General", startup = "Startup & memory", midi = "MIDI"
+    case connect = "Connect", cloud = "Cloud"
+    case intelligence = "Intelligence"
+    case system = "System"
     var id: String { rawValue }
-    var icon: String { switch self { case .general: "gearshape"; case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .startup: "memorychip"; case .sidebar: "sidebar.left"; case .connect: "network"; case .midi: "pianokeys"; case .system: "stethoscope" } }
+    var icon: String {
+        switch self {
+        case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .sidebar: "sidebar.left"
+        case .general: "gearshape"; case .startup: "memorychip"; case .midi: "pianokeys"
+        case .connect: "network"; case .cloud: "icloud"; case .intelligence: "brain"; case .system: "stethoscope"
+        }
+    }
+    var group: SettingsGroup {
+        switch self {
+        case .appearance, .nowPlaying, .miniPlayer, .sidebar: .look
+        case .general, .startup, .midi: .playback
+        case .connect, .cloud: .connected
+        case .intelligence: .intelligence
+        case .system: .advanced
+        }
+    }
+}
+
+/// The groups of the Settings menu (small capitals over their rows).
+enum SettingsGroup: String, CaseIterable, Identifiable {
+    case look = "Look", playback = "Playback and sound", connected = "Connected", intelligence = "Intelligence", advanced = "Advanced"
+    var id: String { rawValue }
+    var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.group == self } }
 }
 
 /// The big cover of the current track and the colours derived from it.
@@ -882,7 +909,7 @@ final class PlayerModel: ObservableObject {
     func apply(_ plan: SessionRestore) {
         ScrollMemory.shared.all = plan.scroll
         if let uid = plan.deviceUID, let d = devices.first(where: { $0.uid == uid }), d.id != deviceID { deviceID = d.id }
-        if let t = plan.tab { tab = t }
+        if let t = plan.tab { if t == .cloud || t == .intelligence { go(.tab(t)) } else { tab = t } }
         if plan.tab != nil { settingsSection = plan.section; if let id = plan.selectedID, tab != .settings { library.selectedID = id } }
         guard !plan.paths.isEmpty else { return }
         let known = library.store?.tracks(paths: plan.paths) ?? [:]

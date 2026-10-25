@@ -182,10 +182,9 @@ struct ContentView: View {
         case .audio: PageScaffold(title: "Sound", subtitle: m.soundSection.blurb, ruled: false) { AudioTab() }
         case .rip: RipPage()
         case .convert: ConvertPage()
-        case .cloud: CloudPage()
+        case .cloud, .intelligence: SettingsPage()          // sections of Settings (see `PlayerModel.go`)
         case .folders: LibraryFoldersPage()
         case .abx: ABXPage()
-        case .intelligence: PageScaffold(title: "Intelligence", subtitle: "Smart features, models and providers", ruled: false) { IntelligenceTab() }
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins", ruled: false) { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases", ruled: false) { DeepDiveTab() }
         case .rooms: RoomsPage()

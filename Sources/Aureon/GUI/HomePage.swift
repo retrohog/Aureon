@@ -243,23 +243,83 @@ struct PromoTile: View {
 
 // MARK: - Settings
 
+/// Every setting by name, so the search at the top of Settings can find one and jump to its section.
+struct SettingsIndexItem: Identifiable, Equatable {
+    var id: String { title + "|" + section.rawValue }
+    let title: String
+    let section: SettingsSection
+    var words = ""
+}
+
+enum SettingsIndex {
+    static let items: [SettingsIndexItem] = [
+        .init(title: "Mode: Dark, Light or Auto", section: .appearance, words: "theme day night appearance system"),
+        .init(title: "Pure black", section: .appearance, words: "amoled oled black"),
+        .init(title: "Colour", section: .appearance, words: "theme family amoled graphite midnight ocean forest mint plum violet rose ember cocoa dune slate"),
+        .init(title: "Brightness", section: .appearance, words: "lighter darker surfaces"),
+        .init(title: "Accent colour", section: .appearance, words: "highlight"),
+        .init(title: "Density", section: .appearance, words: "compact comfortable spacing"),
+        .init(title: "Font", section: .appearance, words: "family typeface figtree system weight light regular medium"),
+        .init(title: "Text size", section: .appearance, words: "scale larger smaller"),
+        .init(title: "Backdrop", section: .appearance, words: "flat soft album starlight stars background"),
+        .init(title: "Page transitions", section: .appearance, words: "fade motion animation"),
+        .init(title: "Scroll to change volume", section: .appearance, words: "wheel trackpad"),
+        .init(title: "Launch animation", section: .appearance, words: "splash start"),
+        .init(title: "Now Playing layout", section: .nowPlaying, words: "stage classic full-bleed carousel lumen chillax orbit"),
+        .init(title: "Lyrics: show, size, timing, lookup", section: .nowPlaying, words: "words karaoke offset lrc online"),
+        .init(title: "Add to playlist button", section: .nowPlaying, words: "heart"),
+        .init(title: "Credits under the artist", section: .nowPlaying, words: "composer producer conductor"),
+        .init(title: "Signal path and format tags", section: .nowPlaying, words: "lossless hi-res quality"),
+        .init(title: "Hide the controls when the pointer rests", section: .nowPlaying, words: "idle fade top bar"),
+        .init(title: "Seek bar", section: .nowPlaying, words: "waveform line scrubber progress"),
+        .init(title: "Orbit: turn the cover", section: .nowPlaying, words: "spin rotate ring"),
+        .init(title: "Mini player: form", section: .miniPlayer, words: "bar strip card popover"),
+        .init(title: "Mini player: background and opacity", section: .miniPlayer, words: "solid gradient blur transparent"),
+        .init(title: "Mini player: keep on top, every desktop, remember place", section: .miniPlayer, words: "float pin spaces"),
+        .init(title: "Hide the Aureon window while the mini player is open", section: .miniPlayer, words: "swap"),
+        .init(title: "Menu bar player", section: .miniPlayer, words: "status item popover logo title"),
+        .init(title: "Pages in the rail", section: .sidebar, words: "sidebar hide show reorder"),
+        .init(title: "Layout: Normal or DJ console", section: .general, words: "decks mixer"),
+        .init(title: "Volume safety", section: .general, words: "ceiling limit headphones"),
+        .init(title: "Artwork and covers online", section: .general, words: "fetch portraits"),
+        .init(title: "Look up missing lyrics online", section: .general, words: "lrclib"),
+        .init(title: "Resume where you left off", section: .startup, words: "restore queue paused playing ask fresh"),
+        .init(title: "What is remembered", section: .startup, words: "queue page window output scroll position"),
+        .init(title: "Reset window size", section: .startup, words: "display"),
+        .init(title: "MIDI controllers", section: .midi, words: "learn ddj nanokontrol"),
+        .init(title: "Last.fm", section: .connect, words: "scrobble"),
+        .init(title: "ListenBrainz", section: .connect, words: "scrobble token"),
+        .init(title: "Discord presence", section: .connect, words: "rich presence"),
+        .init(title: "Remote control", section: .connect, words: "daemon companion pair"),
+        .init(title: "Cloud storage", section: .cloud, words: "s3 b2 backblaze r2 wasabi minio bucket"),
+        .init(title: "Music servers", section: .cloud, words: "navidrome subsonic lyrion lms"),
+        .init(title: "Share this library with a phone", section: .cloud, words: "bridge companion local network sharing key"),
+        .init(title: "Intelligence features: master switch", section: .intelligence, words: "models on-device apple silicon"),
+        .init(title: "API keys", section: .intelligence, words: "provider text keychain"),
+        .init(title: "Quiet mode and system optimisation", section: .system, words: "scheduling helper power"),
+        .init(title: "Freeze recorder", section: .system, words: "stall hang"),
+        .init(title: "Hardware path diagnostics", section: .system, words: "exclusive integer rates dac"),
+    ]
+
+    /// The settings whose name, section or keywords contain every word of the query.
+    static func search(_ query: String) -> [SettingsIndexItem] {
+        let words = query.lowercased().split(whereSeparator: { $0 == " " || $0 == "," }).map(String.init)
+        guard !words.isEmpty else { return [] }
+        return items.filter { item in
+            let hay = (item.title + " " + item.section.rawValue + " " + item.words).lowercased()
+            return words.allSatisfy { hay.contains($0) }
+        }
+    }
+}
+
 struct SettingsPage: View {
     @EnvironmentObject var m: PlayerModel
     @StateObject private var query = Box("")
 
-    /// Settings sections, then the pages the person hid that belong with sound and tools: they live here instead.
-    private struct Entry: Hashable, Identifiable { var id: String; var title: String; var icon: String }
-    private var entries: [Entry] {
-        let all = SettingsSection.allCases.map { Entry(id: "s:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
-            + m.sidebar.hiddenTabs.filter { [.audio, .dsp, .deepDive, .rip, .convert, .cloud, .intelligence].contains($0) }.map { Entry(id: "p:" + $0.rawValue, title: $0.rawValue, icon: $0.icon) }
-        let q = query.v.trimmingCharacters(in: .whitespaces)
-        return q.isEmpty ? all : all.filter { $0.title.localizedCaseInsensitiveContains(q) }
-    }
+    /// The pages the listener hid from the rail that live here instead.
+    private var hiddenPages: [Tab] { m.sidebar.hiddenTabs.filter { [.audio, .dsp, .deepDive, .rip, .convert].contains($0) } }
     private var currentID: String { m.settingsPage.map { "p:" + $0.rawValue } ?? "s:" + m.settingsSection.rawValue }
-    private func choose(_ e: Entry) {
-        if e.id.hasPrefix("p:") { m.settingsPage = Tab(rawValue: String(e.id.dropFirst(2))) }
-        else { m.settingsPage = nil; m.settingsSection = SettingsSection(rawValue: String(e.id.dropFirst(2))) ?? .general }
-    }
+    private func choose(_ section: SettingsSection) { m.settingsPage = nil; m.settingsSection = section }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -273,29 +333,53 @@ struct SettingsPage: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary)
                 TextField("Search settings", text: $query.v).textFieldStyle(.plain).font(Typo.sans(14))
+                if !query.v.isEmpty { Button { query.v = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Brand.inkTertiary) }.buttonStyle(.plain).accessibilityLabel("Clear the search") }
             }
             .padding(.horizontal, 14).frame(height: 38).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Brand.panel2)).padding(.bottom, 8)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(entries) { e in
-                        let on = e.id == currentID
-                        Button { withAnimation(TabMotion.animation) { choose(e) } } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: e.icon).font(Typo.sans(14)).frame(width: 20)
-                                Text(e.title).font(Typo.sans(14, on ? .medium : .regular))
-                                Spacer(minLength: 0)
-                            }
-                            .padding(.horizontal, 14).frame(height: 38)
-                            .foregroundStyle(on ? Brand.ink : Brand.inkSecondary)
-                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Brand.panel2 : Color.clear))
-                            .contentShape(Rectangle())
+                    if query.v.trimmingCharacters(in: .whitespaces).isEmpty {
+                        ForEach(SettingsGroup.allCases) { g in
+                            Text(g.rawValue).microLabel().foregroundStyle(Brand.inkTertiary).padding(.horizontal, 14).padding(.top, g == .look ? 2 : 14).padding(.bottom, 4)
+                            ForEach(g.sections) { sec in row(sec.rawValue, icon: sec.icon, on: currentID == "s:" + sec.rawValue) { choose(sec) } }
                         }
-                        .buttonStyle(.plain).accessibilityAddTraits(on ? .isSelected : [])
+                        if !hiddenPages.isEmpty {
+                            Text("Pages you hid").microLabel().foregroundStyle(Brand.inkTertiary).padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 4)
+                            ForEach(hiddenPages, id: \.self) { t in row(t.rawValue, icon: t.icon, on: currentID == "p:" + t.rawValue) { m.settingsPage = t } }
+                        }
+                    } else {
+                        let found = SettingsIndex.search(query.v)
+                        if found.isEmpty { Text("No setting has that name.").font(Typo.sans(13)).foregroundStyle(Brand.inkSecondary).padding(.horizontal, 14).padding(.top, 8) }
+                        ForEach(found) { item in
+                            Button { choose(item.section); query.v = "" } label: {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.title).font(Typo.sans(13.5)).foregroundStyle(Brand.ink).lineLimit(2)
+                                    Text(item.section.rawValue).font(Typo.sans(11.5)).foregroundStyle(Brand.inkTertiary)
+                                }
+                                .padding(.horizontal, 14).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityLabel("\(item.title), \(item.section.rawValue)")
+                        }
                     }
                 }
             }
         }
         .padding(.leading, 16).padding(.trailing, 8).padding(.top, 20).padding(.bottom, 16)
+    }
+
+    /// One row of the menu: the same height everywhere, the chosen one on a raised plate.
+    private func row(_ title: String, icon: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button { withAnimation(TabMotion.animation) { action() } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(Typo.sans(14)).frame(width: 20)
+                Text(title).font(Typo.sans(14, on ? .medium : .regular)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).frame(height: 38)
+            .foregroundStyle(on ? Brand.ink : Brand.inkSecondary)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(on ? Brand.panel2 : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(title).accessibilityAddTraits(on ? .isSelected : [])
     }
 
     @ViewBuilder private var detail: some View {
@@ -305,13 +389,14 @@ struct SettingsPage: View {
                 case .audio: AudioTab()
                 case .dsp: DSPTab()
                 case .deepDive: DeepDiveTab()
-                case .intelligence: IntelligenceTab()
                 default:
                     Card(title: t.rawValue, subtitle: "Hidden from the pages") { Button("Open \(t.rawValue)") { m.djMode = false; m.tab = t } }
                 }
             }
+        } else if m.settingsSection == .cloud {
+            CloudPage().id(m.settingsSection)
         } else {
-            PageScaffold(title: m.settingsSection.rawValue, trailing: { if m.settingsSection == .appearance, m.look != LookSettings.defaults { resetLook } }) {
+            PageScaffold(title: m.settingsSection.rawValue, subtitle: m.settingsSection == .intelligence ? "Models, features and the keys for text providers" : nil, trailing: { if m.settingsSection == .appearance, m.look != LookSettings.defaults { resetLook } }) {
                 switch m.settingsSection {
                 case .general: GeneralSettings()
                 case .appearance: AppearanceSettings()
@@ -321,6 +406,8 @@ struct SettingsPage: View {
                 case .sidebar: SidebarSettings()
                 case .connect: ConnectTab()
                 case .midi: MIDIPage()
+                case .cloud: EmptyView()
+                case .intelligence: IntelligenceTab()
                 case .system: DiagnosticsTab()
                 }
             }
