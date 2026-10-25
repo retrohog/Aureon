@@ -51,6 +51,7 @@ struct PageScaffold<Trailing: View, Content: View>: View {
             }
             .padding(.horizontal, 28).padding(.top, 8).padding(.bottom, 24)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutProbe("page.content")
         }
         .underChrome(chrome, inset: inset)
     }

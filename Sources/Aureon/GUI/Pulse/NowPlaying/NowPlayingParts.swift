@@ -519,10 +519,11 @@ struct NPTabs: View {
 struct NPLyrics: View {
     let style: LyricStyle
     let height: CGFloat
+    @EnvironmentObject var m: PlayerModel
     @Environment(\.npScale) private var s
     var body: some View {
         var scaled = style
-        scaled.size = style.size * s * Look.current.lyricSize.scale; scaled.gap = style.gap * s * Look.current.lyricSize.scale
+        scaled.size = style.size * s * m.look.lyricSize.scale; scaled.gap = style.gap * s * m.look.lyricSize.scale
         return LyricsSection(availableHeight: height, chrome: false).environment(\.lyricStyle, scaled).frame(height: height).clipped().layoutProbe("lyrics")
     }
 }

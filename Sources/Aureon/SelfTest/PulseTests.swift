@@ -658,6 +658,76 @@ extension PulseTests {
         expect(MiniSettings.onScreen(origin: CGPoint(x: 100, y: 100), size: CGSize(width: 520, height: 96), screens: [screen]) == nil, "wholly on: left alone")
     }
 
+    /// Changing a setting leaves the settings page where it is: scrolled to the same place, with the top of its content (and so everything in it) at the same height at
+    /// every moment after the change, for pages that rebuild the interface (colours, type, density) and pages that do not.
+    @MainActor func settingsPagesStayWhereTheyAreWhenAnythingChanges() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        LayoutProbe.enabled = true
+        defer { LayoutProbe.enabled = false; ScrollMemory.shared.all = [:] }
+        let size = CGSize(width: 1100, height: 640)
+        m.appearance = .dark
+        m.pageTransitions = .none                                    // the page is there at once (a fade needs a window that is on a screen)
+        let pages: [(SettingsSection, [(String, () -> Void)])] = [
+            (.appearance, [
+                ("pure black", { m.look.pureBlack.toggle() }), ("pure black off", { m.look.pureBlack = false }),
+                ("mode light", { m.appearance = .light }), ("mode auto", { m.appearance = .system }), ("mode dark", { m.appearance = .dark }),
+                ("family", { m.choose(family: "forest") }), ("family again", { m.choose(family: "plum") }),
+                ("density", { m.look.density = .comfortable }), ("density back", { m.look.density = .compact }),
+                ("font weight", { m.look.weight = .medium }), ("font back", { m.look.weight = .regular }),
+                ("accent", { m.look.accentHex = "3FA7FF" }), ("accent off", { m.look.accentHex = nil }),
+                ("brightness", { m.appearance = .light; m.look.lightBrightness = 0.8 }), ("brightness back", { m.look.lightBrightness = 0.35; m.appearance = .dark }),
+                ("backdrop", { m.backdrop = .album }), ("backdrop flat", { m.backdrop = .off }),
+                ("starlight", { m.look.starlight.twinkle.toggle() }),
+            ]),
+            (.nowPlaying, [
+                ("lyrics", { m.look.showLyrics.toggle() }), ("lyric size", { m.look.lyricSize = .huge }), ("lyric size back", { m.look.lyricSize = .large }),
+                ("playlist button", { m.look.showPlaylistButton.toggle() }), ("credits", { m.look.showCredits.toggle() }), ("tags", { m.look.showSignalTags.toggle() }),
+                ("seek", { m.look.seekChoice = .line }), ("seek back", { m.look.seekChoice = .layout }), ("layout", { m.look.nowPlayingLayout = "lumen" }), ("layout back", { m.look.nowPlayingLayout = "stage" }),
+                ("rest controls", { m.look.restControls.toggle() }),
+            ]),
+            (.miniPlayer, [
+                ("form", { m.look.mini.layout = .card }), ("form strip", { m.look.mini.layout = .strip }), ("background", { m.look.mini.background = .blur }),
+                ("opacity", { m.look.mini.opacity = 0.7 }), ("pin", { m.look.mini.alwaysOnTop.toggle() }), ("hide main", { m.look.mini.hideMainWindow.toggle() }),
+            ]),
+            (.startup, [
+                ("resume", { m.look.memory.resume = .playing }), ("resume ask", { m.look.memory.resume = .ask }), ("remember queue", { m.look.memory.rememberQueue.toggle() }),
+            ]),
+        ]
+        var flips = 0
+        for (section, changes) in pages {
+            ScrollMemory.shared.set("\(Tab.settings.rawValue)||\(section.rawValue)", 220)
+            m.go(.settings(section))
+            // the page is chosen first and then shown: a window is only asked to redraw when it is on a screen, and it is shown for the few seconds this takes
+            let probe = LayoutProbe.begin()
+            let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+            host.frame = NSRect(origin: .zero, size: size)
+            let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+            let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+            win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless()
+            defer { win.orderOut(nil); win.contentView = nil }
+            func pumpFor(_ secs: Double) {
+                let end = Date().addingTimeInterval(secs)
+                while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+            }
+            pumpFor(1.2)
+            guard let base = LayoutProbe.frames["page.content"]?.minY else { expect(false, "\(section.rawValue): the page is on screen"); continue }
+            for (name, change) in changes {
+                change()
+                var worst = 0.0
+                for _ in 0..<16 {
+                    pumpFor(0.06)
+                    if let y = LayoutProbe.frames["page.content"]?.minY { worst = max(worst, abs(y - base)) } else { worst = 999 }
+                }
+                expect(worst < 2.5, "\(section.rawValue), \(name): the page does not move (at most \(String(format: "%.1f", worst)) pt)")
+                flips += 1
+            }
+        }
+        expect(flips > 30, "every control was changed: \(flips)")
+    }
+
     /// Every layout of Now Playing, with the lyrics on and off, at the smallest, the usual and a large window: the dock (transport, seek, queue, mini player) is
     /// whole and inside the window, and the controls, the tag row and the lyrics' own controls never overlap.
     @MainActor func everyLayoutKeepsItsControlsApart() {
@@ -988,6 +1058,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }
