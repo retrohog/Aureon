@@ -787,6 +787,8 @@ extension PulseTests {
         RunLoop.current.run(until: Date().addingTimeInterval(0.4))
         expect(m.mini.isFloatingOpen && !main.isVisible && m.mini.mainIsHidden, "opening the mini player puts the Aureon window away")
         guard let win = m.mini.floatingWindow else { expect(false, "there is a window"); return }
+        let area = (win.screen ?? NSScreen.main ?? NSScreen.screens[0]).visibleFrame
+        win.setFrameOrigin(NSPoint(x: area.midX - win.frame.width / 2, y: area.midY - win.frame.height / 2))            // mid-screen, so the drag has room
         func event(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent? {
             NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)
         }
