@@ -64,6 +64,11 @@ check_slices "$APP/Contents/MacOS/Aureon"
 cp "$W/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 # the interface font and its licence, when they are in Packaging/Fonts
 if [ -d Packaging/Fonts ]; then mkdir -p "$APP/Contents/Resources/Fonts" && cp Packaging/Fonts/* "$APP/Contents/Resources/Fonts/"; fi
+# fonts that are only on this machine (not in the repository; see .gitignore), for example Chillax: bundled only when the folder is there
+if [ -d Packaging/Fonts-local ] && ls Packaging/Fonts-local/*.otf Packaging/Fonts-local/*.ttf >/dev/null 2>&1; then
+  mkdir -p "$APP/Contents/Resources/Fonts" && cp Packaging/Fonts-local/* "$APP/Contents/Resources/Fonts/"
+  echo "Local fonts bundled: $(ls Packaging/Fonts-local | tr '\n' ' ')"
+fi
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

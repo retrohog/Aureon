@@ -316,9 +316,12 @@ struct ThemePicker: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Font").microLabel().foregroundStyle(Brand.inkTertiary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 128, maximum: 170), spacing: 10)], alignment: .leading, spacing: 10) {
+                    ForEach(FontFamily.available) { f in fontTile(f) }
+                }
                 HStack(spacing: 16) {
                     SegmentedChoice(selection: $m.look.weight, items: TypeWeight.allCases, label: { $0.title }).frame(width: 264)
-                    Text(TypeFace.hasPreferred ? "Figtree, Regular by default" : "Avenir Next stands in until Figtree is installed").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
+                    Text("\(TypeFace.chosen.title), \(TypeFace.chosen.licence). Regular by default").font(Typo.caption).foregroundStyle(Brand.inkSecondary)
                 }
                 LookSliderRow(title: "Text size", hint: "Scales every size in the interface.", value: textScaleBinding, defaultValue: (1 - LookSettings.textScaleRange.lowerBound) / (LookSettings.textScaleRange.upperBound - LookSettings.textScaleRange.lowerBound), deferred: true, format: { "\(Int((Look.lerp(LookSettings.textScaleRange.lowerBound, LookSettings.textScaleRange.upperBound, $0) * 100).rounded()))%" })
             }
@@ -358,6 +361,23 @@ struct ThemePicker: View {
                 }
             }
         }
+    }
+
+    /// One family as a tile: "Aa" set in it, and its name; the one in use has an accent outline.
+    private func fontTile(_ f: FontFamily) -> some View {
+        let on = TypeFace.chosen == f
+        let sample: Font = f.name.map { .custom($0, size: 24) } ?? .system(size: 24)
+        return Button { withAnimation(.easeOut(duration: 0.15)) { m.look.fontFamily = f.rawValue } } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Aa").font(sample).foregroundStyle(Brand.ink)
+                Text(f.title).font(Typo.sans(12, on ? .medium : .regular)).foregroundStyle(on ? Brand.ink : Brand.inkSecondary).lineLimit(1)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).fill(Brand.panel2))
+            .overlay(RoundedRectangle(cornerRadius: Metrics.radius(10), style: .continuous).strokeBorder(on ? Brand.accentText : Color.clear, lineWidth: 2))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).accessibilityLabel(f.title).accessibilityAddTraits(on ? .isSelected : [])
     }
 
     /// The text size as a 0…1 position on its range.

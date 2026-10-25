@@ -10,3 +10,5 @@ xcuserdata/
 .aureon-perf
 .aureon-power-patches/
 .aureon-4-features.patch
+# fonts that are licensed for this machine only (never committed; bundled by build_app.sh when present)
+Packaging/Fonts-local/
