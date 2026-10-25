@@ -74,27 +74,14 @@ struct MiniSurface<Content: View>: View {
     var body: some View {
         content
             .frame(width: layout.size.width, height: layout.size.height)
-            .background {
-                ZStack {
-                    MiniBackdrop(layout: layout)
-                    if actions.interactive { MiniDragHandle() }
-                }
-            }
+            .background { MiniBackdrop(layout: layout) }
             .clipShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: layout.cornerRadius, style: .continuous))
-    }
-}
-
-/// Behind the controls: dragging anywhere on it moves the window. The pointer's place in the window is read at every step; the window follows the pointer,
-/// so each step moves it by how far the pointer has got ahead of where it was picked up.
-struct MiniDragHandle: View {
-    @Environment(\.miniActions) private var actions
-    var body: some View {
-        Color.clear.contentShape(Rectangle())
-            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+            // The drag belongs to the whole surface, so the cover, the names and empty space all move the window. A control (a button, the seek bar, the volume)
+            // has its own gesture, which comes first, so it answers its click or drag and never moves the window.
+            .gesture(DragGesture(minimumDistance: 3, coordinateSpace: .global)
                 .onChanged { v in actions.move(CGSize(width: v.location.x - v.startLocation.x, height: v.location.y - v.startLocation.y)) }
-                .onEnded { _ in actions.settle() })
-            .accessibilityHidden(true)
+                .onEnded { _ in actions.settle() }, including: actions.interactive ? .all : .subviews)
     }
 }
 
