@@ -57,7 +57,7 @@ struct LibraryFoldersButton: View {
         Button { open.v.toggle() } label: { Image(systemName: "folder.badge.minus") }
             .buttonStyle(IconButtonStyle()).help("Library folders")
             .accessibilityLabel("Library folders")
-            .popover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), arrowEdge: .bottom) {
+            .windowPopover(isPresented: Binding(get: { open.v }, set: { open.v = $0 }), edge: .bottom) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Library folders").microLabel().foregroundStyle(Brand.inkTertiary)
                     if lib.folders.isEmpty {

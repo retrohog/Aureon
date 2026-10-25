@@ -104,7 +104,7 @@ struct PopoverPicker<T: Hashable>: View {
             .background(RoundedRectangle(cornerRadius: Metrics.radius(7), style: .continuous).fill(Brand.ink.opacity(0.09)))
         }
         .buttonStyle(.plain)
-        .popover(isPresented: openBinding, arrowEdge: .bottom) {
+        .windowPopover(isPresented: openBinding, edge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(items, id: \.self) { it in
                     Button { selection = it; open = false } label: {
@@ -199,7 +199,7 @@ private struct QuickSetups: View {
 
     var body: some View {
         Button { openBox.v.toggle() } label: { Label("Quick set-ups", systemImage: "wand.and.stars") }
-            .popover(isPresented: Binding(get: { openBox.v }, set: { openBox.v = $0 }), arrowEdge: .bottom) {
+            .windowPopover(isPresented: Binding(get: { openBox.v }, set: { openBox.v = $0 }), edge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(SpeakerModel.Preset.allCases) { p in
                         Button { sp.apply(p); openBox.v = false } label: { HStack { Text(p.rawValue); Spacer(minLength: 0) }.padding(.horizontal, 8).padding(.vertical, 4).contentShape(Rectangle()) }.buttonStyle(.plain)
@@ -220,7 +220,7 @@ private struct AddSpeakerButton: View {
     var body: some View {
         let free = m.devices.filter { d in !d.uid.isEmpty && !sp.setup.members.contains { $0.uid == d.uid } }
         Button { m.refreshDevices(); open.toggle() } label: { Label("Add an output…", systemImage: "plus") }
-            .popover(isPresented: openBinding, arrowEdge: .bottom) {
+            .windowPopover(isPresented: openBinding, edge: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     if free.isEmpty { Text("No other outputs found. Plug one in and try again.").font(Typo.caption).foregroundStyle(Brand.inkSecondary).padding(8) }
                     ForEach(free) { d in
@@ -254,7 +254,7 @@ struct OutputSwitcher: View {
             .background(Rectangle().fill(Brand.ink.opacity(hover.v ? 0.04 : 0)))
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.help("Choose where the sound plays")
-        .popover(isPresented: openBinding, arrowEdge: .trailing) {
+        .windowPopover(isPresented: openBinding, edge: .trailing) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("OUTPUT").font(Typo.caption2.weight(.semibold)).foregroundStyle(Brand.inkSecondary).padding(.horizontal, 8).padding(.bottom, 2)
                 ForEach(m.devices) { d in

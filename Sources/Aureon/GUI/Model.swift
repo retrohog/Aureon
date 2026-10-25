@@ -306,6 +306,8 @@ final class PlayerModel: ObservableObject {
     private var parameterTokens: [UUID: AUParameterObserverToken] = [:]
     /// The queue panel (slides in over the page, so it can never fall outside the window).
     @Published var showQueue = false
+    /// The popover that is open (drawn inside the window; see `WindowPopovers`).
+    let popovers = WindowPopovers()
     /// The tab of the queue panel that is open.
     @Published var queueTab = QueueTab.queue
     /// The songs played since the app opened (the queue panel's History tab).

@@ -79,6 +79,10 @@ struct ContentView: View {
         }
         .onChange(of: m.djMode) { _, dj in if dj, stage.immersive { stage.immersive = false } }
         .animation(.smooth(duration: 0.22), value: dropping.v)
+        // popovers are drawn in a layer over the window so they can never hang outside it (the objects they need are added by the modifiers that follow)
+        .overlay { WindowPopoverLayer(center: m.popovers) }
+        .coordinateSpace(name: WindowPopovers.space)
+        .environment(\.windowPopovers, m.popovers)
         .environmentObject(stage).environmentObject(idle).environmentObject(chrome).environment(\.stageNamespace, stageSpace)
         // pointer movement and keys wake the Gallery's rail and controls; a few quiet seconds put them away again
         .onContinuousHover { phase in if case .active = phase { idle.poke() } }

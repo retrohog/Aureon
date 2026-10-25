@@ -66,7 +66,7 @@ struct HomePage: View {
                     .buttonStyle(OutlinePillStyle())
                 Button { home.showReasons.toggle() } label: { Text("Why these?") }
                     .buttonStyle(OutlinePillStyle())
-                    .popover(isPresented: $home.showReasons, arrowEdge: .bottom) { reasons(mix) }
+                    .windowPopover(isPresented: $home.showReasons, edge: .bottom) { reasons(mix) }
             }
         }
     }

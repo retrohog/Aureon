@@ -293,6 +293,7 @@ extension DemoData {
     // the scrubber asks for its waveform when it appears, which an offscreen snapshot never does: ask up front (the first track runs first)
     for it in model.items.reversed() where !it.isStream { WaveformStore.shared.request(it.path) }
     if env["AUREON_SPEAKERS"] != nil { model.refreshDevices(); for d in model.devices.prefix(3) { model.speakers.add(d) }; model.speakers.setup.enabled = true; if model.speakers.setup.members.count > 1 { model.speakers.setup.members[1].role = .surround } }
+    if let q = env["AUREON_QUICK"], let a = [QuickPanelAnchor.rail, .bar, .stage].first(where: { "\($0)" == q }) { model.quickPanel = a }
     if let q = env["AUREON_QUEUE"], !q.isEmpty { model.showQueue = true; if let t = QueueTab(rawValue: q) { model.queueTab = t } }
     if env["AUREON_PALETTE"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { MainActor.assumeIsolated { model.showPalette = true } } }
     if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; if env["AUREON_AUTO"] != nil { model.dj.smart.enable() } } } }
