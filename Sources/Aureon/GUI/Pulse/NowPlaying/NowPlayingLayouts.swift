@@ -252,7 +252,8 @@ struct NPFullBleed: View {
             if let img = m.hero.image ?? m.focusItem?.thumb {
                 Image(nsImage: img).resizable().scaledToFill().blur(radius: 6).clipped()
             }
-            LinearGradient(colors: [Brand.panel.opacity(0.35), Brand.panel.opacity(0.78)], startPoint: .top, endPoint: .bottom)
+            // strong enough that the theme's ink keeps its contrast over any cover, light or dark
+            LinearGradient(colors: [Brand.panel.opacity(0.62), Brand.panel.opacity(0.88)], startPoint: .top, endPoint: .bottom)
         }
         .ignoresSafeArea().allowsHitTesting(false)
     }

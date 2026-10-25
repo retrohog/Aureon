@@ -126,6 +126,8 @@ struct LookSettings: Codable, Equatable {
     var showPlaylistButton = true
     var showCredits = true
     var showSignalTags = true
+    /// On Now Playing: whether the top bar and the controls fade after a few seconds without the pointer. Off (the default) keeps them in view.
+    var restControls = false
     /// The mini player and the menu bar item.
     var mini = MiniSettings()
     /// What is remembered between launches, and what happens to playback when Aureon opens.
@@ -158,10 +160,11 @@ struct LookSettings: Codable, Equatable {
         showPlaylistButton = try c.decodeIfPresent(Bool.self, forKey: .showPlaylistButton) ?? d.showPlaylistButton
         showCredits = try c.decodeIfPresent(Bool.self, forKey: .showCredits) ?? d.showCredits
         showSignalTags = try c.decodeIfPresent(Bool.self, forKey: .showSignalTags) ?? d.showSignalTags
+        restControls = try c.decodeIfPresent(Bool.self, forKey: .restControls) ?? d.restControls
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
     }
-    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, textScale, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -202,6 +205,7 @@ struct LookSettings: Codable, Equatable {
             case "playlistbutton": showPlaylistButton = kv[1] != "0"
             case "credits": showCredits = kv[1] != "0"
             case "signaltags": showSignalTags = kv[1] != "0"
+            case "rest": restControls = kv[1] != "0"
             case "mini": if let x = MiniLayout(rawValue: kv[1]) { mini.layout = x }
             case "minibg": if let x = MiniBackground(rawValue: kv[1]) { mini.background = x }
             case "menubar": mini.menuBar.show = kv[1] != "0"

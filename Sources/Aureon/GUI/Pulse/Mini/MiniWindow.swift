@@ -49,6 +49,8 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
         panel.map { ($0.frame, $0.level, $0.alphaValue, $0.collectionBehavior.contains(.canJoinAllSpaces)) }
     }
     var isPopoverOpen: Bool { popover?.isShown == true }
+    /// Whether the app must stay open although it has no window of its own on screen: the mini player (or its popover) is showing, or the Aureon window is put away for it.
+    var keepsAppAlive: Bool { isFloatingOpen || isPopoverOpen || hiddenMain != nil }
     private var snapshot: Bool { ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil || ProcessInfo.processInfo.environment["AUREON_TESTING"] != nil }
 
     // MARK: entry points
@@ -151,9 +153,10 @@ final class MiniPlayerController: NSObject, NSWindowDelegate, NSPopoverDelegate 
     private func root(_ model: PlayerModel, layout: MiniLayout) -> AnyView {
         var actions = MiniActions()
         actions.interactive = true
-        actions.close = { [weak self] in self?.closeFloating() }
+        // Closing releases the very view whose button was just pressed, so it is done after that button's action has returned.
+        actions.close = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.closeFloating() } } }
         actions.togglePin = { [weak self] in guard let self, let m = self.model else { return }; m.look.mini.alwaysOnTop.toggle() }
-        actions.openApp = { [weak self] in self?.openApp() }
+        actions.openApp = { [weak self] in DispatchQueue.main.async { MainActor.assumeIsolated { self?.openApp() } } }
         actions.isPinned = settings.alwaysOnTop
         actions.move = { [weak self] d in
             guard let p = self?.panel else { return }

@@ -476,7 +476,7 @@ struct NPCluster: View {
             Button { stage.toggle(.queue) } label: { Image(systemName: "list.bullet") }
                 .buttonStyle(RoundIconStyle(on: stage.panel == .queue)).help("Queue").accessibilityLabel("Queue")
             Button { m.mini.toggle() } label: { Image(systemName: "pip") }
-                .buttonStyle(RoundIconStyle(on: m.mini.isFloatingOpen)).help("Mini player").accessibilityLabel("Mini player")
+                .buttonStyle(RoundIconStyle(on: m.mini.isFloatingOpen)).help("Mini player").accessibilityLabel("Mini player").layoutProbe("cluster.mini")
             if let volume { Color.clear.frame(width: 4); VolumeControl(width: volume, readout: false) }
         }
         .fixedSize()
