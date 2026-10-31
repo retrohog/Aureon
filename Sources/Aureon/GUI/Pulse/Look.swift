@@ -123,8 +123,6 @@ struct LookSettings: Codable, Equatable {
     var nowPlayingLayout = "chillax" { didSet { nowPlayingLayoutChosen = true } }
     /// Whether the listener has picked a layout (a record from before there was a choice, or one that never picked, shows the default, Chillax).
     var nowPlayingLayoutChosen = false
-    /// Orbit: the round cover turns slowly while the music plays.
-    var orbitSpin = false
     var showLyrics = true
     var lyricSize = LyricSize.large
     var seekChoice = SeekChoice.layout
@@ -138,6 +136,8 @@ struct LookSettings: Codable, Equatable {
     var mini = MiniSettings()
     /// What is remembered between launches, and what happens to playback when Aureon opens.
     var memory = MemorySettings()
+    /// The soft edge around the whole window (see `WindowEdgeOverlay`).
+    var windowEdge = WindowEdgeStrength.off
 
     static let defaults = LookSettings()
 
@@ -174,7 +174,6 @@ struct LookSettings: Codable, Equatable {
         nowPlayingLayoutChosen = chosen
         nowPlayingLayout = chosen ? (try c.decodeIfPresent(String.self, forKey: .nowPlayingLayout) ?? d.nowPlayingLayout) : d.nowPlayingLayout
         nowPlayingLayoutChosen = chosen
-        orbitSpin = try c.decodeIfPresent(Bool.self, forKey: .orbitSpin) ?? d.orbitSpin
         showLyrics = try c.decodeIfPresent(Bool.self, forKey: .showLyrics) ?? d.showLyrics
         lyricSize = try c.decodeIfPresent(LyricSize.self, forKey: .lyricSize) ?? d.lyricSize
         seekChoice = try c.decodeIfPresent(SeekChoice.self, forKey: .seekChoice) ?? d.seekChoice
@@ -184,8 +183,9 @@ struct LookSettings: Codable, Equatable {
         restControls = try c.decodeIfPresent(Bool.self, forKey: .restControls) ?? d.restControls
         mini = try c.decodeIfPresent(MiniSettings.self, forKey: .mini) ?? d.mini
         memory = try c.decodeIfPresent(MemorySettings.self, forKey: .memory) ?? d.memory
+        windowEdge = (try? c.decodeIfPresent(WindowEdgeStrength.self, forKey: .windowEdge)) ?? d.windowEdge
     }
-    private enum Keys: String, CodingKey { case density, weight, fontFamily, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, nowPlayingLayoutChosen, orbitSpin, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory }
+    private enum Keys: String, CodingKey { case density, weight, fontFamily, textScale, brightness, lightBrightness, pureBlack, accentHex, edge, backdrop, motion, formatTags, rowTags, starlight, nowPlayingLayout, nowPlayingLayoutChosen, showLyrics, lyricSize, seekChoice, showPlaylistButton, showCredits, showSignalTags, restControls, mini, memory, windowEdge }
 
     static let storageKey = "aureon.look.pulse"
 
@@ -210,6 +210,7 @@ struct LookSettings: Codable, Equatable {
             case "black": pureBlack = kv[1] != "0"
             case "accent": accentHex = kv[1].isEmpty || kv[1] == "none" ? nil : kv[1]
             case "edge": if let v { edge = v }
+            case "windowedge": if let x = WindowEdgeStrength(rawValue: kv[1]) { windowEdge = x }
             case "backdrop": if let v { backdrop = v }
             case "motion": if let v { motion = v }
             case "tags": if let t = FormatTagMode(rawValue: kv[1]) { formatTags = t }

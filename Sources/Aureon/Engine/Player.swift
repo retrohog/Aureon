@@ -11,7 +11,6 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
-import Synchronization
 import AVFoundation
 
 struct QueueEntry: Identifiable, Equatable {
@@ -94,7 +93,7 @@ final class Player: @unchecked Sendable {
     let replayGain = ReplayGainStore()
     let cache = TrackCache(budgetBytes: 1 << 30)
     let analysisTap = AnalysisTap()
-    /// The Smart enhancer for lossy streams (switched in the Intelligence settings). Tests substitute their own before `start`.
+    /// The Smart enhancer for lossy streams (switched on the Audio page). Tests substitute their own before `start`.
     lazy var upscaler: NeuralUpscaler = { NeuralUpscaler.shared.observeSettings(); return .shared }()
     /// How much audio is queued for the device: tells the enhancer how long it may wait for a block.
     let playoutGauge = PlayoutGauge()
@@ -860,6 +859,10 @@ final class Player: @unchecked Sendable {
             return nil
         }
 
+        // scratching: the pitch control is under a hand (see VarispeedControl.scratchOn)
+        let scratchChunk = max(64, Int(fmt.sampleRate * 0.004)), scratchFill = max(128, Int(fmt.sampleRate * 0.012))
+        var scratching: Bool { varispeed?.scratchOn == true }
+
         while !stopFlag.load(ordering: .relaxed) {
             if let exit = try service() { return exit }
 
@@ -876,6 +879,7 @@ final class Player: @unchecked Sendable {
                     }
                     if let s = src {
                         var want = chunk
+                        if scratching { want = min(want, scratchChunk) }          // a hand on the platter: short reads, so the speed it sets is heard within a few milliseconds
                         if mixing == nil, let p = pendingMix { want = min(want, max(1, p.plan.mixStart - srcPos)) }   // stop exactly at the mix start
                         offeredFrames = s.read(into: scratch, frames: want); offered = 0
                         if mixing == nil { srcPos += offeredFrames }
@@ -885,15 +889,17 @@ final class Player: @unchecked Sendable {
                         }
                     } else { exhausted = true; continue }
                 }
-                let n = ring.write(scratch + offered * fmt.channels, frames: offeredFrames - offered)
+                // while scratching the ring holds only a few milliseconds, so what is heard follows the hand almost at once
+                let room = scratching ? max(0, scratchFill - ring.availableToRead) : Int.max
+                let n = room == 0 ? 0 : ring.write(scratch + offered * fmt.channels, frames: min(offeredFrames - offered, room))
                 offered += n
-                if n == 0 { usleep(4_000) }
+                if n == 0 { usleep(scratching ? 400 : 4_000) }
             }
 
-            if refilling && (ring.availableToRead >= min(ring.capacity / 2, prefillFrames) || exhausted || endOfGroup) {
+            if refilling && (ring.availableToRead >= min(ring.capacity / 2, scratching ? scratchChunk : prefillFrames) || exhausted || endOfGroup) {
                 refilling = false; ring.paused.store(userPaused, ordering: .relaxed)
             }
-            if !prefilled && (ring.availableToRead >= min(ring.capacity / 2, prefillFrames) || endOfGroup) {
+            if !prefilled && (ring.availableToRead >= min(ring.capacity / 2, scratching ? scratchChunk : prefillFrames) || endOfGroup) {
                 prefilled = true; ring.paused.store(userPaused, ordering: .relaxed)
             }
 

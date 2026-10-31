@@ -77,8 +77,8 @@ struct LibraryFoldersPage: View {
             }
         }
         .onAppear { stats.load(lib.store, folders: lib.folders, revision: lib.stats.revision) }
-        .onChange(of: lib.folders) { _, f in stats.load(lib.store, folders: f, revision: lib.stats.revision) }
-        .onChange(of: lib.stats.revision) { _, r in stats.load(lib.store, folders: lib.folders, revision: r) }
+        .onChangeCompat(of: lib.folders) { _, f in stats.load(lib.store, folders: f, revision: lib.stats.revision) }
+        .onChangeCompat(of: lib.stats.revision) { _, r in stats.load(lib.store, folders: lib.folders, revision: r) }
     }
 
     private var emptyCard: some View {

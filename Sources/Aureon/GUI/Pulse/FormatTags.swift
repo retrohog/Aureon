@@ -258,6 +258,17 @@ struct FormatTagBlock: View {
 
 extension PlayerModel {
     /// The stream that is audible, as plain values (nil while nothing plays).
+    /// The tags of the song in focus: from the engine's stream when it has one, else from what the library knows of the file, so the labels show as soon as a
+    /// song is loaded.
+    func formatTagInput(bitrate: Int?, track: TrackDTO?) -> FormatTagInput? {
+        if let live = formatTagInput(bitrate: bitrate) { return live }
+        guard let t = track, t.path == focusItem?.path, t.sampleRate > 0, t.bitDepth > 0 || t.codec.uppercased().contains("DSD") else { return nil }
+        let lossy = ["MP3", "AAC", "OGG", "VORBIS", "OPUS", "WMA"].contains { t.codec.uppercased().contains($0) }
+        var src = StreamInfo(sampleRate: t.sampleRate, channels: max(1, t.channels), sourceBits: t.bitDepth, totalFrames: Int64(t.duration * t.sampleRate), codec: lossy ? "\(t.codec) (lossy)" : t.codec)
+        src.sourceRate = t.sampleRate
+        return FormatTagInput(source: src, output: nil, bitrate: nil, bitPerfect: false, exclusive: exclusive, replayGainDB: nil, stages: [], dspActive: false, deviceName: "")
+    }
+
     func formatTagInput(bitrate: Int?) -> FormatTagInput? {
         guard isActive, let raw = status.sourceInfo else { return nil }
         return FormatTagInput(source: raw, output: status.info, bitrate: bitrate, bitPerfect: status.bitPerfect, exclusive: exclusive, replayGainDB: status.replayGainDB,

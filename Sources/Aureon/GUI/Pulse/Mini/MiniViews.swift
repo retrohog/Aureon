@@ -122,11 +122,11 @@ struct MiniTransport: View {
     var body: some View {
         HStack(spacing: modes ? 6 : 2) {
             if modes { ShuffleButton(size: 15, tint: Brand.inkSecondary) }
-            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 14) }.buttonStyle(RoundIconStyle(size: side)).accessibilityLabel("Previous")
-            Button { m.togglePlay() } label: { TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: play * 0.4) }
-                .buttonStyle(PlayKeyStyle(size: play)).accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
+            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: max(16, side * 0.5)) }.buttonStyle(HairlineKeyStyle(hit: side)).accessibilityLabel("Previous")
+            Button { m.togglePlay() } label: { TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: max(20, play * 0.55)) }
+                .buttonStyle(HairlineKeyStyle(hit: play)).accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
                 .keyboardShortcut(actions.interactive ? KeyboardShortcut(.space, modifiers: []) : nil)
-            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 14) }.buttonStyle(RoundIconStyle(size: side)).accessibilityLabel("Next")
+            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: max(16, side * 0.5)) }.buttonStyle(HairlineKeyStyle(hit: side)).accessibilityLabel("Next")
             if modes { RepeatButton(size: 15, tint: Brand.inkSecondary) }
         }
         .disabled(m.items.isEmpty)

@@ -69,22 +69,26 @@ struct NPLayoutThumb: View {
             }
             block(w * 0.38, h * 0.46, w * 0.24, h * 0.07, 2, Brand.ink.opacity(0.8))
             if lyrics { lines(w * 0.25, h * 0.58, w * 0.5, h * 0.06, centered: true, 3) }
-        case .lumen:
-            block(w * 0.05, h * 0.08, h * 0.5, h * 0.5, 14, Brand.ink.opacity(0.3)); block(w * 0.05, h * 0.62, w * 0.28, h * 0.06, 2, Brand.ink.opacity(0.8))
-            if lyrics { lines(w * 0.4, h * 0.14, w * 0.3, h * 0.1, centered: false, 4) } else { block(w * 0.4, h * 0.14, w * 0.3, h * 0.2, 3); block(w * 0.4, h * 0.4, w * 0.3, h * 0.2, 3) }
-            ForEach(0..<4, id: \.self) { i in block(w * 0.76, h * 0.12 + CGFloat(i) * h * 0.14, w * 0.19, h * 0.1, 3) }
-            block(w * 0.04, h * 0.76, w * 0.92, h * 0.2, 9, Brand.panel2)
-        case .orbit:
-            Circle().fill(Brand.ink.opacity(0.3)).frame(width: h * 0.34, height: h * 0.34).position(x: w / 2, y: h * 0.3)
-            Circle().strokeBorder(style: StrokeStyle(lineWidth: h * 0.07, dash: [1.6, 2.2])).foregroundStyle(Brand.accent.opacity(0.75)).frame(width: h * 0.52, height: h * 0.52).position(x: w / 2, y: h * 0.3)
-            Circle().trim(from: 0, to: 0.38).stroke(Brand.accent, lineWidth: 2).rotationEffect(.degrees(-90)).frame(width: h * 0.6, height: h * 0.6).position(x: w / 2, y: h * 0.3)
-            block(w * 0.36, h * 0.64, w * 0.28, h * 0.06, 2, Brand.ink.opacity(0.8))
-            if lyrics { lines(w * 0.25, h * 0.74, w * 0.5, h * 0.05, centered: true, 2) }
         case .chillax:
             block(w * 0.05, h * 0.08, h * 0.54, h * 0.54, 10, Brand.ink.opacity(0.3))
             block(w * 0.44, h * 0.1, w * 0.46, h * 0.14, 3, Brand.ink.opacity(0.85))
             if lyrics { lines(w * 0.44, h * 0.32, w * 0.46, h * 0.07, centered: false, 4) } else { block(w * 0.44, h * 0.32, w * 0.46, h * 0.06, 2); block(w * 0.44, h * 0.44, w * 0.3, h * 0.06, 2) }
             ForEach(0..<5, id: \.self) { i in block(w * 0.05 + CGFloat(i) * w * 0.186, h * 0.66, w * 0.17, h * 0.1, 3, Brand.ink.opacity(0.16)) }
+        case .poster:
+            block(w * 0.05, h * 0.08, w * 0.18, h * 0.04, 1, Brand.ink.opacity(0.35))
+            block(w * 0.05, h * 0.16, w * 0.5, h * 0.17, 2, Brand.ink.opacity(0.9)); block(w * 0.05, h * 0.36, w * 0.36, h * 0.17, 2, Brand.ink.opacity(0.9))
+            block(w * 0.05, h * 0.57, w * 0.3, h * 0.05, 2, Brand.ink.opacity(0.5))
+            lines(w * 0.05, h * 0.66, w * 0.46, h * 0.06, centered: false, 3)
+            block(w * 0.66, h * 0.08, w * 0.29, w * 0.29, 2, Brand.ink.opacity(0.3))
+            block(w * 0.66, h * 0.08 + w * 0.29 + 5, w * 0.2, h * 0.04, 1, Brand.ink.opacity(0.4)); block(w * 0.66, h * 0.08 + w * 0.29 + 13, w * 0.24, h * 0.04, 1, Brand.ink.opacity(0.3))
+        case .turntable:
+            block(w * 0.05, h * 0.07, h * 0.7, h * 0.7, 4, Brand.ink.opacity(0.14))
+            Circle().fill(Brand.ink.opacity(0.7)).frame(width: h * 0.6, height: h * 0.6).position(x: w * 0.05 + h * 0.35, y: h * 0.07 + h * 0.35)
+            Circle().fill(Brand.accent.opacity(0.8)).frame(width: h * 0.2, height: h * 0.2).position(x: w * 0.05 + h * 0.35, y: h * 0.07 + h * 0.35)
+            block(w * 0.05 + h * 0.58, h * 0.1, 2, h * 0.5, 1, Brand.ink.opacity(0.6))
+            block(w * 0.5, h * 0.1, w * 0.4, h * 0.12, 3, Brand.ink.opacity(0.85)); block(w * 0.5, h * 0.27, w * 0.28, h * 0.06, 2, Brand.ink.opacity(0.5))
+            lines(w * 0.5, h * 0.42, w * 0.4, h * 0.06, centered: false, 3)
+            block(w * 0.5, h * 0.66, w * 0.4, h * 0.06, 2, Brand.ink.opacity(0.2)); block(w * 0.5, h * 0.74, w * 0.34, h * 0.05, 2, Brand.ink.opacity(0.2))
         }
     }
 }
@@ -117,6 +121,9 @@ struct NowPlayingSettings: View {
                 }
                 LyricsTimingRow()
                 LyricsSettingsToggle()
+            }
+            Card(title: "Extra panels", subtitle: "Small cards with facts about the song, in the free room beside the credits. At most two show at once") {
+                ExtraPanelsSettings()
             }
             Card(title: "On this screen", subtitle: "What else Now Playing shows") {
                 toggleRow("Add to playlist button", "Next to the heart.", $m.look.showPlaylistButton)
@@ -159,6 +166,23 @@ struct NowPlayingSettings: View {
             }
             Spacer(minLength: 8)
             Toggle("", isOn: value).accessibilityLabel(title).fixedSize()
+        }
+    }
+}
+
+/// Settings → Now Playing → Extra panels.
+struct ExtraPanelsSettings: View {
+    @ObservedObject private var settings = NPExtraSettings.shared
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Show extra panels", isOn: $settings.master).font(Typo.sans(14))
+            ForEach(NPExtraKind.allCases) { k in
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) { Text(k.title).font(Typo.sans(14)); Text(k.blurb).font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary) }
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: Binding(get: { settings.isOn(k) }, set: { settings.set(k, $0) })).accessibilityLabel(k.title).fixedSize().disabled(!settings.master)
+                }
+            }
         }
     }
 }

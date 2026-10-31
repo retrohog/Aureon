@@ -1,6 +1,5 @@
 import Foundation
 import CoreAudio
-import Synchronization
 
 // Level calibration for several outputs playing one stream.
 //
