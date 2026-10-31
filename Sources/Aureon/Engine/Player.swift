@@ -588,6 +588,7 @@ final class Player: @unchecked Sendable {
 
         // producer state
         var src: FrameSource? = opened0.source
+        var refilling = false                          // after a seek the ring is held silent until it has refilled
         var pendingFilterFlush = false                 // a new oversampling filter is being built; the buffered audio is replaced once it is ready
         var srcID = startID, tailID = startID
         var exhausted = false, endOfGroup = false, groupNext: UUID? = nil, prefilled = false
@@ -623,12 +624,20 @@ final class Player: @unchecked Sendable {
                 src = try openTrack(e, settings: cfg, rates: rates, clock: clock, loadRAMNow: false).source
                 srcID = b.entryID
             }
-            ring.flush()
             let t = max(0, min(target, max(0, Int(b.info.totalFrames) - 1)))
+            // Seek and decode the first chunk while the old audio keeps playing; only then drop it, so a slow seek (a long jump in a
+            // compressed file, a freshly repositioned oversampling filter) costs no silence and the ring restarts with data in hand.
             src?.seek(to: Int64(t))
             srcPos = t; resetTransition()
+            offered = 0; offeredFrames = 0
+            if let s = src {
+                offeredFrames = s.read(into: scratch, frames: chunk)
+                srcPos += offeredFrames
+            }
+            if prefilled && !userPaused { ring.paused.store(true, ordering: .relaxed); refilling = true }   // hold until the ring has refilled
+            ring.flush()
             bounds.removeAll { $0.ringFrame >= ring.totalWritten }       // boundaries of audio that was never written (an unfinished overlap)
-            offered = 0; offeredFrames = 0; exhausted = false; endOfGroup = false; groupNext = nil; tailID = b.entryID
+            exhausted = false; endOfGroup = false; groupNext = nil; tailID = b.entryID
             bounds.append(Boundary(ringFrame: ring.totalWritten, entryID: b.entryID, offset: t, opened: b.opened, info: b.info))
             clock.phase = ring.totalWritten      // DoP markers keep alternating: the dropped, already stamped frames never reached the DAC
         }
@@ -734,8 +743,8 @@ final class Player: @unchecked Sendable {
             for c in drainCommands() {
                 let (b, pos) = heard()
                 switch c {
-                case .togglePause: userPaused.toggle(); if prefilled { ring.paused.store(userPaused, ordering: .relaxed) }
-                case .setPaused(let p): userPaused = p; if prefilled { ring.paused.store(p, ordering: .relaxed) }
+                case .togglePause: userPaused.toggle(); if prefilled && !refilling { ring.paused.store(userPaused, ordering: .relaxed) }
+                case .setPaused(let p): userPaused = p; if prefilled && !refilling { ring.paused.store(p, ordering: .relaxed) }
                 case .seekBy(let s): if !b.info.isLive { try seekHeard(to: pos + Int(s * b.info.sampleRate)) }
                 case .seekTo(let s): if !b.info.isLive { try seekHeard(to: Int(s * b.info.sampleRate)) }
                 case .next: if let n = neighbour(of: b.entryID, 1) { return .continueAt(n.id, seconds: 0) }
@@ -881,6 +890,9 @@ final class Player: @unchecked Sendable {
                 if n == 0 { usleep(4_000) }
             }
 
+            if refilling && (ring.availableToRead >= min(ring.capacity / 2, prefillFrames) || exhausted || endOfGroup) {
+                refilling = false; ring.paused.store(userPaused, ordering: .relaxed)
+            }
             if !prefilled && (ring.availableToRead >= min(ring.capacity / 2, prefillFrames) || endOfGroup) {
                 prefilled = true; ring.paused.store(userPaused, ordering: .relaxed)
             }
