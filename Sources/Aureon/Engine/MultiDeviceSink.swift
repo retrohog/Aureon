@@ -1,7 +1,6 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
-import Synchronization
 
 // Several output devices at once, each with a job. A MacBook's own speakers next to a pair of table speakers on the headphone jack, for example:
 // the table speakers play the stereo picture, the MacBook plays the centre (voice) or the ambience, and either can take the bass.

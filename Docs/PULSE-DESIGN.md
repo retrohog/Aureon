@@ -154,14 +154,16 @@ bar fade after 3.5 s without the pointer and return on movement.
 - **Full-bleed**: the cover is the whole window under a veil in the panel colour (35 % at the top to 78 % at the bottom); title 58 (108 with lyrics off) low on
   the left, up next at the top right.
 - **Carousel**: the cover among its neighbours (200 centre, 140 and 100 beside); the neighbours play on a click; the title and an "Add to" line below.
-- **Lumen**: a 420 cover with a radius of 38 on the left, title and credits and the heart / playlist / More under it; the words in the middle; up next on the right
-  (only when the body is wider than 980); a rounded dock (radius 32, the raised colour) holding the times, a slim seek bar, the transport and the cluster in one row.
-  Credits under the artist are dropped when the body is shorter than 500.
 - **Chillax** (default): a 540 cover; a 76 pt title with the heart / playlist / More beside it, the format tags, the signal path; the queue as a shelf of five cards under the
   cover (dropped when the body is shorter than 470); the dock has a slim seek bar, the output chip on the left and the cluster without it.
-- **Orbit**: the cover in a circle at the centre of the body, ringed by 96 bars that follow the spectrum. The ring is also the seek bar: a bright arc
-  shows the played part, and a press or a drag on the ring seeks. The bars and the arc rest when playback pauses, when the window is hidden, with
-  Reduce Motion on, or with the visualiser off.
+- **Poster**: a strict 40 pt grid, nothing past the margins. Left: a "Now playing · Track N of M" label, a very large bold title (two lines at most, sized to its column,
+  tight tracking), artist, album and year, the format tags, and at the foot three lines of the words with the current one bright (the credits when the words are off or
+  untimed). Right (about 300): the cover as a square, two credit rows (producer, then the next credit), and Up next with one row. Paper (warm light) on a light theme,
+  Night on a dark one. The dock is the shared one.
+- **Turntable**: a fixed square with a record on a platter, the cover as its label; the record turns once in 4 s while the music plays (never paused, never with Reduce
+  Motion) and the tonearm moves from the outer groove to the inner with the song's position. Right: label, large title, artist / album / year, tags, three lines of the
+  words, Up next with two rows. The shared dock.
+- **Classic** also shows Up next as a 272 pt column on the right when the body is wider than 980 (what Lumen's queue column was). Saved "lumen" opens Classic; saved "orbit" opens the default.
 
 On every layout: heart, **Add to playlist** (a card with a search, New playlist, and a tick on each playlist that holds the song), **More** (Analyser, Booklet,
 Show lyrics, the lyrics actions — look again, write by listening, save to tags, save as .lrc — and the layout), credits under the artist (written by, produced by,
@@ -190,7 +192,7 @@ display**; the output device; the theme and look; the Now Playing layout; the mi
 
 ## What differs on other platforms
 
-- **Intel Macs**: the same code and the same screens. Features that need Apple Silicon (the on-device language model and audio enhancer) are shown switched off with the reason.
+- **Intel Macs**: the same code and the same screens. Features that need Apple Silicon (the audio enhancer) are shown switched off with the reason.
 - **Windows**: a native application with the same tokens, layouts and behaviours; the web interface is not the design. Window glass and the menu bar item map to
   the platform's equivalents (acrylic, the notification area).
 

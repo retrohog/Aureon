@@ -2,7 +2,6 @@ import Foundation
 import CoreAudio
 import AudioToolbox
 import Accelerate
-import Synchronization
 
 // ABX blind testing and A/B mastering comparison.
 //

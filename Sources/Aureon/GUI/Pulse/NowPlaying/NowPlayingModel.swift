@@ -5,11 +5,11 @@ import SwiftUI
 
 /// The ways Now Playing can be laid out. Each one is a separate view; the choice is made in Settings → Now Playing and remembered.
 enum NowPlayingLayout: String, CaseIterable, Identifiable {
-    case stage, classic, fullBleed = "fullbleed", carousel, lumen, chillax, orbit
+    case stage, classic, fullBleed = "fullbleed", carousel, chillax, poster, turntable
 
     var id: String { rawValue }
     var title: String {
-        switch self { case .stage: "Stage"; case .classic: "Classic"; case .fullBleed: "Full-bleed"; case .carousel: "Carousel"; case .lumen: "Lumen"; case .chillax: "Chillax"; case .orbit: "Orbit" }
+        switch self { case .stage: "Stage"; case .classic: "Classic"; case .fullBleed: "Full-bleed"; case .carousel: "Carousel"; case .chillax: "Chillax"; case .poster: "Poster"; case .turntable: "Turntable" }
     }
     var blurb: String {
         switch self {
@@ -17,9 +17,9 @@ enum NowPlayingLayout: String, CaseIterable, Identifiable {
         case .classic: "A large cover on the left; the words, queue and signal path on the right"
         case .fullBleed: "The cover is the whole screen; the title is set very large"
         case .carousel: "The cover among its neighbours in the queue, the words beneath"
-        case .lumen: "A rounded cover, the words in the middle, the queue on the right and a dock below"
         case .chillax: "A big cover and a very large title, with the queue as a shelf along the bottom"
-        case .orbit: "A round cover with a ring of moving bars around it; the ring is also the seek bar"
+        case .poster: "A very large title on a strict grid, three lines of words, and the cover with its credits and the next song beside it"
+        case .turntable: "A record that turns on a platter while the music plays, with a tonearm that follows the song; the words and the queue beside it"
         }
     }
     /// The layouts that have a row of tabs (Lyrics, Up next, Credits, Signal path) over the middle of the screen.
@@ -27,8 +27,12 @@ enum NowPlayingLayout: String, CaseIterable, Identifiable {
 
     /// The default: Chillax.
     static let standard = NowPlayingLayout.chillax
-    /// A saved id (also those of layouts that do not exist yet) read as a layout; anything unknown is the default.
-    static func resolve(_ raw: String?) -> NowPlayingLayout { raw.flatMap(NowPlayingLayout.init(rawValue:)) ?? .standard }
+    /// A saved id (also those of layouts that do not exist yet) read as a layout. Lumen was folded into Classic (its queue column is part of Classic now);
+    /// Orbit is gone; anything else unknown is the default.
+    static func resolve(_ raw: String?) -> NowPlayingLayout {
+        if raw == "lumen" { return .classic }
+        return raw.flatMap(NowPlayingLayout.init(rawValue:)) ?? .standard
+    }
 }
 
 /// What the middle of Stage and Classic shows.

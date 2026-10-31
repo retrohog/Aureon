@@ -36,12 +36,16 @@ struct NPCover: View {
     @EnvironmentObject var m: PlayerModel
     let side: CGFloat
     var radius: CGFloat = 16
+    @EnvironmentObject var info: NPTrackInfo
     var body: some View {
         let item = m.focusItem
         CoverView(image: m.hero.image ?? item?.thumb, palette: m.hero.palette, corner: radius, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
             .id(m.hero.token).transition(.opacity)
             .stageMatched(.cover)
             .frame(width: side, height: side)
+            .overlay(alignment: .topLeading) {
+                if m.look.showSignalTags, let input = m.formatTagInput(bitrate: nil, track: info.track) { NPCoverChip(ribbon: NPRibbon.make(QualityStripModel.make(input)), side: side) }
+            }
             .shadow(color: .black.opacity(0.28), radius: 24, y: 10)
             .animation(Motion.carpet, value: m.hero.token)
             .accessibilityElement(children: .ignore).accessibilityLabel("Cover")
@@ -59,6 +63,8 @@ struct NPTitleBlock: View {
     var showsAlbumYear = false
     var credits = true
     var tags = true
+    /// A short column has no room for the full strip: the one-line pill takes its place.
+    var compactTags = false
     var centered = false
     /// The heart, add-to-playlist and more buttons at the right of the title (at this size), or none.
     var actions: CGFloat? = nil
@@ -72,16 +78,19 @@ struct NPTitleBlock: View {
                 if let actions { NPActions(size: actions).padding(.top, max(0, titleSize * 0.12)) }
             }
             if let d, !d.artist.isEmpty || !(item?.album ?? "").isEmpty {
-                (Text(d.artist).foregroundStyle(Brand.ink) + Text(albumTail(item)).foregroundStyle(Brand.inkSecondary))
+                (Text(d.artist).foregroundColor(Brand.ink) + Text(albumTail(item)).foregroundColor(Brand.inkSecondary))
                     .npFont(artistSize, .medium).lineLimit(2).padding(.top, 2).multilineTextAlignment(centered ? .center : .leading)
             }
             if credits, m.look.showCredits {
                 let line = NPCredits.line(info.credits)
                 if !line.isEmpty { Text(line).npFont(13.5).foregroundStyle(Brand.inkSecondary).lineLimit(2).padding(.top, 6).multilineTextAlignment(centered ? .center : .leading) }
             }
-            if tags, m.look.showSignalTags { NPTags(alignment: centered ? .center : .leading).padding(.top, 10) }
+            if tags, m.look.showSignalTags {
+                NPTags(alignment: centered ? .center : .leading).padding(.top, 10)
+            }
         }
         .frame(maxWidth: .infinity, alignment: centered ? .center : .leading)
+        .zIndex(10)                                        // the open detail panel hangs over what is under the title block
     }
 
     private func albumTail(_ item: QueueItem?) -> String {
@@ -95,8 +104,7 @@ struct NPTitleBlock: View {
 struct NPTags: View {
     var alignment: Alignment = .leading
     var body: some View {
-        NowPlayingTags(place: .bar, alignment: alignment).frame(maxWidth: .infinity, alignment: alignment)
-            .accessibilityElement(children: .contain).accessibilityIdentifier("np.tags").layoutProbe("tags")
+        NPDetailKeys(alignment: alignment).frame(maxWidth: .infinity, alignment: alignment).accessibilityIdentifier("np.tags")
     }
 }
 
@@ -330,11 +338,17 @@ struct NPQueueRow: View {
 struct NPShelf: View {
     @EnvironmentObject var m: PlayerModel
     var limit = 5
+    /// With a column count the cards lie in a grid of that many columns (as many rows as the songs need); without it, in one row.
+    var columns: Int? = nil
     @Environment(\.npScale) private var s
     var body: some View {
         let next = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: limit)
         if next.isEmpty { Text("Nothing is queued after this song.").npFont(14).foregroundStyle(Brand.inkSecondary) }
-        else {
+        else if let columns {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: columns), spacing: 14) {
+                ForEach(next) { it in NPShelfCard(item: it, cover: 52 * s) { m.play(it.id) } }
+            }
+        } else {
             HStack(spacing: 14) {
                 ForEach(next) { it in NPShelfCard(item: it, cover: 52 * s) { m.play(it.id) } }
                 ForEach(0..<max(0, limit - next.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
@@ -446,18 +460,18 @@ struct NPTransport: View {
     @EnvironmentObject var m: PlayerModel
     @Environment(\.npScale) private var s
     var body: some View {
-        HStack(spacing: 14 * s) {
+        HStack(spacing: 6 * s) {
             ShuffleButton(size: 16, tint: Brand.inkSecondary)
-            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 17) }
-                .keyboardShortcut(.leftArrow, modifiers: .command).help("Previous").accessibilityLabel("Previous")
-            Button { m.togglePlay() } label: { TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: 22) }
-                .buttonStyle(PlayKeyStyle(size: 64 * s)).keyboardShortcut(.space, modifiers: []).help("Play / pause")
+            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: TransportMetrics.skip(s).glyph) }
+                .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.skip(s).hit)).keyboardShortcut(.leftArrow, modifiers: .command).help("Previous").accessibilityLabel("Previous")
+            Button { m.togglePlay() } label: { TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: TransportMetrics.play(s).glyph) }
+                .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.play(s).hit)).keyboardShortcut(.space, modifiers: []).help("Play / pause")
                 .accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
-            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 17) }
-                .keyboardShortcut(.rightArrow, modifiers: .command).help("Next").accessibilityLabel("Next")
+            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: TransportMetrics.skip(s).glyph) }
+                .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.skip(s).hit)).keyboardShortcut(.rightArrow, modifiers: .command).help("Next").accessibilityLabel("Next")
             RepeatButton(size: 16, tint: Brand.inkSecondary)
         }
-        .buttonStyle(TransportButtonStyle(size: 13, ink: Brand.ink)).disabled(m.items.isEmpty)
+        .disabled(m.items.isEmpty)
         .layoutProbe("transport")
     }
 }
@@ -467,7 +481,7 @@ struct NPTransport: View {
 struct NPCluster: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var stage: StageModel
-    var showsChip = true
+    var showsChip = false
     var volumeWidth: CGFloat = 96
 
     private func buttons(volume: CGFloat?, chip: Bool) -> some View {

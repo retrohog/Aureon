@@ -1,7 +1,6 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
-import Synchronization
 
 // MARK: - Settings
 

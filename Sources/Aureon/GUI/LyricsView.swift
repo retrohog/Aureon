@@ -85,6 +85,8 @@ struct LyricStyle: Equatable {
     var gap: CGFloat = 16
     /// Where the line being sung rests, as a fraction of the height (0.4: a little above the middle).
     var rest: CGFloat = 0.4
+    /// Lines away from the current one are softly blurred; off, they are only dimmed and scaled (the words stay readable at rest).
+    var blurs = true
 
     static let standard = LyricStyle()
 }
@@ -102,8 +104,6 @@ extension EnvironmentValues {
 struct LyricsSection: View {
     @EnvironmentObject var m: PlayerModel
     @ObservedObject private var service = LyricsService.shared
-    @ObservedObject private var ai = IntelligenceCenter.shared
-    @AppStorage("aureon.lyrics.offerGeneration") private var offerGeneration = true
     @AppStorage("aureon.lyrics.offset") private var offset = 0.0
     /// Height of the panel, so the stage can fill it.
     var availableHeight: CGFloat = 800
@@ -154,7 +154,6 @@ struct LyricsSection: View {
     private func sourceLine(_ l: Lyrics) -> String {
         var parts = [l.source.isEmpty ? l.origin.rawValue : l.source]
         parts.append(l.wordSynced ? "synced by word" : (l.synced ? "synced" : "not timed"))
-        if l.origin == .generated { parts.append("written by Aureon") }
         return parts.joined(separator: " · ")
     }
 
@@ -188,7 +187,7 @@ struct LyricsSection: View {
             if let l = service.lyrics {
                 if l.synced { LyricsStage(lyrics: l, accent: accent, height: stageHeight) }
                 else { PlainLyrics(lyrics: l, height: stageHeight) }
-                footer
+                if let note = service.saveNote { Text(note).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary) }
             }
         case .instrumental:
             VStack(spacing: 8) {
@@ -197,23 +196,11 @@ struct LyricsSection: View {
             }.frame(maxWidth: .infinity, minHeight: 90)
         case .missing:
             missing
-        case .generating(let f, let msg):
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    ProgressView(value: f).tint(accent).frame(maxWidth: 260)
-                    Text("\(Int(f * 100))%").font(Typo.mono(11, .medium)).foregroundStyle(Brand.inkTertiary)
-                    Spacer()
-                    RuleButton(title: "Cancel", symbol: "xmark") { service.cancelGeneration() }
-                }
-                Text(msg + "… Aureon is listening to the song with the \(ai.settings.whisperModel.title) speech model, on this Mac. Playback is not affected.")
-                    .font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
-            }.padding(.vertical, 8)
         case .failed(let msg):
             VStack(alignment: .leading, spacing: 12) {
                 Label(msg, systemImage: "exclamationmark.triangle.fill").font(Typo.sans(12.5)).foregroundStyle(Brand.caution).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
                     RuleButton(title: "Look Again", symbol: "arrow.clockwise") { service.reload() }
-                    if service.canOfferGeneration { RuleButton(title: "Try Writing Them", symbol: "waveform.badge.mic") { service.generate() } }
                 }
             }.padding(.vertical, 8)
         }
@@ -227,7 +214,7 @@ struct LyricsSection: View {
         }.frame(minHeight: 40)
     }
 
-    /// Nothing anywhere. This is the question: whether to write the lyrics by listening, which only happens if the owner says yes.
+    /// Nothing anywhere.
     private var missing: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("No lyrics found for this song").font(Typo.sans(14, .semibold)).foregroundStyle(Brand.inkSecondary)
@@ -236,26 +223,9 @@ struct LyricsSection: View {
                 Text("To add them yourself, put a .lrc file with the song's name next to it" + (service.onlineLookup ? "." : ", or turn on the online lookup."))
                     .font(Typo.sans(11.5)).foregroundStyle(Brand.inkTertiary).fixedSize(horizontal: false, vertical: true)
             }
-            if service.canOfferGeneration, offerGeneration, !service.declined {
-                Text("Aureon can write them by listening to the song with a small speech model (Whisper \(ai.settings.whisperModel.title), about \(ai.settings.whisperModel.approxMB) MB, downloaded once). It runs on this Mac only, takes a minute or two, and may make mistakes with fast or layered vocals.")
-                    .font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    RuleButton(title: "Write the Lyrics", symbol: "waveform.badge.mic", filled: true) { service.generate() }
-                    RuleButton(title: "Not for This Song", symbol: "xmark") { service.decline() }
-                }
-            } else {
-                HStack(spacing: 8) {
-                    if !service.onlineLookup { RuleButton(title: "Look Online", symbol: "network") { service.onlineLookup = true } }
-                    else { RuleButton(title: service.onlineUnreachable ? "Try Again" : "Look Again", symbol: "arrow.clockwise") { service.reload() } }
-                    if service.canOfferGeneration { RuleButton(title: "Write the Lyrics…", symbol: "waveform.badge.mic") { service.generate() } }
-                    else if service.request?.isLocalFile == true, !ai.isActive(.lyricsGeneration) {
-                        RuleButton(title: "Intelligence Settings", symbol: "brain") { m.go(.settings(.intelligence)) }
-                    }
-                }
-                if !ai.isActive(.lyricsGeneration), service.request?.isLocalFile == true {
-                    Text(ai.isMasterOn ? "Writing lyrics is switched off in Intelligence." : "Intelligence features are off, so lyrics cannot be written by listening.")
-                        .font(Typo.sans(11.5)).foregroundStyle(Brand.inkTertiary)
-                }
+            HStack(spacing: 8) {
+                if !service.onlineLookup { RuleButton(title: "Look Online", symbol: "network") { service.onlineLookup = true } }
+                else { RuleButton(title: service.onlineUnreachable ? "Try Again" : "Look Again", symbol: "arrow.clockwise") { service.reload() } }
             }
         }
         .padding(.vertical, 8)
@@ -266,19 +236,6 @@ struct LyricsSection: View {
         if service.onlineLookup && service.isOnlineAllowedNow { places.append("LRCLIB online") }
         let list = places.count == 2 ? places.joined(separator: " and ") : places.dropLast().joined(separator: ", ") + " and " + places.last!
         return "Aureon looked in " + list + "." + (service.onlineUnreachable ? " The online service could not be reached; it will be tried again." : "")
-    }
-
-    @ViewBuilder private var footer: some View {
-        if let note = service.saveNote {
-            Text(note).font(Typo.sans(11.5)).foregroundStyle(Brand.inkSecondary)
-        } else if service.unsaved, service.request?.isLocalFile == true {
-            HStack(spacing: 8) {
-                Text("Written by Aureon. Keep them?").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
-                if let r = service.request, TagEditing.isEditable(r.path) { RuleButton(title: "Save in the File's Tags", symbol: "tag") { service.saveToTags() } }
-                RuleButton(title: "Save as .lrc", symbol: "doc.badge.plus") { service.saveAsLRC() }
-                Spacer(minLength: 0)
-            }
-        }
     }
 }
 
@@ -292,13 +249,40 @@ extension LyricsService {
 private struct PlainLyrics: View {
     let lyrics: Lyrics
     let height: CGFloat
+    @EnvironmentObject var progress: ProgressModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var follow = LyricsFollow()
+    @State private var following = true
+    @State private var resume: Task<Void, Never>?
+
+    /// Without times the words cannot follow the singer; they drift down the page as the song plays, a paragraph at a time.
+    private var rows: [(id: Int, text: String)] {
+        lyrics.lines.enumerated().filter { !$0.element.text.trimmingCharacters(in: .whitespaces).isEmpty }.map { ($0.offset, $0.element.text) }
+    }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            Text(lyrics.plainText)
-                .font(Typo.sans(17, .medium)).lineSpacing(6).foregroundStyle(Brand.inkSecondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+        let list = rows
+        let current = LyricsMotion.plainLine(progress: progress.duration > 0 ? progress.position / progress.duration : 0, count: list.count)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Color.clear.frame(height: height * 0.1)
+                    ForEach(list, id: \.id) { r in
+                        Text(r.text).font(Typo.sans(17, .medium)).foregroundStyle(Brand.inkSecondary).frame(maxWidth: .infinity, alignment: .leading).id(r.id)
+                    }
+                    Color.clear.frame(height: height * 0.5)
+                }
+                .padding(.vertical, 8)
+            }
+            .onUserScrollStart {
+                follow.userScrolled(at: Date.timeIntervalSinceReferenceDate); following = false
+                resume?.cancel()
+                resume = Task { try? await Task.sleep(nanoseconds: UInt64(LyricsMotion.resumeAfter * 1_000_000_000)); if !Task.isCancelled { following = true } }
+            }
+            .onChangeCompat(of: current) { _, c in
+                guard following, list.indices.contains(c) else { return }
+                withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.9)) { proxy.scrollTo(list[c].id, anchor: UnitPoint(x: 0.5, y: LyricsMotion.focus)) }
+            }
         }
         .frame(height: height)
         .mask(EdgeFade())
@@ -324,6 +308,7 @@ struct LyricsStage: View {
     @AppStorage("aureon.lyrics.offset") private var offset = 0.0
     @Environment(\.lyricStyle) private var style
     @State private var following = true
+    @State private var follow = LyricsFollow()
     @State private var resume: Task<Void, Never>?
 
     var body: some View {
@@ -347,9 +332,9 @@ struct LyricsStage: View {
                     }
                     .padding(.horizontal, 8)
                 }
-                .onScrollPhaseChange { _, new in if new == .interacting { userScrolled() } }
-                .onChange(of: active) { _, a in if following { scroll(proxy, to: a) } }
-                .onChange(of: following) { _, f in if f { scroll(proxy, to: cursor.active) } }
+                .onUserScrollStart { userScrolled() }
+                .onChangeCompat(of: active) { _, a in if following { scroll(proxy, to: a) } }
+                .onChangeCompat(of: following) { _, f in if f { scroll(proxy, to: cursor.active) } }
                 .onAppear { scroll(proxy, to: cursor.active, animated: false) }
             }
             .frame(height: height)
@@ -357,7 +342,7 @@ struct LyricsStage: View {
 
             if !following {
                 Button {
-                    resume?.cancel(); following = true
+                    resume?.cancel(); follow.resume(); following = true
                 } label: {
                     Label("Follow the song", systemImage: "arrow.down.to.line").font(Typo.sans(12, .semibold))
                         .padding(.horizontal, 12).padding(.vertical, 8).background(Slab().fill(.ultraThinMaterial)).overlay(Slab().strokeBorder(Brand.ink.opacity(0.2), lineWidth: 0.8))
@@ -369,7 +354,7 @@ struct LyricsStage: View {
             FrameSampler(cursor: cursor).frame(width: 0, height: 0)
         }
         .animation(Motion.touch, value: following)
-        .onChange(of: lyrics) { _, _ in cursor.reset(); following = true }
+        .onChangeCompat(of: lyrics) { _, _ in cursor.reset(); following = true }
     }
 
     /// How far a line is from the one being sung, limited to what changes how it looks.
@@ -381,28 +366,30 @@ struct LyricsStage: View {
     private func scroll(_ proxy: ScrollViewProxy, to line: Int?, animated: Bool = true) {
         let target = line ?? (lyrics.lines.first.map { $0.time > 3 ? -1 : 0 } ?? 0)
         // the active line rests at 40 % of the panel's height
-        if animated && !reduceMotion { withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: style.rest)) } }
+        if animated { withAnimation(LyricsMotion.animation(reduceMotion: reduceMotion)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: style.rest)) } }
         else { proxy.scrollTo(target, anchor: UnitPoint(x: 0.5, y: style.rest)) }
     }
 
+    /// The wheel or trackpad took over: the words stay where the listener put them, and follow the song again after three quiet seconds.
     private func userScrolled() {
+        follow.userScrolled(at: Date.timeIntervalSinceReferenceDate)
         following = false
         resume?.cancel()
         resume = Task {
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            if !Task.isCancelled { following = true }
+            try? await Task.sleep(nanoseconds: UInt64(LyricsMotion.resumeAfter * 1_000_000_000))
+            if !Task.isCancelled, follow.isFollowing(at: Date.timeIntervalSinceReferenceDate) { following = true }
         }
     }
 
     private func seek(to line: LyricLine) {
         guard !line.isBreak else { return }
         m.player.send(.seekTo(line.time))
-        resume?.cancel(); following = true
+        resume?.cancel(); follow.resume(); following = true
     }
 }
 
 /// Feeds the playhead to the cursor. It re-evaluates with every playhead update, which is why it is nothing but this.
-private struct PlayheadObserver: View {
+struct PlayheadObserver: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var progress: ProgressModel
     let lyrics: Lyrics
@@ -415,20 +402,20 @@ private struct PlayheadObserver: View {
 
     var body: some View {
         Color.clear
-            .onChange(of: progress.position) { _, p in cursor.update(position: p, playing: playing, lyrics: lyrics, offset: offset, latency: latency) }
-            .onChange(of: m.status.state) { _, _ in cursor.update(position: progress.position, playing: playing, lyrics: lyrics, offset: offset, latency: latency) }
-            .onChange(of: offset) { _, _ in cursor.setShift(offset: offset, latency: latency) }
+            .onChangeCompat(of: progress.position) { _, p in cursor.update(position: p, playing: playing, lyrics: lyrics, offset: offset, latency: latency) }
+            .onChangeCompat(of: m.status.state) { _, _ in cursor.update(position: progress.position, playing: playing, lyrics: lyrics, offset: offset, latency: latency) }
+            .onChangeCompat(of: offset) { _, _ in cursor.setShift(offset: offset, latency: latency) }
             .onAppear { cursor.update(position: progress.position, playing: playing, lyrics: lyrics, offset: offset, latency: latency) }
     }
 }
 
 /// Works out the line at the display's refresh rate while the song plays: the clock carries the playhead forward between the player's readings,
 /// so the line changes on the frame it should. Nothing is drawn here; the cursor publishes only when the line changes.
-private struct FrameSampler: View {
+struct FrameSampler: View {
     @ObservedObject var cursor: LyricsCursor
     var body: some View {
         TimelineView(.animation(minimumInterval: nil, paused: !cursor.isPlaying)) { tl in
-            Color.clear.onChange(of: tl.date) { _, _ in cursor.sample() }
+            Color.clear.onChangeCompat(of: tl.date) { _, _ in cursor.sample() }
         }
     }
 }
@@ -468,20 +455,14 @@ private struct LyricRow: View, Equatable {
         .multilineTextAlignment(style.centered ? .center : .leading)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: style.centered ? .center : .leading)
-        .scaleEffect(isActive || reduceMotion ? 1 : 0.93, anchor: style.centered ? .center : .leading)
-        .blur(radius: reduceMotion ? 0 : blur)
-        .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.18), value: relative)
+        .scaleEffect(LyricsMotion.scale(relative: relative, reduceMotion: reduceMotion), anchor: style.centered ? .center : .leading)
+        .blur(radius: reduceMotion || !style.blurs ? 0 : LyricsMotion.blur(relative: relative))
+        .animation(LyricsMotion.animation(reduceMotion: reduceMotion), value: relative)
         .contentShape(Rectangle())
         .accessibilityLabel(line.isBreak ? "Instrumental" : line.text)
     }
 
-    private var opacity: Double {
-        if isActive { return 1 }
-        if relative < 0 { return max(0.22, 0.5 - 0.07 * Double(distance)) }       // sung lines fade away upward
-        return max(0.25, 0.62 - 0.08 * Double(distance))
-    }
-
-    private var blur: Double { isActive ? 0 : min(5, 0.9 + 0.9 * Double(distance)) }
+    private var opacity: Double { LyricsMotion.opacity(relative: relative) }
 }
 
 /// The active line when its words have times: each word brightens as it is sung.
@@ -552,9 +533,6 @@ struct LyricsMenuItems: View {
     @ObservedObject private var service = LyricsService.shared
     var body: some View {
         Button("Look for the Lyrics Again", systemImage: "arrow.clockwise") { service.reload() }
-        if service.canOfferGeneration {
-            Button("Write Lyrics by Listening…", systemImage: "waveform.badge.mic") { service.generate() }
-        }
         if service.lyrics != nil, service.request?.isLocalFile == true {
             if let r = service.request, TagEditing.isEditable(r.path) { Button("Save Lyrics in the File's Tags", systemImage: "tag") { service.saveToTags() } }
             Button("Save Lyrics as .lrc Next to the Song", systemImage: "doc.badge.plus") { service.saveAsLRC() }
@@ -588,11 +566,9 @@ struct LyricsTimingRow: View {
 
 /// The "Look up lyrics online" switch for the settings page.
 struct LyricsSettingsToggle: View {
-    @AppStorage("aureon.lyrics.offerGeneration") private var offerGeneration = true
     @ObservedObject private var service = LyricsService.shared
     var body: some View {
         Toggle("Look up missing lyrics online", isOn: $service.onlineLookup)
-        Toggle("Offer to write missing lyrics by listening", isOn: $offerGeneration)
     }
 }
 

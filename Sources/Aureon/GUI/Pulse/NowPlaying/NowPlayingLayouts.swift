@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// The six layouts of Now Playing. Each is its own view and decides only where the shared pieces (NowPlayingParts) go; lyrics on or off changes what the
+// The seven layouts of Now Playing. Each is its own view and decides only where the shared pieces (NowPlayingParts) go; lyrics on or off changes what the
 // middle shows. They are drawn for 1440 × 900 and scaled to the window (`npScale`).
 //
 // Every layout is built the same way (`NPFrame`): the top bar's space, then a body that is given exactly the room left, then the dock (seek, transport,
@@ -11,8 +11,10 @@ import AppKit
 /// What every layout needs to know about the window.
 struct NPCanvas {
     let size: CGSize
+    /// A layout on a stricter grid than the usual margin (Poster: 40 pt) sets its own, and the dock follows it.
+    var inset: CGFloat? = nil
     var s: CGFloat { NPScale.of(size) }
-    var margin: CGFloat { max(28, 64 * s) }
+    var margin: CGFloat { inset ?? max(28, 64 * s) }
     var top: CGFloat { WindowChrome.band }
 }
 
@@ -172,27 +174,71 @@ struct NPClassic: View {
             Group { if m.look.showLyrics { on(size) } else { off(size) } }
                 .padding(.horizontal, c.margin).padding(.top, 20 * c.s)
         }, dock: {
-            NPDock(c, left: { OutputChip(anchor: .stage) }, right: { NPCluster(showsChip: false) })
+            NPDock(c, left: { Color.clear.frame(width: 1, height: 1) }, right: { NPCluster(showsChip: false) })
         })
     }
 
     private func on(_ size: CGSize) -> some View {
         let s = c.s
-        let below: CGFloat = 96 * s                                                  // the credits and the tags under the cover
-        let side = max(120, min(500 * s, size.height - below - 20 * s, size.width * 0.38))
-        return HStack(alignment: .top, spacing: 60 * s) {
-            VStack(alignment: .leading, spacing: 14 * s) {
-                NPCover(side: side, radius: 16)
-                NPCreditsGrid(lines: Array(info.credits.prefix(3)), columns: 3, gap: 10)
-                NPTags()
-            }
-            .frame(width: side, alignment: .topLeading)
-            VStack(alignment: .leading, spacing: 12 * s) {
-                NPTitleBlock(titleSize: 54, artistSize: 21, credits: false, tags: false, actions: 44)
-                NPTabs(selection: $stage.npTab, centered: false)
-                tabContent.frame(maxHeight: .infinity)
+        let inner = size.width - 2 * c.margin
+        let height = size.height - 20 * s
+        let queued = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: 6).count
+        let plan = NPClassicPlan.make(inner: inner, height: height, s: s, tags: m.look.showSignalTags, queued: queued)
+        return Group {
+            if plan.wide {
+                VStack(alignment: .leading, spacing: plan.gap) {
+                    HStack(alignment: .top, spacing: plan.gutter) {
+                        NPCover(side: plan.coverSide, radius: 16).frame(width: plan.coverSide, alignment: .topLeading)
+                        words(plan, width: plan.rightWidth)
+                    }
+                    .frame(height: plan.topHeight, alignment: .top)
+                    if plan.stripCards > 0 { upNextStrip(plan) }
+                }
+            } else {
+                HStack(alignment: .top, spacing: plan.gutter) {
+                    NPCover(side: plan.coverSide, radius: 16).frame(width: plan.coverSide, alignment: .topLeading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        words(plan, width: plan.rightWidth)
+                        if plan.listRows > 0 {
+                            VStack(alignment: .leading, spacing: 4 * s) {
+                                Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary).frame(height: 24 * s, alignment: .leading)
+                                NPUpNext(limit: plan.listRows, cover: 44)
+                            }.frame(height: plan.listHeight, alignment: .topLeading).clipped()
+                        }
+                    }
+                    .frame(width: plan.rightWidth, height: height, alignment: .topLeading)
+                }
             }
         }
+    }
+
+    /// The title, the quality strip, the tabs and the words, which take whatever height is left.
+    private func words(_ plan: NPClassicPlan, width: CGFloat) -> some View {
+        let s = c.s
+        return VStack(alignment: .leading, spacing: 12 * s) {
+            NPTitleBlock(titleSize: 54, artistSize: 21, credits: false, tags: false, actions: 44)
+            if m.look.showSignalTags { NPTags().frame(height: plan.tagsHeight - 4 * s, alignment: .topLeading) }
+            NPTabs(selection: $stage.npTab, centered: false)
+            tabContent.frame(maxHeight: .infinity)
+        }
+        .frame(width: width, alignment: .topLeading)
+    }
+
+    /// The next songs as cards across the foot, directly above the seek bar.
+    private func upNextStrip(_ plan: NPClassicPlan) -> some View {
+        let s = c.s
+        let next = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: plan.stripCards)
+        return VStack(alignment: .leading, spacing: 4 * s) {
+            Text("Up next").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary).frame(height: 24 * s, alignment: .leading)
+            HStack(spacing: 12 * s) {
+                ForEach(next) { it in
+                    NPQueueRow(item: it, cover: 52 * s, titleSize: 14.5) { m.play(it.id) }
+                        .padding(8 * s).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Brand.ink.opacity(0.06)))
+                }
+            }.frame(height: 64 * s)
+        }
+        .frame(height: plan.stripHeight, alignment: .topLeading)
     }
 
     @ViewBuilder private var tabContent: some View {
@@ -240,7 +286,7 @@ struct NPFullBleed: View {
             Group { if m.look.showLyrics { on(size) } else { off(size) } }
                 .padding(.horizontal, c.margin).padding(.top, 16 * c.s)
         }, dock: {
-            NPDock(c, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+            NPDock(c, left: { HStack(spacing: 4) { NPActions(size: 44) } }, right: { NPCluster(showsChip: false) })
         })
         .background { backdrop }
     }
@@ -307,85 +353,114 @@ struct NPFullBleed: View {
 
 // MARK: - Carousel
 
+/// The album's colours behind the carousel: the cover blurred far past recognition and tinted, under a veil of the theme's own surface so the words keep their contrast
+/// on dark, light and Paper looks. Drawn once into a flat layer (no work per frame) and cross-faded when the song changes.
+struct CarouselBackdrop: View {
+    @EnvironmentObject var m: PlayerModel
+    var body: some View {
+        let light = m.theme.isLight
+        ZStack {
+            Brand.panel
+            if let img = m.hero.image ?? m.focusItem?.thumb {
+                Image(nsImage: img).resizable().scaledToFill().scaleEffect(1.5).blur(radius: 80).saturation(1.35).opacity(light ? 0.5 : 0.6)
+                    .id(m.focusItem?.id).transition(.opacity)
+            } else {
+                LinearGradient(colors: [m.hero.palette.accent.color.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom)
+            }
+            Rectangle().fill(Brand.panel.opacity(light ? 0.45 : 0.4))
+            LinearGradient(colors: [.clear, Brand.panel.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+        }
+        .clipped().drawingGroup()
+        .animation(.easeInOut(duration: 0.8), value: m.focusItem?.id)
+        .ignoresSafeArea().allowsHitTesting(false)
+    }
+}
+
 struct NPCarousel: View {
     let c: NPCanvas
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var info: NPTrackInfo
+    @ObservedObject private var service = LyricsService.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// The songs two before and two after the current one (nil where the queue ends).
-    private var ring: (p2: QueueItem?, p1: QueueItem?, n1: QueueItem?, n2: QueueItem?) {
+    /// The songs around the current one: `offset` 0 is the current song, negative before it, positive after it (missing at the ends of the queue).
+    private func slot(_ offset: Int) -> QueueItem? {
         let items = m.items
-        guard let id = m.current?.id ?? m.focusItem?.id, let i = items.firstIndex(where: { $0.id == id }) else { return (nil, nil, items.first, items.dropFirst().first) }
-        func at(_ k: Int) -> QueueItem? { items.indices.contains(k) ? items[k] : nil }
-        return (at(i - 2), at(i - 1), at(i + 1), at(i + 2))
+        guard let id = m.current?.id ?? m.focusItem?.id, let i = items.firstIndex(where: { $0.id == id }) else { return offset > 0 && items.indices.contains(offset - 1) ? items[offset - 1] : nil }
+        return items.indices.contains(i + offset) ? items[i + offset] : nil
     }
+
+    private var hasLyrics: Bool { m.look.showLyrics && service.phase == .ready && service.lyrics?.isEmpty == false }
 
     var body: some View {
         NPFrame(c, content: { size in
-            Group { if m.look.showLyrics { on(size) } else { off(size) } }
-                .padding(.horizontal, c.margin).padding(.top, 14 * c.s)
+            flow(size).padding(.horizontal, c.margin).padding(.top, 14 * c.s)
         }, dock: {
-            NPDock(c, seek: .slim, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+            NPDock(c, seek: .slim, left: { HStack(spacing: 4) { NPActions(size: 44) } }, right: { NPCluster(showsChip: false) })
         })
+        .background { CarouselBackdrop() }
     }
 
-    private func cover(_ item: QueueItem?, _ side: CGFloat, _ radius: CGFloat, _ action: @escaping () -> Void) -> some View {
-        Group {
-            if let item {
-                Button(action: action) {
-                    CoverView(image: item.thumb, palette: ArtPalette.fallback(seed: item.album.isEmpty ? item.title : item.album), corner: radius, symbol: "music.note")
-                        .frame(width: side, height: side).opacity(0.78)
-                }.buttonStyle(.plain).onAppear { m.requestMetadata(item.id) }.accessibilityLabel("Play \(item.title)")
-            } else { Color.clear.frame(width: side, height: side) }
-        }
-    }
-
-    private func row(centre: CGFloat, near: CGFloat, far: CGFloat, radius: CGFloat, width: CGFloat) -> some View {
-        let r = ring
-        let narrow = width < centre + 2 * near + 2 * far + 80
-        return HStack(alignment: .center, spacing: 18 * c.s) {
-            if !narrow { cover(r.p2, far, radius - 2) { if let it = r.p2 { m.play(it.id) } } }
-            cover(r.p1, near, radius) { m.player.send(.previous) }
-            NPCover(side: centre, radius: radius + 4)
-            cover(r.n1, near, radius) { m.player.send(.next) }
-            if !narrow { cover(r.n2, far, radius - 2) { if let it = r.n2 { m.play(it.id) } } }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func on(_ size: CGSize) -> some View {
+    /// Cover flow: the covers (flexible), the names, the tag row, the words, in fixed zones that cannot overlap. The seek bar and transport are the dock below.
+    private func flow(_ size: CGSize) -> some View {
         let s = c.s
-        let text: CGFloat = 150 * s                                                  // the names, the credits and the tags under the covers
-        let centre = max(80, min(200 * s, size.height - text - 90))
-        return VStack(spacing: 12 * s) {
-            row(centre: centre, near: centre * 0.7, far: centre * 0.5, radius: 12, width: size.width - 2 * c.margin)
-            NPTitleBlock(titleSize: 36, artistSize: 19, credits: true, tags: true, centered: true)
-            GeometryReader { g in NPLyrics(style: LyricStyle(size: 30, centered: true, gap: 12, rest: 0.4), height: g.size.height).padding(.horizontal, max(0, 200 * s - c.margin)) }.frame(maxHeight: .infinity)
+        let plan = NPCoverFlowPlan.make(width: size.width - 2 * c.margin, height: size.height - 14 * s, s: s, lyrics: hasLyrics)
+        let current = m.current?.id ?? m.focusItem?.id
+        return VStack(spacing: plan.gap) {
+            // the covers: the current one large, the neighbours smaller and fading on the same baseline
+            ZStack {
+                ForEach(plan.offsets, id: \.self) { o in
+                    if o == 0 { NPCover(side: plan.centre, radius: 18).transition(.opacity) }
+                    else if let item = slot(o) {
+                        let side = plan.side(o)
+                        Button { jump(to: o, item) } label: {
+                            CoverView(image: item.thumb, palette: ArtPalette.fallback(seed: item.album.isEmpty ? item.title : item.album), corner: 14, symbol: "music.note").frame(width: side, height: side)
+                        }
+                        .buttonStyle(.plain).opacity(plan.opacity(o)).onAppear { m.requestMetadata(item.id) }
+                        .accessibilityLabel("Play \(item.title)")
+                        .offset(x: plan.x(o), y: (plan.centre - side) / 2)
+                        .id(item.id).transition(.opacity)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity).frame(height: plan.coverRow)
+            .animation(reduceMotion ? nil : Motion.carpet, value: current)
+            // the names, one line each
+            VStack(spacing: 2 * s) {
+                Text(m.focusDisplay?.title ?? "Nothing playing").npFont(34, .semibold).lineLimit(1).truncationMode(.tail)
+                Text(m.focusDisplay?.artist ?? "").npFont(19).foregroundStyle(Brand.inkSecondary).lineLimit(1).truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity).frame(height: plan.namesHeight)
+            NPTags(alignment: .center).frame(height: plan.tagsHeight)
+            // the words: a fixed block, the current line sharp, the others faded, with a soft fade at the edges; or one quiet line
+            Group {
+                if hasLyrics {
+                    GeometryReader { g in NPLyrics(style: LyricStyle(size: 26 * min(1.2, max(0.85, s)), centered: true, gap: 8, rest: 0.5, blurs: false), height: g.size.height) }
+                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.18), .init(color: .black, location: 0.82), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                } else {
+                    Text("No lyrics").npFont(14).foregroundStyle(Brand.inkTertiary).frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .frame(height: plan.lyricsHeight)
         }
+        .frame(height: size.height - 14 * s, alignment: .top)
     }
 
-    private func off(_ size: CGSize) -> some View {
-        let s = c.s, r = ring
-        let text: CGFloat = 190 * s
-        let centre = max(100, min(400 * s, size.height - text - 40))
-        return VStack(spacing: 12 * s) {
-            row(centre: centre, near: centre * 0.7, far: centre * 0.475, radius: 14, width: size.width - 2 * c.margin)
-            HStack(alignment: .top) {
-                caption("Previous", r.p1).frame(width: centre * 0.7, alignment: .center)
-                Spacer()
-                caption("Next", r.n1).frame(width: centre * 0.7, alignment: .center)
-            }.frame(height: 30 * s)
-            NPTitleBlock(titleSize: 44, artistSize: 20, showsAlbumYear: true, credits: false, tags: false, centered: true)
-            HStack(alignment: .top, spacing: 36 * s) { ForEach(info.credits.prefix(4)) { l in VStack(alignment: .leading, spacing: 2) { Text(l.label).npFont(12.5).foregroundStyle(Brand.inkSecondary); Text(l.value).npFont(14.5).lineLimit(1) } } }
-            if size.height > 560 { AddToChips() }
+    private func jump(to offset: Int, _ item: QueueItem) {
+        if offset == 1 { m.player.send(.next) } else if offset == -1 { m.player.send(.previous) } else { m.play(item.id) }
+    }
+}
+
+/// "Up next" as a column: the heading with how many songs are queued, and the next few songs (Classic, when the window is wide).
+struct NPQueueColumn: View {
+    @EnvironmentObject var m: PlayerModel
+    var limit = 6
+    var body: some View {
+        let queued = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: 999).count
+        VStack(alignment: .leading, spacing: 10) {
+            HStack { Text("Up next").npFont(19, .medium); Spacer(); Text(queued == 0 ? "" : "\(queued) queued").npFont(12.5).foregroundStyle(Brand.inkSecondary) }
+            NPUpNext(limit: limit, cover: 44, titleSize: 15)
             Spacer(minLength: 0)
-        }
-    }
-
-    private func caption(_ word: String, _ item: QueueItem?) -> some View {
-        VStack(spacing: 1) {
-            Text(item?.title ?? "").npFont(14).lineLimit(1)
-            Text(item == nil ? "" : word).npFont(12.5).foregroundStyle(Brand.inkSecondary)
         }
     }
 }
@@ -411,96 +486,6 @@ struct AddToChips: View {
     }
 }
 
-// MARK: - Lumen
-
-struct NPLumen: View {
-    let c: NPCanvas
-    @EnvironmentObject var m: PlayerModel
-    @EnvironmentObject var info: NPTrackInfo
-    @EnvironmentObject var idle: IdleTracker
-
-    var body: some View {
-        NPFrame(c, content: { size in
-            body(size).padding(.horizontal, c.margin).padding(.top, 14 * c.s)
-        }, dock: { dock })
-    }
-
-    private func body(_ size: CGSize) -> some View {
-        let s = c.s
-        let credits = size.height > 500
-        let text: CGFloat = (credits ? 250 : 170) * s                               // title, credits, tags and the buttons under the cover
-        let side = max(100, min(420 * s, size.height - text - 20, size.width * 0.34))
-        let queueWidth: CGFloat = size.width > 980 ? 272 * s : 0
-        return HStack(alignment: .top, spacing: 40 * s) {
-            left(side, credits: credits).frame(width: side, alignment: .topLeading)
-            middle.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            if queueWidth > 0 {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack { Text("Up next").npFont(19, .medium); Spacer(); Text(queueNote).npFont(12.5).foregroundStyle(Brand.inkSecondary) }
-                    NPUpNext(limit: 6, cover: 44, titleSize: 15)
-                    Spacer(minLength: 0)
-                }
-                .frame(width: queueWidth, alignment: .topLeading).frame(maxHeight: .infinity, alignment: .top)
-            }
-        }
-    }
-
-    private var queueNote: String {
-        let n = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: 999).count
-        return n == 0 ? "" : "\(n) queued"
-    }
-
-    private func left(_ side: CGFloat, credits: Bool) -> some View {
-        let s = c.s
-        return VStack(alignment: .leading, spacing: 0) {
-            NPCover(side: side, radius: 38)
-            NPTitleBlock(titleSize: 42, artistSize: 18, credits: credits, tags: true).fixedSize(horizontal: false, vertical: true).padding(.top, 16 * s)
-            NPActions(size: 44).padding(.top, 6 * s).padding(.leading, -8)
-        }
-    }
-
-    @ViewBuilder private var middle: some View {
-        let s = c.s
-        if m.look.showLyrics {
-            GeometryReader { g in NPLyrics(style: LyricStyle(size: 40, centered: false, gap: 22, rest: 0.4), height: g.size.height) }
-        } else {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 32 * s) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Credits").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                        if info.credits.isEmpty { NPNoCredits() } else { NPCreditsGrid(lines: info.credits, columns: 2, gap: 18) }
-                    }
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Signal path").npFont(13).textCase(.uppercase).tracking(0.8).foregroundStyle(Brand.inkSecondary)
-                        NPSignalSteps()
-                    }
-                }
-                .frame(maxWidth: 600, alignment: .topLeading).padding(.top, 6)
-            }
-        }
-    }
-
-    /// The dock: a rounded plate with the position, the transport and the controls in one row.
-    private var dock: some View {
-        let s = c.s
-        return HStack(spacing: 14 * s) {
-            HStack(spacing: 14 * s) {
-                BarTime(remaining: false)
-                WaveformScrubber(style: .slim, tint: Brand.accent).stageMatched(.waveform).frame(minWidth: 60)
-                BarTime(remaining: true)
-            }
-            .layoutProbe("seek")
-            NPTransport().fixedSize()
-            NPCluster(showsChip: true, volumeWidth: 84).layoutPriority(0)
-        }
-        .padding(.horizontal, 24 * s).frame(minHeight: 88 * s)
-        .background(RoundedRectangle(cornerRadius: 32 * s, style: .continuous).fill(Brand.panel2))
-        .padding(.horizontal, c.margin).padding(.bottom, 20 * s).padding(.top, 8 * s)
-        .opacity(idle.awake ? 1 : 0.0001).animation(Motion.carpet, value: idle.awake)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("np.dock").layoutProbe("dock")
-    }
-}
-
 // MARK: - Chillax
 
 struct NPChillax: View {
@@ -512,19 +497,21 @@ struct NPChillax: View {
         NPFrame(c, content: { size in
             body(size).padding(.horizontal, c.margin).padding(.top, 14 * c.s)
         }, dock: {
-            NPDock(c, seek: .slim, rowHeight: 70, left: { OutputChip(anchor: .stage) }, right: { NPCluster(showsChip: false) })
+            NPDock(c, seek: .slim, rowHeight: 70, left: { Color.clear.frame(width: 1, height: 1) }, right: { NPCluster(showsChip: false) })
         })
     }
 
     private func body(_ size: CGSize) -> some View {
         let s = c.s
-        let shelfHeight: CGFloat = size.height > 470 ? 96 * s : 0                    // the shelf is dropped when the window is too short for it
-        let side = max(100, min(540 * s, size.height - shelfHeight - 24, size.width * 0.38))
+        let queued = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: NPChillaxPlan.maxSongs).count
+        let plan = NPChillaxPlan.make(inner: size.width - 2 * c.margin, height: size.height - 14 * s, s: s, queued: queued)
+        let shelfHeight = plan.shelfHeight
+        let side = plan.coverSide
         return VStack(alignment: .leading, spacing: 12 * s) {
             HStack(alignment: .top, spacing: 56 * s) {
                 NPCover(side: side, radius: 30)
                 VStack(alignment: .leading, spacing: 14 * s) {
-                    NPTitleBlock(titleSize: 76, artistSize: 22, showsAlbumYear: true, credits: true, tags: true, actions: 44)
+                    NPTitleBlock(titleSize: 76, artistSize: 22, showsAlbumYear: true, credits: true, tags: true, compactTags: size.width - 2 * c.margin - side - 56 * s < 470, actions: 44)
                     if m.look.showLyrics {
                         GeometryReader { g in NPLyrics(style: LyricStyle(size: 32, centered: false, gap: 12, rest: 0.34), height: g.size.height) }.frame(maxHeight: .infinity)
                     } else {
@@ -542,79 +529,15 @@ struct NPChillax: View {
             if shelfHeight > 0 {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack { Text("Up next").npFont(19, .medium); Text(note).npFont(13).foregroundStyle(Brand.inkSecondary).padding(.leading, 8); Spacer() }
-                    NPShelf(limit: size.width > 1100 ? 5 : 3)
+                    NPShelf(limit: plan.limit, columns: plan.columns)
                 }
+                .frame(height: shelfHeight, alignment: .topLeading).clipped()
             }
         }
     }
 
     private var note: String {
         let n = NPQueue.upNext(m.items, current: m.current?.id ?? m.focusItem?.id, limit: 999).count
-        return n == 0 ? "" : "\(min(n, 5)) of \(n) songs"
-    }
-}
-
-
-// MARK: - Orbit
-
-/// A round cover in the middle, a ring of bars that move with the music around it, and a thin arc outside them that is the seek bar. The title (or the words) is
-/// under it and the controls are in the dock, as in every other layout.
-struct NPOrbit: View {
-    let c: NPCanvas
-    @EnvironmentObject var m: PlayerModel
-    @EnvironmentObject var info: NPTrackInfo
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        NPFrame(c, content: { size in
-            body(size).padding(.horizontal, c.margin).padding(.top, 8 * c.s)
-        }, dock: {
-            NPDock(c, seek: .slim, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
-        })
-    }
-
-    private func body(_ size: CGSize) -> some View {
-        let s = c.s
-        let lyrics = m.look.showLyrics
-        let below: CGFloat = (lyrics ? 150 : 118) * s                          // the title block and, with the words on, two lines of them
-        let side = max(160, min(size.height - below, size.width * 0.9, 640 * s))
-        let r = OrbitRing.radii(side: side)
-        return VStack(spacing: 6 * s) {
-            ZStack {
-                OrbitRingView(side: side)
-                OrbitCover(diameter: r.cover * 2, spins: m.look.orbitSpin && !reduceMotion)
-                    .allowsHitTesting(false)
-            }
-            .frame(width: side, height: side)
-            NPTitleBlock(titleSize: 30, artistSize: 17, credits: false, tags: true, centered: true).fixedSize(horizontal: false, vertical: true)
-            if lyrics {
-                GeometryReader { g in NPLyrics(style: LyricStyle(size: 22, centered: true, gap: 6, rest: 0.4), height: g.size.height) }.frame(maxHeight: .infinity)
-            } else {
-                Spacer(minLength: 0)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-/// The round cover: a circle, with a slow turn when the listener has asked for one (never with Reduce Motion, never while paused).
-struct OrbitCover: View {
-    @EnvironmentObject var m: PlayerModel
-    let diameter: CGFloat
-    let spins: Bool
-
-    var body: some View {
-        let item = m.focusItem
-        let playing = m.isActive && m.status.state == .playing
-        TimelineView(.animation(minimumInterval: OrbitRing.frameInterval, paused: !(spins && playing))) { t in
-            let turns = spins ? (t.date.timeIntervalSinceReferenceDate / OrbitRing.spinSeconds).truncatingRemainder(dividingBy: 1) : 0
-            CoverView(image: m.hero.image ?? item?.thumb, palette: m.hero.palette, corner: 0, symbol: item?.isStream == true ? "dot.radiowaves.left.and.right" : "music.note")
-                .frame(width: diameter, height: diameter)
-                .clipShape(Circle())
-                .rotationEffect(.degrees(360 * turns))
-                .shadow(color: .black.opacity(0.3), radius: 22, y: 8)
-        }
-        .frame(width: diameter, height: diameter)
-        .accessibilityElement(children: .ignore).accessibilityLabel("Cover")
+        return n == 0 ? "" : "\(n) song\(n == 1 ? "" : "s") queued"
     }
 }
