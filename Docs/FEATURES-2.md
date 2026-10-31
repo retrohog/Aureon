@@ -1,4 +1,4 @@
-# Aureon 0.3: ripping, loudness, multichannel, extreme rates, converting, cloud, casting, Smart DJ
+# Aureon 0.3: ripping, loudness, multichannel, extreme rates, converting, cloud, casting
 
 How each subsystem works and where its limits are. Source folders are named in brackets.
 
@@ -40,7 +40,3 @@ VERBATIM subframes, Rice partitioning; verified bit-exact against CoreAudio's de
 HTTP; `CastController` speaks CASTV2 to the speaker (CONNECT, LAUNCH the Default Media Receiver, LOAD a LIVE stream, heartbeat, volume). The pacing thread
 sends silence while nothing plays so the speaker never has to reload. The sink declares a fixed rate and the player resamples every track to it.
 
-## Smart DJ [SmartDJ/, Packages/SmartDJHelper/]
-`IntentParser` → `ContextBuilder` (candidates, JSON, schema) → model → `SmartDJSelection` (parse, check against `Relevance`, complete). `SmartDJService` owns the
-lifecycle: `enable()` starts `HelperProcessBackend`, which runs `AureonSmartDJ` (MLX Swift, grammar-guided JSON decoding) and talks to it over a pipe;
-`disable()` sends `unload` and ends the process.real`).
