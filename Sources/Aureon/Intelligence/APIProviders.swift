@@ -57,7 +57,7 @@ final class AIKeyStore: Sendable {
         let k = key?.trimmingCharacters(in: .whitespacesAndNewlines)
         store.set(k?.isEmpty == false ? k : nil, for: Self.account(p))
     }
-    func hasKey(_ p: AIProvider) -> Bool { key(for: p) != nil }
+    func hasKey(_ p: AIProvider) -> Bool { store.has(Self.account(p)) }
 }
 
 enum AIAPIError: LocalizedError, Equatable {

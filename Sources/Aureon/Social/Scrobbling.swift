@@ -322,6 +322,12 @@ final class ScrobbleQueue: @unchecked Sendable {
 protocol SecretStore: AnyObject, Sendable {
     func get(_ account: String) -> String?
     func set(_ value: String?, for account: String)
+    /// Whether a secret is stored, without reading it (the Keychain does not ask for a password to answer this).
+    func has(_ account: String) -> Bool
+}
+
+extension SecretStore {
+    func has(_ account: String) -> Bool { get(account) != nil }
 }
 
 final class MemorySecretStore: SecretStore, @unchecked Sendable {
@@ -404,6 +410,12 @@ final class KeychainSecretStore: SecretStore, @unchecked Sendable {
         var r: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &r) == errSecSuccess, let d = r as? Data else { return nil }
         return String(data: d, encoding: .utf8)
+    }
+    func has(_ account: String) -> Bool {
+        if let memory { return memory.get(account) != nil }
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
+                                kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitOne, kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail]
+        return SecItemCopyMatching(q as CFDictionary, nil) == errSecSuccess
     }
     func set(_ value: String?, for account: String) {
         if let memory { memory.set(value, for: account); return }

@@ -234,15 +234,15 @@ struct NPFullBleed: View {
     @EnvironmentObject var info: NPTrackInfo
 
     var body: some View {
-        ZStack {
-            backdrop
-            NPFrame(c, content: { size in
-                Group { if m.look.showLyrics { on(size) } else { off(size) } }
-                    .padding(.horizontal, c.margin).padding(.top, 16 * c.s)
-            }, dock: {
-                NPDock(c, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
-            })
-        }
+        // The backdrop is a background, not a sibling: a cover scaled to fill is larger than the window, and as a sibling it would
+        // grow the whole layout past the window and push the controls off the bottom.
+        NPFrame(c, content: { size in
+            Group { if m.look.showLyrics { on(size) } else { off(size) } }
+                .padding(.horizontal, c.margin).padding(.top, 16 * c.s)
+        }, dock: {
+            NPDock(c, left: { HStack(spacing: 4) { NPActions(size: 44); OutputChip(anchor: .stage).padding(.leading, 10) } }, right: { NPCluster(showsChip: false) })
+        })
+        .background { backdrop }
     }
 
     /// The cover is the picture: laid over the whole window, softened, with a veil so the words keep their contrast.
