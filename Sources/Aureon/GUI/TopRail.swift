@@ -95,9 +95,10 @@ struct RoundIconStyle: ButtonStyle {
         var body: some View {
             configuration.label
                 .font(Typo.sans(16, .regular))
-                .foregroundStyle(on ? Brand.accentText : (hover.v || configuration.isPressed ? Brand.ink : Brand.inkSecondary).opacity(enabled ? 1 : 0.4))
+                .foregroundStyle(on ? Brand.accentText : (hover.v || configuration.isPressed || Theme.current.isLight ? Brand.ink : Brand.inkSecondary).opacity(enabled ? 1 : 0.4))
                 .frame(width: size, height: size)
                 .background(Circle().fill(Brand.ink.opacity(configuration.isPressed ? 0.14 : (hover.v && enabled ? 0.08 : 0))))
+                .overlay(Circle().strokeBorder(Brand.controlEdge, lineWidth: 1))
                 .contentShape(Circle())
                 .animation(Motion.touch, value: hover.v)
                 .onHover { hover.v = $0 }
@@ -133,6 +134,7 @@ struct PulseTopBar: View {
             // the search sits between the buttons at the left and the controls at the right, whatever their width (they never overlap it)
             .padding(.leading, 250).padding(.trailing, max(250, rightWidth + 28))
             HStack(spacing: 8) {
+                DownloadsControl()
                 OutputChip().frame(maxWidth: 230)
                 MiniToggleButton()
                 SettingsButton()
@@ -166,9 +168,10 @@ struct AddFolderButton: View {
                 Image(systemName: "folder.badge.plus").font(Typo.sans(14, .regular))
                 if !compact { Text("Add folder").font(Typo.sans(13.5, .medium)).lineLimit(1).fixedSize() }
             }
-            .foregroundStyle(hover.v ? Brand.ink : Brand.inkSecondary)
+            .foregroundStyle(hover.v || Theme.current.isLight ? Brand.ink : Brand.inkSecondary)
             .padding(.horizontal, compact ? 12 : 16).frame(height: 38)
             .background(Capsule().fill(Brand.panel2))
+            .overlay(Capsule().strokeBorder(Brand.controlEdge, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
@@ -223,27 +226,70 @@ struct SettingsButton: View {
     }
 }
 
-/// The search field, always in the bar. It opens the quick-find (⌘K), which searches the library, the pages and the settings.
+/// The search field, always in the bar: a real text field. Clicking it opens the Search page, typing shows suggestions under it and the results behind it
+/// at once (no Return needed), the arrow keys move through the suggestions, Return searches, Escape closes the list and then clears the field. ⌘K is the
+/// separate quick-find for pages and actions.
 struct TopSearchField: View {
     @EnvironmentObject var m: PlayerModel
+    var body: some View { TopSearchFieldBody(s: m.search) }
+}
+
+private struct TopSearchFieldBody: View {
+    @EnvironmentObject var m: PlayerModel
+    @ObservedObject var s: SearchModel
+    @FocusState private var focused: Bool
     @StateObject private var hover = Box(false)
+    @State private var tipsOpen = false
+
     var body: some View {
-        Button { withAnimation(Motion.glide) { m.showPalette = true } } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").font(Typo.sans(14, .regular))
-                Text("Search songs, albums, artists").font(Typo.sans(14.5, .medium)).lineLimit(1)
-                Spacer(minLength: 8)
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(Typo.sans(14, .regular))
+            TextField("Search songs, albums, artists", text: $m.searchText)
+                .textFieldStyle(.plain).font(Typo.sans(14.5, .medium)).focused($focused)
+                .onSubmit { if s.highlight < 0 { m.submitSearch() } }
+                // Focus alone never navigates: the system gives the field its focus back when a page is rebuilt (opening Now Playing, for one), and
+                // that must not pull the window back to Search. A click on the field opens the Search page (see the tap below).
+                .onChangeCompat(of: focused) { _, now in
+                    s.focused = now
+                    s.dropdownOpen = now && !m.searchText.trimmingCharacters(in: .whitespaces).isEmpty && m.tab == .search
+                }
+                // leaving the Search page (Now Playing, the Library…) puts the field away: no focus, no list
+                .onChangeCompat(of: m.tab) { _, tab in if tab != .search { focused = false; s.dropdownOpen = false; s.highlight = -1 } }
+                .onChangeCompat(of: m.searchText) { _, t in s.highlight = -1; s.dropdownOpen = focused && !t.trimmingCharacters(in: .whitespaces).isEmpty }
+            if !m.searchText.isEmpty {
+                Button { m.searchText = ""; s.dropdownOpen = false; focused = true } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(14)) }
+                    .buttonStyle(.plain).help("Clear the search").accessibilityLabel("Clear the search")
+            }
+            Button { tipsOpen.toggle() } label: { Image(systemName: "questionmark.circle").font(Typo.sans(14)) }
+                .buttonStyle(.plain).help("Search tips").accessibilityLabel("Search tips")
+                .popover(isPresented: $tipsOpen, arrowEdge: .bottom) { SearchTips { tipsOpen = false }.environmentObject(m) }
+            Button { withAnimation(Motion.glide) { m.showPalette = true } } label: {
                 Text("⌘K").font(Typo.mono(11, .regular)).padding(.horizontal, 6).padding(.vertical, 2)
                     .background(RoundedRectangle(cornerRadius: Metrics.tagRadius, style: .continuous).fill(Brand.ink.opacity(0.08)))
             }
-            .foregroundStyle(hover.v ? Brand.ink : Brand.inkSecondary)
-            .padding(.horizontal, 16).frame(height: 38).frame(maxWidth: .infinity)
-            .background(Capsule().fill(Brand.panel2))
-            .contentShape(Capsule())
+            .buttonStyle(.plain).keyboardShortcut("k", modifiers: .command).help("Find a page or an action (⌘K)").accessibilityLabel("Quick find")
         }
-        .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
-        .keyboardShortcut("k", modifiers: .command)
-        .help("Find anything (⌘K)").accessibilityLabel("Search").layoutProbe("top.search")
+        .foregroundStyle(hover.v || focused ? Brand.ink : Brand.inkSecondary)
+        .padding(.horizontal, 16).frame(height: 38).frame(maxWidth: .infinity)
+        .background(Capsule().fill(Brand.panel2))
+        .overlay(Capsule().strokeBorder(Brand.accent.opacity(focused ? 0.9 : 0), lineWidth: 1.5))
+        .contentShape(Capsule())
+        .simultaneousGesture(TapGesture().onEnded { focused = true; if m.tab != .search { withAnimation(Motion.page) { m.go(.tab(.search)) } } })
+        .onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v).animation(Motion.touch, value: focused)
+        // the keys that move through the list: only while it is open, and a handled key never reaches the text field
+        .onKeyMonitor(.downArrow, active: s.dropdownOpen) { let n = m.searchSuggestions().count; if n > 0 { s.highlight = min(n - 1, s.highlight + 1) }; return .handled }
+        .onKeyMonitor(.upArrow, active: s.dropdownOpen) { s.highlight = max(-1, s.highlight - 1); return .handled }
+        .onKeyMonitor(.return, active: s.dropdownOpen && s.highlight >= 0, repeats: false) {
+            let rows = m.searchSuggestions()
+            if rows.indices.contains(s.highlight) { m.activate(rows[s.highlight]) } else { m.submitSearch() }
+            return .handled
+        }
+        .onKeyMonitor(.escape, active: focused, repeats: false) {
+            if s.dropdownOpen { s.dropdownOpen = false; s.highlight = -1 } else { m.searchText = ""; focused = false }
+            return .handled
+        }
+        .anchorPreference(key: SearchFieldAnchorKey.self, value: .bounds) { $0 }
+        .help("Search your library").accessibilityLabel("Search").layoutProbe("top.search")
     }
 }
 
@@ -255,7 +301,7 @@ struct OutputChip: View {
     @StateObject private var hover = Box(false)
 
     private var text: String {
-        let name = m.selectedDevice.map { QuickDevices.shortName($0.name) } ?? "No device"
+        let name = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT_DEVICE"] ?? m.selectedDevice.map { QuickDevices.shortName($0.name) } ?? "No device"
         guard m.isActive, let rate = m.status.info?.sampleRate, rate > 0 else { return name }
         return name + " · " + formatRate(rate)
     }
@@ -266,9 +312,10 @@ struct OutputChip: View {
                 Circle().fill(Brand.accent).frame(width: 8, height: 8)
                 Text(text).font(Typo.sans(13, .medium)).lineLimit(1)
             }
-            .foregroundStyle(m.quickPanel == anchor || hover.v ? Brand.ink : Brand.inkSecondary)
+            .foregroundStyle(m.quickPanel == anchor || hover.v || Theme.current.isLight ? Brand.ink : Brand.inkSecondary)
             .padding(.horizontal, 14).frame(height: Metrics.pillHeight)
             .background(Capsule().fill(Brand.ink.opacity(m.quickPanel == anchor ? 0.1 : (hover.v ? 0.06 : 0))))
+            .overlay(Capsule().strokeBorder(Brand.controlEdge, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }.animation(Motion.touch, value: hover.v)
@@ -283,10 +330,11 @@ struct OutputChip: View {
 /// The rail down the left: five destinations, each a symbol over a small label. The one you are in sits on a raised plate.
 struct PulseRail: View {
     @EnvironmentObject var m: PlayerModel
+    @ObservedObject private var slsk = SoulseekModel.shared
 
     var body: some View {
         VStack(spacing: 6) {
-            ForEach(RailDestination.rail) { RailItem(destination: $0) }
+            ForEach(RailDestination.rail(soulseek: slsk.enabled)) { RailItem(destination: $0) }
             Spacer(minLength: 0)
         }
         .padding(.top, 8).frame(width: Metrics.railWidth)
@@ -305,7 +353,8 @@ struct RailItem: View {
             withAnimation(Motion.page) { m.go(on ? destination.home : target) }
         } label: {
             VStack(spacing: 5) {
-                Image(systemName: destination.icon).font(Typo.sans(20, .regular)).frame(height: 24)
+                if destination == .soulseek { SoulseekMark(size: 22).frame(height: 24) }
+                else { Image(systemName: destination.icon).font(Typo.sans(20, .regular)).frame(height: 24) }
                 Text(destination.rawValue).font(Typo.sans(11, on ? .medium : .regular)).lineLimit(1)
             }
             .foregroundStyle(on || hover.v ? Brand.ink : Brand.inkSecondary)
