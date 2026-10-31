@@ -214,14 +214,8 @@ swift build -c release
 
 ## Known issues
 
-- **Soulseek has only been checked against a simulated server.** Login, search and downloads on the live network are new in 0.5.0, so expect rough edges. Reports are very welcome; the Connection page has a network check you can paste into an issue.
-- **Scratching on the Turntable is not bit-perfect.** The sound follows your hand through pitch control, so the signal path shows it. A switch on the deck turns it off.
 - **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it is not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
-- **The Intel build and macOS 13 have not been tested on real hardware.** They have been built and run natively on Apple Silicon and under Rosetta only.
-- **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance.
-- **The mini player and the menu bar player use the app's colours.** They do not have a theme of their own yet.
-- **Windows is not included.** The Windows version follows separately.
 
 ### Not verified on real hardware or accounts
 
@@ -239,8 +233,6 @@ swift build -c release
 
 | | |
 |:--|:--|
-| **Soulseek, next steps** | Separate pages for the wishlist, rules and users, protocol log filters, and pausing transfers for cast and DJ in every case. |
-| **Intel and macOS 13 checks** | Run the universal build on real Intel Macs and on macOS 13, and tune the rate planner for older models. |
 | **Windows** | A native Windows 11 version of the same design. |
 | **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
 | **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
