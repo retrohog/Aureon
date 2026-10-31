@@ -20,7 +20,7 @@ Requirements: Swift 6 toolchain (the Command Line Tools are enough). Some visual
 1. [Bit-perfect engine and DSP](#1-bit-perfect-engine-and-dsp)
 2. [Transitions](#2-transitions)
 3. [Oversampling filters, DSD and PCM→DSD](#3-oversampling-filters-dsd-and-pcmdsd)
-4. [Intelligence (smart features)](#4-intelligence-smart-features)
+4. [Audio enhancer, Remix and Balanced Shuffle](#4-audio-enhancer-remix-and-balanced-shuffle)
 5. [Library and folders](#5-library-and-folders)
 6. [Tag editing](#6-tag-editing)
 7. [Search](#7-search)
@@ -33,6 +33,7 @@ Requirements: Swift 6 toolchain (the Command Line Tools are enough). Some visual
 14. [Performance](#14-performance)
 15. [Sources, outputs and tools](#15-sources-outputs-and-tools)
 16. [Not included](#16-not-included)
+17. [Soulseek](#17-soulseek)
 
 ---
 
@@ -45,7 +46,7 @@ Requirements: Swift 6 toolchain (the Command Line Tools are enough). Some visual
 - **Memory playback.** Whole tracks are decoded into RAM before playing and the next two are prefetched. No disk reads happen during playback.
 - **Live queue.** Remove, reorder, insert and append while playing without disturbing the audible track.
 - **Multichannel.** 5.1 and 7.1 files play at their own channel count when the device has the outputs (speaker labels are matched, not guessed); otherwise an ITU-R BS.775 downmix is used.
-- **Shuffle and repeat.** Shuffle off / normal / Smart Shuffle (no back-to-back artists, favours liked songs, uses tempo and key when known); repeat off / all / one, gapless.
+- **Shuffle and repeat.** Shuffle off / normal / Balanced Shuffle (no back-to-back artists, favours liked songs, uses tempo and key when known); repeat off / all / one, gapless.
 - **Simulated only.** **Integer-format output and DoP** are implemented and exercised against recording sinks, but not against a physical USB DAC. `Aureon hwdebug` tells you what your hardware accepts.
 
 ### Real-time safety
@@ -120,35 +121,19 @@ Aureon play --dsd-out 512 --modulator 7 --filter apodizing track.flac
 
 ---
 
-## 4. Intelligence (smart features)
+## 4. Audio enhancer, Remix and Balanced Shuffle
 
-Every learned model in Aureon lives behind one gate and one settings page, the **Intelligence** tab.
+### Real-time audio enhancer
+- **Off by default**, on Apple Silicon only. The switch, the model chooser and a status line are on the **Audio** page. The hardware is read from the kernel, not from how the binary was built, so an x86_64 copy running under Rosetta on Apple Silicon is still recognised.
+- **Render-thread safe.** The switch is a single atomic load, so even code on the audio path can ask it without locking or allocating.
+- **Your own CoreML model, under one billion parameters.** It is checked before anything is loaded: at most 1 B parameters and 1.5 GiB of weights (CoreML sizes are estimated from the weight file). A model over the cap is refused with the reason.
+- **Audio never leaves your Mac.**
 
-### Master switch and defaults
-- **Enable Intelligence Features** is a global master switch. Switching it off takes effect immediately: the Smart DJ model process quits, the Smart Remixer stops, the semantic index is dropped from memory, Smart Shuffle falls back to plain rules and the audio enhancer's gate closes. Every feature then uses its classic path.
-- **On by default on Apple Silicon, off by default on Intel Macs.** The hardware is read from the kernel, not from how the binary was built, so an x86_64 copy running under Rosetta on Apple Silicon is still recognised (and told it is translated).
-- **Intel warning.** Switching the master switch on in an Intel Mac first shows a warning sheet. It only takes effect once the warning is accepted, and the acceptance can be withdrawn.
-- **One switch per feature**, plus an indicator of what this Mac can run (Apple Silicon with Neural Engine, Intel, translated).
-- **Render-thread safe.** The gate is a single atomic load of a 32-bit mask, so even code on the audio path can ask it without locking or allocating.
-
-### Features behind the gate
-
-| Feature | What it does | Runs |
-|---|---|---|
-| **Smart DJ** | Builds a set from a sentence ("10 upbeat electronic tracks for a workout"). Plain code reads the request, narrows the library to about 60 candidates, a language model picks from them with **grammar-constrained** JSON output, and a ranking checks and completes the result so it is always valid. | On device (MLX helper process) or via API |
-| **Natural-language playlists** | "A 2-hour mix of late-night, low-energy acoustic tracks with high dynamic range." The request is parsed for length, count, genre, tempo, energy, decade, DR and mood; the whole library is scored using Aureon's own measurements (tempo, key, energy, loudness, DR) plus tags and semantic similarity; the model fills in what the words leave open; the result is fitted to the length and ordered along an energy arc. Works without a model, by ranking alone. | On device or via API |
-| **Semantic Search** | Finds songs by meaning ("rainy sunday piano"). Every song gets a short description that is turned into a vector; a query finds the nearest ones. The index is built in the background, cached per model and freed when the feature is off. | Apple's on-device sentence embeddings (any Mac, Intel included) or an API |
-| **Smart Shuffle** | A small transition network orders a queue so each song flows into the next. | On device |
-| **Smart Remixer** | A small on-device network picks filter sweeps, echo-outs, loop rolls, drops, risers and stutters on the bar line of the DJ console and learns from thumbs. It performs the decks' own controls; it does not separate stems. | On device |
-| **Real-time audio enhancer** *(experimental)* (neural upscaler) | Bandwidth extension for lossy sources (radio, podcasts, MP3/AAC files). See the note below. | Strictly on device |
-| **Lyrics generation** *(experimental)* | Writes time-synced lyrics for a song that has none, using a Whisper speech model. See [Lyrics](#9-lyrics). | Strictly on device |
-
-The model for Smart DJ runs in a **helper process** that starts when the feature is switched on and quits when it is switched off, so its memory goes back to the system.
-
-### Local models and API providers
-- **Local models under one billion parameters.** You may load your own model, but it is checked before anything is loaded: at most 1 B parameters and 1.5 GiB of weights. Parameter counts are read straight from safetensors and GGUF headers in milliseconds; CoreML sizes are estimated from the weight file. A model over the cap is refused. MLX folders run on native Apple Silicon; the Whisper family (39 M to 244 M parameters) is well under the cap.
-- **Bring your own API key** for OpenAI, DeepSeek or any OpenAI-compatible endpoint. Keys are stored in the **macOS Keychain** only, never in preferences or logs. Addresses must be HTTPS, except a server on this Mac. Replies are requested as JSON schema, stepping down to JSON mode or plain text if a server refuses. A "Check connection" button validates the address and key without spending tokens.
-- **Privacy by construction.** Only text goes to an API (the request and short song descriptions). **Audio never leaves your Mac**, and the audio enhancer and lyrics generation are never routed to an API.
+### Remix and Balanced Shuffle
+| Feature | What it does |
+|---|---|
+| **Balanced Shuffle** | Orders a queue by plain rules: no back-to-back artists, liked songs first, and each song chosen to flow into the last by tempo, key and energy when they are known. No model. |
+| **Remix** | A small network picks filter sweeps, echo-outs, loop rolls, drops, risers and stutters on the bar line of the DJ console and learns from thumbs. It performs the decks' own controls; it does not separate stems. Switched on with the Remix button. |
 
 ### Note on the real-time audio enhancer
 The engine is complete: a C++ overlap-add and watchdog core (`AureonNeuralCore`), a CoreML worker on the Neural Engine, and a `FrameSource` on the decode thread, so inference never touches the audio thread. It is **off by default** because it changes the samples. If inference falls behind real time (the watchdog trips at a real-time factor of 0.8) or a model fails, playback continues unchanged through the classic sinc resampler. It needs a CoreML model you supply; the converter script is in `Tools/upscaler`. No model is bundled, and the converter has not been run against a real trained model. Switching it off is heard after the buffered audio drains, up to five seconds.
@@ -200,7 +185,6 @@ The engine is complete: a C++ overlap-add and watchdog core (`AureonNeuralCore`)
   - **Values:** quoted exact text, contains with `*` and `?` wildcards, ranges `a..b`, comparisons `>`, `>=`, `<`, `<=`, `=`, and hierarchical tags such as `tag:"Classical/Symphonies"`.
   - Case- and accent-insensitive. Errors point at the character where the query went wrong.
 - **Plain search** across songs, albums, artists and works on the Search page.
-- **Semantic Search** ("matches by meaning") appears under the ordinary results while the Intelligence feature is on. See [Intelligence](#4-intelligence-smart-features).
 
 ---
 
@@ -220,16 +204,13 @@ Lyrics are found in this order, and a time-synced result always beats a plain on
 1. **A sidecar file** next to the song (`.lrc` or `.txt`).
 2. **The file's own tags**: embedded USLT/SYLT frames and lyrics tags.
 3. **LRCLIB** (lrclib.net), a free open database of synced lyrics. Only the title, artist, album and length are sent, and results are cached on your Mac so a song is asked about once.
-4. **Generated on your Mac** with Whisper (tiny, base or small; base by default) for songs that have none. See the note below.
 
 Features:
 - **Sing-along view** on Now Playing: the current line is sharp and glowing, the lines around it softly blurred, and the page follows the song. Instrumental passages are marked as breaks. Scrolling is the system's own; the view waits a few seconds after you scroll and a pill brings you back.
-- **Word-level highlighting** when the source carries word times (enhanced LRC, or lyrics Aureon generated), animated at the display's refresh rate.
+- **Word-level highlighting** when the source carries word times (enhanced LRC), animated at the display's refresh rate.
 - **Reduce Motion** is respected: lines then change brightness only.
 - **Optional write-back** of lyrics to the file's tags (LRC text when timed).
 - Read and written with Aureon's own LRC reader/writer, with tolerant parsing.
-
-**Whisper generation** is experimental and part of the Intelligence features: off with the master switch, never sent to an API, and only run after you agree for that song. The model runs in a separate helper process (`Packages/WhisperHelper`) so its memory returns to the system when it is unloaded and a failure cannot take the player down. The surrounding code (audio preparation to 16 kHz mono, filtering Whisper's known inventions on silence, splitting long passages into lines, marking instrumental stretches) is implemented; the helper depends on a speech-model package that has not yet been built and run end to end on a real model, so treat this one as experimental.
 
 ---
 
@@ -271,7 +252,7 @@ A two-deck console on one mixer clock.
 - **Headphone cue (PFL)** on a second device or outputs 3–4 (run with simulated devices only), and a **WAV mix recorder**.
 - **Library browser** with BPM, key and energy columns, and "Analyse all".
 - **Customizable layout.** The console's decks, mixer channels, bottom bar and page can each show, hide and reorder their sections from the Layout button; the choice is saved.
-- **Auto DJ** and **Smart Remixer** (see [Intelligence](#4-intelligence-smart-features)), and **Smart DJ** set building.
+- **Auto DJ** and **Remix** (see [Audio enhancer, Remix and Balanced Shuffle](#4-audio-enhancer-remix-and-balanced-shuffle)). DJ mode is optional: it is switched on with the DJ button, never by default.
 - **Limits.** No keylock (changing pitch changes key), no scratching. Tempo and key are estimates and can be wrong on tracks without a clear beat (half and double time is common). The mix runs through a limiter.
 
 ---
@@ -283,7 +264,7 @@ A two-deck console on one mixer clock.
 - **Pop-ups.** Every pop-up (the output list, Add to playlist, shuffle and the rest) is drawn inside the window, placed by its button, flipped and kept wholly in view, and scrolls when the window is small.
 - **Backdrops.** Flat, Soft, **Album** (colours from the cover that is playing, at Subtle, Rich or Vivid, rendered once off the main thread and cross-faded on a track change) and **Starlight** (a Metal field of fine stars with settings for intensity, motion, shooting stars, twinkle and tint).
 - **Type and density.** Figtree (SIL Open Font License, bundled with its licence) in Light, Regular or Medium, a text size from 85 % to 130 %, and Compact or Comfortable density.
-- **Now Playing.** Seven layouts chosen in Settings with a preview of each: Stage, Classic, Full-bleed, Carousel, Lumen, Chillax and Orbit. In every layout the transport, the seek bar with both times, the queue, the mini player, the volume and the output chip stay in view at any window size; lyrics and Up next shrink first. Large synced lyrics (their size and timing are in Settings), Add to playlist, credits, format tags and the signal path.
+- **Now Playing.** Seven layouts chosen in Settings with a preview of each: Stage, Classic, Full-bleed, Carousel, Chillax, Poster and Turntable. In every layout the transport, the seek bar with both times, the queue, the mini player, the volume and the output chip stay in view at any window size; lyrics and Up next shrink first. Large synced lyrics (their size and timing are in Settings), Add to playlist, credits, format tags and the signal path.
 - **Mini player and menu bar.** Four forms (bar, strip, card, menu bar popover), dragged from the cover, the names or any empty space (kept wholly on a screen, remembered for each display); opening it puts the main window away and the main window's return puts it away. It can stay above other windows, follow you to every desktop and remember its place; solid, gradient or blur background, adjustable opacity. The menu bar item shows the logo, the logo and title, or the title; its popover opens on a click or on hover and closes by itself.
 - **Memory.** The queue and the song with its place, the page and its scroll position, the window's size and place on each display, the output device, the colours and layout, and the mini player are restored. Playback resumes Paused (default), Playing, after asking, or not at all; the volume is never restored.
 - **Home.** A greeting for the part of the day, quick picks and shelves (Back in rotation, Hi-Res you haven't heard, New in your library, Because you play…, a mood for the hour) ranked on the Mac from play counts and times; **Why these?** shows the reasons and **Refresh mix** draws again.
@@ -297,7 +278,6 @@ A two-deck console on one mixer clock.
 - **Scroll-wheel on sliders.** Sliders respond to the scroll wheel and trackpad, and custom controls pass scrolling on to the page when they cannot use it. The volume slider changes with **⌥ + scroll** by default (a plain scroll over the bar scrolls the page), in steps of 1 % with no single event above 3 %; Settings can turn it off or limit it to the handle.
 - **Volume safety.** The volume controls never invent a reading (an unreadable device volume is shown as unavailable), move only when you grab the knob, and obey an optional ceiling.
 - **Visualizers.** Spectrum, spectrogram and analog VU needles (300 ms ballistics, peak hold, clip light), fed by a lock-free tap, shown together in the Analyser panel.
-- **Intelligence page** with the master switch, hardware badge, per-feature switches, local model loader and API settings.
 - **Home page** with what you were playing, radio and podcast doors and album rails.
 - **Accessibility.** Reduce Motion is honoured in the animated views.
 
@@ -305,7 +285,7 @@ A two-deck console on one mixer clock.
 
 ## 14. Performance
 
-- **120 fps interface.** Heavy work (Core Data fetches, model inference, disk reads, cross-correlation, waveform and colour analysis) runs off the main thread. Scrolling, transitions and the playhead run at the display's refresh rate.
+- **120 fps interface.** Heavy work (Core Data fetches, enhancer inference, disk reads, cross-correlation, waveform and colour analysis) runs off the main thread. Scrolling, transitions and the playhead run at the display's refresh rate.
 - **Meters, spectrum and spectrogram are capped at 60 fps** to leave headroom, fed by a lock-free tap that only copies samples on the audio thread.
 - **Artwork cache.** Cover art is extracted once and cached as a 384-px thumbnail, a 1200-px large picture and a stored colour palette in `~/Library/Caches/Aureon/Artwork`, content-addressed so identical covers are shared. Later launches never re-parse audio files for art. A "no cover" answer is remembered for 12 hours.
 - **Paged albums.** The album grid loads 48-row pages from SQL and keeps at most five resident, so a library of thousands of albums scrolls smoothly.
@@ -314,7 +294,7 @@ A two-deck console on one mixer clock.
 - **Delta library updates** (FSEvents) instead of a startup rescan.
 - **Start-up benchmark** that sizes buffers and picks what this Mac can sustain in real time for extreme rates and PCM→DSD, so slower machines degrade gracefully.
 - **System optimisation.** Time-constraint scheduling for the decode thread and an optional privileged helper that pauses Spotlight and Time Machine while you listen, with fail-safe resume (see [SYSTEM-OPTIMIZATION.md](SYSTEM-OPTIMIZATION.md)). **Simulated only.** The helper has not been run as root; its logic has only been run against stand-in processes.
-- **Models stay out of the way.** The language model and semantic index load when needed, unload after a period of idleness, and free their memory when the master switch is turned off.
+- **The enhancer's model stays out of the way.** It loads when the enhancer is switched on and is freed when it is switched off.
 
 ---
 
@@ -344,3 +324,21 @@ Listed so nothing here is a surprise:
 - **Beat-matched transitions** between queued songs. The DJ console beat-matches; queue playback does not.
 - **Keylock and scratching** in DJ mode, and **MIDI output / LED feedback**.
 - **Encryption on the daemon's remote channel** (the Wi-Fi bridge uses TLS-PSK, which has no forward secrecy and is meant for a trusted home network).
+
+---
+
+## 17. Soulseek
+
+A native client for the Soulseek network, built into the player. It is off until you switch it on in **Settings → General**, and nothing connects until you sign in with your own account.
+
+- **Search and downloads.** Search the network, filter by lossless, free slot or bit depth, and download with resume. Up to three downloads run at once, and a failed one is retried with a growing delay before it is marked as needing attention.
+- **Clean files.** Downloads are written to a hidden folder (`~/Music/Aureon Soulseek/.incomplete`) and moved into `Downloads` in one step once the size matches. Finished albums join your library once, with the files unchanged.
+- **Sharing is your choice.** Sharing is a separate switch, off by default; only folders you tick are shared, under share names that never contain your folders or your user name. Uploads are taken in turn per user, with a slot limit and an optional speed limit.
+- **People.** Browse another user's shares, send private messages, join rooms, block users, keep a wishlist.
+- **Out of the way of playback.** Transfers pause for a few seconds while a high-resolution song streams from the network; uploads drop to one at a time while music plays. The network code never runs on the audio thread.
+- **Readable.** A protocol log on the Connection page, and a network check (listening port, peers reached, searches sent, results read) to help when a search finds nothing. Your password is kept in the Keychain and never written to the log.
+- **Top bar.** A Downloads button with a count and a speed readout (⌥⌘T opens it, ⌥⌘P pauses everything).
+
+Soulseek is a network run by its users. What you download or share there is your responsibility; see [SOULSEEK-NOTICE.md](SOULSEEK-NOTICE.md). Notes for porting the client to Windows are in [HANDOFF-SOULSEEK-WINDOWS.md](HANDOFF-SOULSEEK-WINDOWS.md).
+
+**Verification.** Login, search, downloads, resume, uploads and sharing have been run against a simulated server on the loopback interface. They have not been checked at scale on the live network.

@@ -4,13 +4,13 @@
 
 <br/>
 
-[![Download Aureon 0.4.0](https://img.shields.io/badge/Download-Aureon%200.4.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
+[![Download Aureon 0.5.0](https://img.shields.io/badge/Download-Aureon%200.5.0-f0b45f?style=for-the-badge&logo=apple&logoColor=111111)](https://github.com/retrohog/Aureon/releases/latest)
 
-![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%C2%B7%20Intel-macOS%2015%2B-1c2340?style=flat-square&logo=apple&logoColor=white)
+![Apple Silicon and Intel](https://img.shields.io/badge/Apple%20Silicon%20%C2%B7%20Intel-macOS%2013%2B-1c2340?style=flat-square&logo=apple&logoColor=white)
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?style=flat-square&logo=swift&logoColor=white)](Package.swift)
 [![MIT](https://img.shields.io/badge/license-MIT-f0b45f?style=flat-square)](LICENSE)
 
-<img src="Docs/images/pulse/now-playing-stage.png" alt="Aureon's Now Playing page" width="100%" />
+<img src="Docs/images/0.5/now-playing-cover-flow.png" alt="Aureon's Now Playing page in the Cover flow layout" width="100%" />
 
 </div>
 
@@ -19,11 +19,11 @@ their own sample rate and bit depth into 32-bit integers, a lock-free ring buffe
 signal-path view shows every stage in the chain. Upsampling, EQ, crossfeed, room correction and DSD are there when you
 switch them on; when they are off they are out of the path, not set to neutral.
 
-> **Status: early (0.4).** What could not be verified without
-> special hardware, accounts or signing is listed under [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
+> **Status: early (0.5).** What could not be verified without special hardware, accounts or signing is listed under
+> [Known issues](#known-issues) and [Not verified](#not-verified-on-real-hardware-or-accounts).
 >
-> **Platforms:** 0.4.0 runs on **Apple Silicon and Intel Macs, macOS 15 or later**. The Windows version follows separately. The app is not notarised
-> yet, so the first launch needs right-click → **Open**.
+> **Platforms:** 0.5.0 runs on **Apple Silicon and Intel Macs, macOS 13 Ventura or later**. The Windows version follows
+> separately. The app is not notarised yet, so the first launch needs right-click → **Open**.
 
 <br/>
 
@@ -32,23 +32,25 @@ switch them on; when they are off they are out of the path, not set to neutral.
 |  |  |  |
 |:--|:--|:--|
 | **Bit-perfect by default**<br/>FLAC, ALAC, WAV and AIFF at their native rate and depth, gapless, with exclusive mode and automatic rate switching. | **Sound shaping, opt-in**<br/>Sinc upsampling, PCM→DSD up to DSD512, EQ, AutoEQ, crossfeed, room correction and dither. | **Signal path**<br/>Shows every stage, and marks the first one that changes a sample. |
-| **New interface**<br/>Thirteen colours in dark and light, with a true-black AMOLED, six Now Playing layouts, a mini player and a menu bar player. | **Speaker levelling**<br/>Each output gets a job, a level and a delay, and the levels follow the volume. | **DJ console**<br/>Two decks, BPM and key detection, loops, hot cues, effects, crossfader, headphone cue and MIDI controllers. |
+| **Soulseek, built in**<br/>Search, download and share from inside the player, with finished albums joining your library. Off until you switch it on. | **Seven Now Playing layouts**<br/>Cover flow, Poster, Turntable, Stage, Classic, Full-bleed and Chillax, with a quality tag that tells the truth about each file. | **DJ console**<br/>A new console in the style of professional DJ software. Optional, and off until you turn it on. |
 
 <br/>
 
-## What's new in 0.4.0
+## What's new in 0.5.0
 
 | | |
 |:--|:--|
-| **New design** | A new shell with a search bar, an output chip and a rail of six places (Library, Playlists, Radio, Podcasts, Rooms, Sound). Set in Figtree, with Compact and Comfortable density. |
-| **Colours** | A true-black **AMOLED** and twelve colours (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each in dark and light. **Dark**, **Light** or **Auto** (follows macOS), a **Pure black** switch, one **Brightness** slider, any accent colour, and the Starlight backdrop. |
-| **Now Playing** | Seven layouts (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax, Orbit) with the transport, seek bar, queue and volume always in view. Add to playlist, credits, large synced lyrics. |
-| **Mini player** | A floating player in four forms, dragged from anywhere on it, that takes the place of the main window, and a menu bar player with a popover. |
-| **Memory** | Reopens with your queue, song and position, page, window place on each display, output, theme and layout. |
-| **Home and Folders** | A Home that follows the time of day, and a Folders page that can remove a library folder safely. |
-| **Queue** | Queue, History and Output in one panel. |
+| **Runs on macOS 13** | The minimum is now macOS 13 Ventura, down from 15, so older Intel and Apple Silicon Macs are covered. |
+| **Soulseek** | A native client with search, downloads, uploads, browse, chat rooms, private messages and a wishlist. Sharing is off by default, and finished downloads join your library when you want them to. |
+| **Quality tag** | A Hi-Res, Lossless or Lossy chip on the cover, the format as a boxed stamp (for example FLAC 24/96), and a quiet line of Exclusive, Signal path, Processing and Info. Each part opens its details. |
+| **New layouts** | Cover flow, Poster and Turntable are new. The Turntable is playable: drag the record to scratch, with the sound following your hand. Chillax shows up to fifteen queued songs. |
+| **Search** | A new search with suggestions, filters and a genre grid built from your own covers. It closes when you click away. |
+| **DJ console** | Redesigned in the style of professional DJ software, fits any window without scrolling, and stays off until you turn it on. |
+| **Chunky controls** | New transport buttons that are easier to see and hit, in every layout and the mini player. |
+| **Extra panels** | Optional cards on Now Playing, such as listening stats and loudness, with a switch for each. |
+| **Simpler** | The Intelligence page, Smart DJ and the other model-based helpers are gone. Smart Shuffle is now Balanced Shuffle, based on tempo, key and energy. |
 
-The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.4.0.md).
+The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.5.0.md).
 
 <br/>
 
@@ -56,16 +58,20 @@ The full list, with fixes, is in the [release notes](RELEASE-NOTES-0.4.0.md).
 
 <table>
 <tr>
-<td width="50%"><img src="Docs/images/pulse/now-playing-stage.png" alt="Now Playing in the Stage layout with large synced lyrics" /><br/><sub><b>Stage.</b> Large synced lyrics, the waveform and the song at the foot.</sub></td>
-<td width="50%"><img src="Docs/images/pulse/now-playing-light.png" alt="Now Playing in the Lumen layout on a light theme" /><br/><sub><b>Lumen, on the light side of Midnight.</b> Every colour has a dark and a light side.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/now-playing-cover-flow.png" alt="Now Playing in the Cover flow layout with the quality tag under the artist" /><br/><sub><b>Cover flow.</b> The current song in the middle, its neighbours either side, and the quality tag under the artist.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/quality-tag-panel.png" alt="The format panel open under the quality tag" /><br/><sub><b>Quality tag.</b> Each part opens its details: the file, the signal path, processing and song info.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/pulse/now-playing-chillax.png" alt="Now Playing in the Chillax layout" /><br/><sub><b>Chillax.</b> A large cover, the signal path and the queue as a shelf.</sub></td>
-<td width="50%"><img src="Docs/images/pulse/now-playing-carousel.png" alt="Now Playing in the Carousel layout" /><br/><sub><b>Carousel.</b> The cover among its neighbours.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/now-playing-turntable.png" alt="Now Playing in the Turntable layout" /><br/><sub><b>Turntable.</b> A playable deck. Drag the record and the sound follows.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/now-playing-poster.png" alt="Now Playing in the Poster layout" /><br/><sub><b>Poster.</b> A large cover, the credits and what plays next.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="Docs/images/pulse/settings-appearance.png" alt="Settings, Appearance: mode, pure black and the colour families" /><br/><sub><b>Appearance.</b> Dark, Light or Auto, Pure black, AMOLED and twelve colours shown in both halves, and one brightness slider.</sub></td>
-<td width="50%"><img src="Docs/images/pulse/queue-light.png" alt="The queue panel with Queue, History and Output tabs" /><br/><sub><b>Queue.</b> With History and Output beside it.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/soulseek-search.png" alt="The Soulseek page with search results" /><br/><sub><b>Soulseek.</b> Search, filters and transfers on one page, with a Downloads button in the top bar.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/search-genres.png" alt="Search with the genre grid" /><br/><sub><b>Search.</b> Suggestions as you type, and genres drawn from your own covers.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="Docs/images/0.5/dj-console.png" alt="The DJ console" /><br/><sub><b>DJ console.</b> Two decks, waveforms, effects and a library drawer, scaled to the window.</sub></td>
+<td width="50%"><img src="Docs/images/0.5/now-playing-light.png" alt="Now Playing on a light theme" /><br/><sub><b>Light themes.</b> Every colour has a dark and a light side, and the controls keep their contrast.</sub></td>
 </tr>
 </table>
 
@@ -105,24 +111,35 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 | **EQ and correction** | 10-band parametric EQ, AutoEQ headphone profiles, BS2B crossfeed, partitioned-FFT room correction from REW impulse responses, Audio Unit plug-ins. |
 | **Dither** | TPDF and noise-shaped dither for the last bits. |
 
+
 ### Now Playing and interface
 
 | | |
 |:--|:--|
-| **Shell** | A search bar (⌘K reaches every page and main action), the output chip, the mini player button and Settings across the top, and a rail of six places: Library, Playlists, Radio, Podcasts, Rooms and Sound. A quick control panel opens from the output chip (⌥⌘D); every pop-up opens inside the window and never over its edge. |
-| **Colours** | A true-black **AMOLED** and twelve families (Graphite, Midnight, Ocean, Forest, Mint, Plum, Violet, Rose, Ember, Cocoa, Dune, Slate), each with a dark and a light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, one **Brightness** slider that lightens or darkens the surfaces in every colour (text and accent stay put), and any accent colour. |
-| **Backdrops** | Flat, Soft, **Album** (colours from the playing cover, at Subtle, Rich or Vivid) and **Starlight**, a field of fine stars with settings for intensity, motion, shooting stars and twinkle. |
+| **Shell** | A search bar (⌘K reaches every page and main action), the output chip, the Downloads button, the mini player button and Settings across the top, and a rail of places: Library, Playlists, Radio, Podcasts, Rooms, Sound and Soulseek. |
+| **Colours** | A true-black **AMOLED** and twelve families, each with a dark and a light side. **Dark**, **Light** or **Auto**, **Pure black** for any dark side, one **Brightness** slider and any accent colour. |
+| **Backdrops** | Flat, Soft, **Album** (colours from the playing cover) and **Starlight**. |
 | **Type** | Figtree, bundled with its licence, in Light, Regular or Medium, with a text size from 85 % to 130 %, and Compact or Comfortable density. |
-| **Now Playing** | Seven layouts with a preview of each in Settings: Stage, Classic, Full-bleed, Carousel, Lumen, Chillax and Orbit. The transport, seek bar, queue, mini player, volume and output chip stay in view at every window size, and a setting lets them rest after a few seconds. The seek bar can be the layout's own, a waveform or a line, everywhere. |
-| **Lyrics** | Large, time-synced lines in every layout, from a `.lrc` file, the file's tags or LRCLIB. Their size and ±2 s timing are in Settings. |
-| **Song details** | Add to playlist, credits under the artist, format tags (Lossless, FLAC, 24-bit, rates, shared or exclusive) and the signal path. |
-| **Mini player** | Four forms: a bar, a strip, a card and a menu bar popover. Dragged from the cover, the names or any empty space, and kept wholly on a screen; its place is remembered for each display. Opening it puts the main window away. |
-| **Menu bar** | The logo, the logo and title, or the title; a popover that opens on a click or on hover and closes by itself. |
+| **Now Playing** | Seven layouts with a preview of each in Settings: Cover flow, Poster, Turntable, Stage, Classic, Full-bleed and Chillax. The transport, seek bar, queue, volume and output chip stay in view at every window size. |
+| **Quality tag** | A Hi-Res, Lossless, Lossy, DSD or Live chip on the cover, the format as a stamp, and a line of Exclusive, Signal path, Processing and Info. Hi-Res only appears for files that really are above CD quality. |
+| **Extra panels** | Optional cards filled from your own data, at most two at a time, with a master switch and one per card. |
+| **Lyrics** | Large, time-synced lines in every layout, from a `.lrc` file, the file's tags or LRCLIB, with their size and ±2 s timing in Settings. |
+| **Mini player** | Four forms: a bar, a strip, a card and a menu bar popover, kept wholly on a screen and remembered for each display. |
 | **Home** | Follows the part of the day, with quick picks and shelves chosen on your Mac from what you play. |
 | **Queue** | Queue, History and Output tabs. |
-| **Memory** | Reopens with your queue, song and place in it, page, scroll position, window place on each display, output, theme and layout. Choose Paused, Playing, Ask me or Start fresh. |
-| **Waveform and analyser** | The waveform keeps its contrast on every theme and marks each seek; the analyser shows spectrum, spectrogram and levels together. |
-| **Settings for motion** | Fade or no page transitions, a launch animation you can turn off, and Reduce Motion is honoured. |
+| **Memory** | Reopens with your queue, song and place in it, page, window place on each display, output, theme and layout. |
+| **Search** | Suggestions as you type, filters, a top result, recent searches and a genre grid built from your own covers. |
+
+### Soulseek
+
+| | |
+|:--|:--|
+| **Client** | A native client written for Aureon: search, downloads with resume, uploads, browsing other users, chat rooms, private messages, friends, blocking, a wishlist and a readable protocol log. |
+| **Your files stay clean** | Downloads arrive in a hidden folder and move into place only when complete. Finished albums join your library once, unchanged, so nothing is re-tagged or rewritten. |
+| **Sharing is your choice** | Sharing is off until you turn it on, and only the folders you tick are shared. |
+| **Out of the way of playback** | Transfers pause if the player stalls, while casting to a network speaker, or while a DJ deck is live. |
+
+Soulseek is off by default (**Settings → Soulseek**). You are responsible for what you download and share; see the notice in the app and respect the rights of the artists you listen to.
 
 ### Library and metadata
 
@@ -151,14 +168,9 @@ takes no locks and sends no Swift or Objective-C messages. See [Docs/ARCHITECTUR
 
 | | |
 |:--|:--|
-| **DJ console** | Two decks on one mixer clock: waveforms, BPM and key (Camelot) detection, pitch and bend, SYNC, quantize, hot cues, loops, rolls, a 3-band EQ with kills, sweep filter, echo / reverb / flanger / gate, crossfader curves, headphone cue and a WAV mix recorder. |
+| **DJ console** | Two decks on one mixer clock: waveforms, BPM and key (Camelot) detection, pitch and bend, SYNC, quantize, hot cues, loops, rolls, a 3-band EQ with kills, sweep filter, effects, crossfader curves, headphone cue and a WAV mix recorder. Scales to fit the window, with the library in a drawer. Off until you turn it on in Settings. |
 | **MIDI controllers** | CoreMIDI input with MIDI Learn, 14-bit and relative encoders, soft takeover, and presets for the Pioneer DDJ-400 and Korg nanoKONTROL2. |
-
-### Intelligence
-
-| | |
-|:--|:--|
-| **On-device features** | One master switch and a switch per feature: natural-language playlists, semantic search, DJ sets, a shuffle that learns from your listening and a remixer for the DJ console, all on the Mac. You can bring your own API key (text only, never audio). Experimental: an enhancer for lossy streams and on-device lyrics. |
+| **Balanced Shuffle** | A shuffle that follows tempo, key and energy rules, with no model involved. |
 
 ### Services and tools
 
@@ -177,15 +189,15 @@ The complete list, with what each feature has been verified against, is in [Docs
 
 | | Status |
 |:--|:--|
-| **Apple Silicon Mac**, macOS 15 or later | Released: 0.4.0 (arm64 build) |
-| **Intel Mac**, macOS 15 or later | Released: 0.4.0 (universal build). Features that need an M-series chip are off; not yet tested on Intel hardware |
+| **Apple Silicon Mac**, macOS 13 or later | Released: 0.5.0 (arm64 build) |
+| **Intel Mac**, macOS 13 or later | Released: 0.5.0 (universal build). Not yet tested on Intel hardware |
 | **Windows** | In development; follows separately |
 
 <br/>
 
 ## Install
 
-1. Download from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**: **Aureon-0.4.0.dmg** for Apple Silicon, or **Aureon-0.4.0-universal.dmg** for Intel Macs (it runs on both). Each has a matching `.pkg` installer.
+1. Download from the [latest release](https://github.com/retrohog/Aureon/releases/latest) and drag **Aureon** to **Applications**: **Aureon-0.5.0.dmg** for Apple Silicon, or **Aureon-0.5.0-universal.dmg** for Intel Macs (it runs on both). Each has a matching `.pkg` installer.
 2. The app is not notarised yet. On first launch, right-click it and choose **Open**.
 3. Allow access to your music folders when macOS asks.
 
@@ -202,22 +214,23 @@ swift build -c release
 
 ## Known issues
 
+- **Soulseek has only been checked against a simulated server.** Login, search and downloads on the live network are new in 0.5.0, so expect rough edges. Reports are very welcome; the Connection page has a network check you can paste into an issue.
+- **Scratching on the Turntable is not bit-perfect.** The sound follows your hand through pitch control, so the signal path shows it. A switch on the deck turns it off.
 - **Casting and multi-room streams can crash under heavy load.** The live FLAC encoder (`Cast/FLACEncoder.swift`) has an intermittent index error when audio is pushed from a zone; it is not fixed yet.
 - **The app is ad-hoc signed and not notarised.** The first launch needs right-click → **Open**, and macOS can ask again for access to your music folders after an update.
-- **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance; Bluetooth speakers may need a small delay trim.
-- **The Intel build has not been tested on real Intel hardware.** It has been run natively on Apple Silicon and under Rosetta only.
-- **On Intel Macs, the on-device language model and the audio enhancer are unavailable** (they need an M-series chip). DJ sets and playlists use an API key instead.
+- **The Intel build and macOS 13 have not been tested on real hardware.** They have been built and run natively on Apple Silicon and under Rosetta only.
+- **Speaker levelling and output alignment have not been checked on every speaker.** Use each output's **Level** and **Extra delay** to finish the balance.
 - **The mini player and the menu bar player use the app's colours.** They do not have a theme of their own yet.
 - **Windows is not included.** The Windows version follows separately.
 
 ### Not verified on real hardware or accounts
 
 - **Integer mode and DoP are untested against a real USB DAC.** The built-in headphone output offers float formats only; `hwdebug` shows what your hardware accepts. DSD512 output and the MIDI presets are in the same position.
-- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval). Its logic has only been run against stand-in processes.
+- **The privileged helper has never been registered or run as root** (it needs a signed build and your approval).
 - **Casting and multi-room are verified against software speakers**, not real ones. AirPlay uses the system's route picker, so exclusive mode, rate switching and bit-perfect output do not apply.
-- **Cloud storage has been run against an in-memory S3 server** that checks every signature, not a live account. DSD files cannot be streamed from a bucket or server.
-- **CD ripping has been run against a simulated drive.** The IOKit read path has not run on a physical drive, and no drive-offset database is bundled.
-- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** have been run against fakes and canned responses; you supply your own keys.
+- **Cloud storage has been run against an in-memory S3 server**, not a live account. DSD files cannot be streamed from a bucket or server.
+- **CD ripping has been run against a simulated drive.** No drive-offset database is bundled.
+- **Discord, Last.fm, ListenBrainz, AcoustID, MusicBrainz and artwork lookups** have been run against canned responses; you supply your own keys.
 - **The headphone cue** in DJ mode has only been run with simulated devices.
 
 <br/>
@@ -226,13 +239,12 @@ swift build -c release
 
 | | |
 |:--|:--|
-| **Intel hardware checks** | Run the universal build on real Intel Macs and tune the rate planner for older models. |
+| **Soulseek, next steps** | Separate pages for the wishlist, rules and users, protocol log filters, and pausing transfers for cast and DJ in every case. |
+| **Intel and macOS 13 checks** | Run the universal build on real Intel Macs and on macOS 13, and tune the rate planner for older models. |
 | **Windows** | A native Windows 11 version of the same design. |
 | **Cast encoder fix** | Remove the intermittent FLAC encoder error in casting and multi-room. |
 | **Device changes** | Handle an output unplugged during playback without interrupting the queue. |
 | **Notarised releases** | A signed, notarised app, so the first launch needs no right-click. |
-| **Bundled models** | Ship the on-device models for the lossy-stream enhancer with the app. |
-| **More layouts** | Vinyl, Hi-Fi, Timeline and Poster layouts for Now Playing. |
 | **Mini player theme** | A colour theme of its own for the mini player and the menu bar player. |
 | **Beat-matched transitions** | Tempo- and key-aware transitions between queued songs, using the DJ analysis. |
 
@@ -251,10 +263,12 @@ swift build -c release
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Most useful: a USB-DAC `hwdebug --json` report, libsoxr as an alternative resampler, TLS for the remote channel, an iOS companion app.
+Found a bug, or something that does not feel right? Please [open an issue](https://github.com/retrohog/Aureon/issues) with what you did, what you expected and what happened, plus your Mac model and macOS version. Soulseek reports are especially useful, since that part is new.
+
+Pull requests are welcome, small or large, and we will look at every one. Fork the repository, make your change on a branch, and open a pull request against `main`; see [CONTRIBUTING.md](CONTRIBUTING.md) for the build and the checks to run. Most useful right now: reports from real Intel Macs and macOS 13, a USB-DAC `hwdebug --json` report, Soulseek testing on different networks, libsoxr as an alternative resampler, and a fix for the cast encoder.
 
 ## Credits and licence
 
-Built with Swift, Core Audio and SQLite. Metadata and lyrics come from MusicBrainz, AcoustID, Wikipedia and LRCLIB; the optional on-device models run through MLX and WhisperKit.
+Built with Swift, Core Audio and SQLite. Metadata and lyrics come from MusicBrainz, AcoustID, Wikipedia and LRCLIB.
 
 MIT. See [LICENSE](LICENSE).
