@@ -51,6 +51,9 @@ final class SmartQueryModel: ObservableObject {
         }
     }
 
+    /// Test and snapshot seam: sets the genre tree directly.
+    func preload(tree t: [TagTreeNode]) { tree = t; treeLoading = false }
+
     func loadTree(store: LibraryStore?, force: Bool = false) {
         guard let store, !treeLoading else { return }
         let rev = store.revision
@@ -58,7 +61,10 @@ final class SmartQueryModel: ObservableObject {
         treeLoading = true
         Task.detached(priority: .utility) {
             let t = TagTreeNode.build(store.genreCounts())
-            await MainActor.run { self.tree = t; self.treeLoading = false; self.treeRevision = rev }
+            await MainActor.run {
+                self.tree = t; self.treeLoading = false; self.treeRevision = rev
+                if store.revision != rev { self.loadTree(store: store) }          // the library changed while the tree was being read
+            }
         }
     }
 }
@@ -70,27 +76,15 @@ final class SmartQueryModel: ObservableObject {
 struct SmartSearchPage: View {
     @EnvironmentObject var m: PlayerModel
     @ObservedObject private var q = SmartQueryModel.shared
-    @StateObject private var showTree = Box(UserDefaults.standard.object(forKey: "aureon.search.tree") as? Bool ?? true)
 
     var body: some View {
-        HStack(spacing: 0) {
-            if showTree.v {
-                TagTreePanel(tree: q.tree, loading: q.treeLoading, current: m.searchText) { node in m.searchText = node.query }
-                    .frame(width: 236)
-                    .padding(.leading, 16).padding(.top, 12).padding(.bottom, 24)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-            }
-            ZStack(alignment: .topLeading) {
-                if LibraryQuery.looksAdvanced(m.searchText) { QueryResultsPage() } else { SearchPage() }
-                Button { withAnimation(.smooth(duration: 0.22)) { showTree.v.toggle() }; UserDefaults.standard.set(showTree.v, forKey: "aureon.search.tree") } label: {
-                    Image(systemName: "sidebar.left")
-                }
-                .buttonStyle(IconButtonStyle()).help(showTree.v ? "Hide the genre tree" : "Show the genre tree")
-                .padding(.leading, 16).padding(.top, 16)
-            }
+        Group {
+            if m.searchText.trimmingCharacters(in: .whitespaces).isEmpty { SearchEmptyState(s: m.search, lib: m.library) }
+            else if LibraryQuery.looksAdvanced(m.searchText) { QueryResultsPage() }
+            else { SearchResultsPage(s: m.search, lib: m.library) }
         }
         .onAppear { q.loadTree(store: m.library.store); q.run(m.searchText, store: m.library.store) }
-        .onChange(of: m.searchText) { _, t in q.run(t, store: m.library.store) }
+        .onChangeCompat(of: m.searchText) { _, t in q.run(t, store: m.library.store) }
     }
 }
 
@@ -99,7 +93,7 @@ struct QueryResultsPage: View {
     @ObservedObject private var q = SmartQueryModel.shared
 
     var body: some View {
-        PageScaffold(title: "Search", subtitle: subtitle, trailing: {
+        PageScaffold(title: q.parsed?.root.singleTagName ?? "Search", subtitle: subtitle, trailing: {
             if !q.results.isEmpty {
                 RuleButton(title: "Play", symbol: "play.fill", filled: true) { m.library.onReplace?(q.results) }
                 RuleButton(title: "Add to Queue", symbol: "text.badge.plus") { m.library.onAdd?(q.results, false) }
@@ -110,7 +104,7 @@ struct QueryResultsPage: View {
                 if let e = q.error {
                     QueryErrorView(text: m.searchText, error: e)
                 } else if let p = q.parsed {
-                    QueryChips(node: p.root).padding(.bottom, 2)
+                    QueryChips(node: p.root, onRemove: { i in withAnimation(Motion.touch) { m.searchText = p.root.text(removing: i) } }).padding(.bottom, 2)
                 }
                 if q.running && q.results.isEmpty { ProgressView().padding(.top, 24) }
                 else if q.error == nil && q.results.isEmpty && q.parsed != nil && !q.running { Text("No songs match").foregroundStyle(Brand.inkSecondary).padding(.top, 12) }
@@ -118,7 +112,6 @@ struct QueryResultsPage: View {
                     if q.total > q.results.count { Note(text: "Showing the first \(q.results.count) of \(q.total) songs. Narrow the query to see the rest.") }
                     SongList(tracks: q.results, showArtist: true, sortHeader: false)
                 }
-                QueryHelp(insert: { m.searchText = $0 }).padding(.top, 16)
             }
         }
     }
@@ -150,8 +143,25 @@ struct QueryErrorView: View {
 /// The parsed query drawn as chips, so it is clear how it was understood ("NOT" binds to the next term; AND binds tighter than OR).
 struct QueryChips: View {
     let node: QueryNode
+    /// Called with the index of the chip to take out (see `QueryNode.removableParts`); nil shows plain chips.
+    var onRemove: ((Int) -> Void)?
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 4) { chips(node, top: true) } }
+        if let onRemove {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Array(node.removableParts.enumerated()), id: \.offset) { i, p in
+                        if i > 0 { op("AND") }
+                        HStack(spacing: 2) {
+                            chips(p)
+                            Button { onRemove(i) } label: { Image(systemName: "xmark.circle.fill").font(Typo.sans(12)) }
+                                .buttonStyle(.plain).foregroundStyle(Brand.inkSecondary).help("Remove this filter").accessibilityLabel("Remove filter")
+                        }
+                    }
+                }
+            }
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 4) { chips(node, top: true) } }
+        }
     }
 
     private func label(_ t: QueryTerm) -> String {
