@@ -24,7 +24,7 @@ struct RoomsPage: View {
                 }
                 // "Level speakers" (from the quick panel or ⌘K) comes here and scrolls to the speaker set-up, where the balance is
                 .onAppear { reveal(proxy) }
-                .onChange(of: m.roomsFocus) { _, _ in reveal(proxy) }
+                .onChangeCompat(of: m.roomsFocus) { _, _ in reveal(proxy) }
             }
         }
         .onAppear { m.refreshDevices() }

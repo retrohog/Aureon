@@ -65,7 +65,7 @@ extension View {
 
     /// A page's scroll view: its content starts below the bar (`chromeInset`) but scrolls under it, it tells the scrim when it has, and where it is scrolled
     /// is remembered for the page (see `ScrollMemory`).
-    func underChrome(_ chrome: ChromeState, inset: CGFloat) -> some View { modifier(UnderChrome(chrome: chrome, inset: inset)) }
+    func underChrome(_ chrome: ChromeState, inset: CGFloat) -> some View { modifier(UnderChromeScroll(chrome: chrome, inset: inset)) }
 }
 
 /// Where each page was scrolled to, so a page opens where it was left (also after a restart). Plain storage, not observed: scrolling must not redraw anything.
@@ -90,34 +90,6 @@ extension EnvironmentValues {
     var scrollKey: String {
         get { self[ScrollKeyKey.self] }
         set { self[ScrollKeyKey.self] = newValue }
-    }
-}
-
-private struct UnderChrome: ViewModifier {
-    let chrome: ChromeState
-    let inset: CGFloat
-    @Environment(\.scrollKey) private var key
-    @State private var position = ScrollPosition(edge: .top)
-    @State private var restoring = true
-
-    func body(content: Content) -> some View {
-        content
-            .contentMargins(.top, inset, for: .scrollContent)
-            .contentMargins(.top, inset, for: .scrollIndicators)
-            .scrollPosition($position)
-            .onScrollGeometryChange(for: Bool.self) { g in g.contentOffset.y > -g.contentInsets.top + 2 } action: { _, scrolled in
-                if chrome.scrolled != scrolled { chrome.scrolled = scrolled }
-            }
-            .onScrollGeometryChange(for: Double.self) { g in Double(g.contentOffset.y) } action: { _, y in
-                if !restoring, !key.isEmpty { ScrollMemory.shared.set(key, y) }
-            }
-            .onAppear {
-                guard !key.isEmpty, let y = ScrollMemory.shared.offset(key) else { restoring = false; return }
-                // after the page has laid itself out (a grid of covers is built as it is asked for)
-                // (a settings page is laid out at once, so it is put back at once: nothing is seen to jump when the interface is rebuilt)
-                let delay = key.hasPrefix(Tab.settings.rawValue + "|") ? 0.02 : 0.25
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { position.scrollTo(y: CGFloat(y)); DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { restoring = false } }
-            }
     }
 }
 

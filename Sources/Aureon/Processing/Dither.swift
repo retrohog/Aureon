@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 // Word-length reduction with dither. The engine carries left-justified Int32 (≥ 24 significant bits); a legacy 16- or 20-bit DAC, or
 // the system mixer, truncates those. Without dither the quantisation error is correlated with the music (harmonic distortion that

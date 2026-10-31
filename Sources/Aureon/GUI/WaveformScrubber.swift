@@ -262,7 +262,7 @@ struct WaveformScrubber: View {
         .layoutProbe("scrubber")
         .onDisappear { LayoutProbe.drop(scrubber: traceID) }
         .onAppear { prefetch() }
-        .onChange(of: path) { _, _ in prefetch() }
+        .onChangeCompat(of: path) { _, _ in prefetch() }
         .accessibilityElement()
         .accessibilityLabel("Playback position")
         .accessibilityValue(Text(live ? "Live" : "\(clock(m.scrub ?? progress.position)) of \(clock(dur))"))

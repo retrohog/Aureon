@@ -44,14 +44,13 @@ enum PaletteCatalog {
             case .rip: "cd ripping"
             case .convert: "transcode convert flac"
             case .cloud: "s3 b2 navidrome subsonic"
-            case .intelligence: "ai models smart dj enhancer"
             case .abx: "blind test listening"
             case .folders: "files browse"
             case .deepDive: "credits biography discography"
             default: ""
             }
         case .dj: "mix decks crossfader turntable"
-        case .settings(let s): s == .system ? "diagnostics system stethoscope quiet mode freeze recorder hardware path" : s == .cloud ? "s3 b2 navidrome subsonic storage" : s == .intelligence ? "models enhancer api keys" : ""
+        case .settings(let s): s == .system ? "diagnostics system stethoscope quiet mode freeze recorder hardware path" : s == .cloud ? "s3 b2 navidrome subsonic storage" : ""
         }
     }
 
@@ -136,16 +135,16 @@ struct CommandPaletteView: View {
                         }
                     }
                     .frame(maxHeight: 360)
-                    .onChange(of: selected.v) { _, i in if list.indices.contains(i) { proxy.scrollTo(list[i].id) } }
+                    .onChangeCompat(of: selected.v) { _, i in if list.indices.contains(i) { proxy.scrollTo(list[i].id) } }
                 }
             }
             .frame(width: 560)
             .glassAccent()
             .padding(.top, 96)
-            .onKeyPress(.downArrow) { selected.v = min(max(0, list.count - 1), selected.v + 1); return .handled }
-            .onKeyPress(.upArrow) { selected.v = max(0, selected.v - 1); return .handled }
-            .onKeyPress(.escape) { close(); return .handled }
-            .onChange(of: query.v) { _, _ in selected.v = 0 }
+            .onKeyPressCompat(.downArrow, repeats: true) { selected.v = min(max(0, list.count - 1), selected.v + 1); return .handled }
+            .onKeyPressCompat(.upArrow, repeats: true) { selected.v = max(0, selected.v - 1); return .handled }
+            .onKeyPressCompat(.escape) { close(); return .handled }
+            .onChangeCompat(of: query.v) { _, _ in selected.v = 0 }
             .onAppear { focused = true }
         }
         .accessibilityAddTraits(.isModal)

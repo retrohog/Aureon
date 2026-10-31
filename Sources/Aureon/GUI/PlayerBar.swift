@@ -35,20 +35,20 @@ struct PlayerBar: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             ShuffleButton(size: 15, tint: Brand.inkSecondary)
-            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: 15) }
-                .keyboardShortcut(.leftArrow, modifiers: .command).help("Previous").accessibilityLabel("Previous")
+            Button { m.player.send(.previous) } label: { TransportGlyph(kind: .previous, size: TransportMetrics.skip().glyph) }
+                .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.skip().hit)).keyboardShortcut(.leftArrow, modifiers: .command).help("Previous").accessibilityLabel("Previous")
             Button { m.togglePlay() } label: {
-                TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: 17)
+                TransportGlyph(kind: m.isActive && m.status.state == .playing ? .pause : .play, size: TransportMetrics.play().glyph)
             }
-            .buttonStyle(PlayKeyStyle(size: 46))
+            .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.play().hit))
             .keyboardShortcut(.space, modifiers: []).help("Play / pause").accessibilityLabel(m.isActive && m.status.state == .playing ? "Pause" : "Play")
-            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: 15) }
-                .keyboardShortcut(.rightArrow, modifiers: .command).help("Next").accessibilityLabel("Next")
+            Button { m.player.send(.next) } label: { TransportGlyph(kind: .next, size: TransportMetrics.skip().glyph) }
+                .buttonStyle(HairlineKeyStyle(hit: TransportMetrics.skip().hit)).keyboardShortcut(.rightArrow, modifiers: .command).help("Next").accessibilityLabel("Next")
             RepeatButton(size: 15, tint: Brand.inkSecondary)
         }
-        .buttonStyle(TransportButtonStyle(size: 12, ink: Brand.ink)).disabled(m.items.isEmpty)
+        .disabled(m.items.isEmpty)
     }
 }
 
@@ -136,7 +136,7 @@ struct NowPlayingSummary: View {
                 }
                 Text(d.map { $0.artist.isEmpty ? (item?.album ?? "") : $0.artist } ?? "Add music or tune a station")
                     .font(Typo.sans(14, .medium)).foregroundStyle(HWPanel.readoutDim).lineLimit(1)
-                NowPlayingTags(place: .bar).padding(.top, 5)
+                QualityPill().padding(.top, 5)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import Synchronization
 
 struct CastDevice: Identifiable, Equatable, @unchecked Sendable {
     var id: String

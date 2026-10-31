@@ -14,7 +14,7 @@ func upscalerTests() -> [(String, TestFn)] {
             ("upscaler.olaThreads", u.olaConcurrentWorkerKeepsOrderAndExactness), ("upscaler.guard", u.guardTripsBacksOffAndRecovers),
             ("upscaler.nodeOff", u.nodeSwitchedOffIsBitExact), ("upscaler.nodeIdentity", u.nodeRunsTheModelOnEveryBlock),
             ("upscaler.nodeWaits", u.nodeWaitsForAModelThatKeepsUp), ("upscaler.nodeFallback", u.nodeFallsBackAtOnceWhenTheDeviceIsShort),
-            ("upscaler.service", u.serviceFollowsTheIntelligenceSwitch), ("upscaler.player", u.playerEnhancesALossyStreamAndRebuildsOnSwitch),
+            ("upscaler.service", u.serviceFollowsTheSwitch), ("upscaler.player", u.playerEnhancesALossyStreamAndRebuildsOnSwitch),
             ("upscaler.coreml", u.coreMLModelLoadsAndRuns)]
 }
 
@@ -309,14 +309,13 @@ struct UpscalerTests {
 
     // MARK: pipeline stage
 
-    func gate(enabled: Bool) -> IntelligenceGate {
-        var s = IntelligenceSettings(masterEnabled: true)
-        s.intelRiskAccepted = true
-        s.set(.audioEnhancer, enabled)
-        return IntelligenceGate(hardware: .current, settings: s)
+    func gate(enabled: Bool) -> EnhancerGate {
+        var s = EnhancerSettings()
+        s.enabled = enabled
+        return EnhancerGate(hardware: .current, settings: s)
     }
 
-    func service(gate: IntelligenceGate, backend: UpscaleBackend) -> NeuralUpscaler {
+    func service(gate: EnhancerGate, backend: UpscaleBackend) -> NeuralUpscaler {
         let svc = NeuralUpscaler(gate: gate, status: NeuralUpscaleStatus(), loader: { _, _ in backend })
         svc.reconcile(wait: true)
         return svc
@@ -329,13 +328,12 @@ struct UpscalerTests {
         let x = randomInput(frames: 60_000, channels: 2, seed: 9)
         let raw = StreamInfo(sampleRate: 48_000, channels: 2, sourceBits: 16, totalFrames: 60_000, codec: "MP3", transparent: false)
         guard let n = svc.makeNode(upstream: ArrayFrameSource(x, rate: 48_000, channels: 2), raw: raw, deckRate: nil, gauge: nil) else { expect(false, "no node"); return }
-        var off = IntelligenceSettings(masterEnabled: false); off.intelRiskAccepted = true
-        g.publish(off)                                          // master switch off after the stage was built
+        g.publish(EnhancerSettings())                           // switched off after the stage was built
         expect(svc.makeNode(upstream: ArrayFrameSource(x, rate: 48_000, channels: 2), raw: raw, deckRate: nil, gauge: nil) == nil, "off: no new stage is built")
         expect(readAll(n.source) == x, "switched off mid-stream: bit-exact pass-through")
         expect(svc.status.windowsNeural == 0 && svc.status.state == .off, "\(svc.status.state)")
         // and a lossless (bit-transparent) source never gets the stage
-        g.publish({ var s = IntelligenceSettings(masterEnabled: true); s.intelRiskAccepted = true; s.set(.audioEnhancer, true); return s }())
+        g.publish({ var s = EnhancerSettings(); s.enabled = true; return s }())
         expect(svc.makeNode(upstream: ArrayFrameSource(x, rate: 48_000, channels: 2, transparent: true), raw: StreamInfo(sampleRate: 48_000, channels: 2, sourceBits: 16, totalFrames: 30_000, codec: "FLAC"), deckRate: nil, gauge: nil) == nil,
                "bit-perfect sources are never enhanced")
         expect(svc.makeNode(upstream: ArrayFrameSource(x, rate: 48_000, channels: 2), raw: StreamInfo(sampleRate: 48_000, channels: 2, sourceBits: 16, totalFrames: 30_000, codec: "MP3", transparent: false), deckRate: 48_000, gauge: nil) == nil,
@@ -401,20 +399,20 @@ struct UpscalerTests {
         expect(Array(y.suffix(48_000 * 2)) == Array(x.suffix(48_000 * 2)), "while bypassed the input plays bit-exact")
     }
 
-    func serviceFollowsTheIntelligenceSwitch() {
+    func serviceFollowsTheSwitch() {
         let g = gate(enabled: false)
         let svc = service(gate: g, backend: FunctionUpscaleBackend { $0 })
         let raw = StreamInfo(sampleRate: 48_000, channels: 2, sourceBits: 16, totalFrames: 0, codec: "AAC", transparent: false, isLive: true)
         let g0 = svc.generation
         expect(!svc.isReady && svc.status.state == .off && !svc.wouldInsert(for: raw, deckRate: nil), "off: nothing loaded")
-        var on = IntelligenceSettings(masterEnabled: true); on.intelRiskAccepted = true; on.set(.audioEnhancer, true)
+        var on = EnhancerSettings(); on.enabled = true
         g.publish(on); svc.reconcile(wait: true)
         expect(svc.isReady && svc.wouldInsert(for: raw, deckRate: nil) && svc.generation > g0, "on: loaded, and the player is told")
         let g1 = svc.generation
-        var other = on; other.smartDJ.toggle(); g.publish(other); svc.reconcile(wait: true)
-        expect(svc.generation == g1, "another feature's switch does not reload the model")
-        var masterOff = on; masterOff.masterEnabled = false; g.publish(masterOff); svc.reconcile(wait: true)
-        expect(!svc.isReady && svc.status.state == .off && svc.generation > g1, "the master switch unloads it")
+        g.publish(on); svc.reconcile(wait: true)
+        expect(svc.generation == g1, "publishing the same settings does not reload the model")
+        var off = on; off.enabled = false; g.publish(off); svc.reconcile(wait: true)
+        expect(!svc.isReady && svc.status.state == .off && svc.generation > g1, "switching it off unloads it")
         // a model that fails to load, or is too slow when timed, is refused with a reason
         let bad = NeuralUpscaler(gate: g, status: NeuralUpscaleStatus(), loader: { _, _ in throw UpscalerError.noModelSelected })
         g.publish(on); bad.reconcile(wait: true)
@@ -441,7 +439,7 @@ struct UpscalerTests {
         let h0 = amplitude(before, channels: 2, rate: 48_000, freq: 1320, skip: 12_000, count: 24_000)
         expect(db(h0) < -70, "off: no harmonic \(db(h0)) dB")
 
-        var on = IntelligenceSettings(masterEnabled: true); on.intelRiskAccepted = true; on.set(.audioEnhancer, true)
+        var on = EnhancerSettings(); on.enabled = true
         g.publish(on); svc.reconcile(wait: true)
         end = Date().addingTimeInterval(15)
         while !p.status.pipeline.contains(where: { $0.hasPrefix("Smart enhancer") }) && Date() < end { usleep(20_000) }
@@ -463,7 +461,7 @@ struct UpscalerTests {
 
         // switched off mid-stream: no rebuild, the stage crossfades back to its input. What is already in the ring (up to the buffer
         // length) still plays first.
-        var off = on; off.set(.audioEnhancer, false); g.publish(off)
+        var off = on; off.enabled = false; g.publish(off)
         let mark2 = sink.frameCount
         end = Date().addingTimeInterval(25)
         while sink.frameCount < mark2 + 10 * 48_000 && Date() < end { usleep(20_000) }

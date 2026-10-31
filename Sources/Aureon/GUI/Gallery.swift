@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Now Playing as the whole window. Which of the layouts is drawn (Stage, Classic, Full-bleed, Carousel, Lumen, Chillax, Orbit) is the listener's choice in
+// Now Playing as the whole window. Which of the layouts is drawn (Stage, Classic, Full-bleed, Carousel, Chillax, Poster, Turntable) is the listener's choice in
 // Settings → Now Playing; each is its own view (Pulse/NowPlaying). The queue, the analyser and the booklet open as a card over the layout.
 
 /// The panels that open beside the cover.
@@ -35,9 +35,9 @@ struct NowPlayingView: View {
                     case .classic: NPClassic(c: canvas)
                     case .fullBleed: NPFullBleed(c: canvas)
                     case .carousel: NPCarousel(c: canvas)
-                    case .lumen: NPLumen(c: canvas)
                     case .chillax: NPChillax(c: canvas)
-                    case .orbit: NPOrbit(c: canvas)
+                    case .poster: NPPoster(c: canvas)
+                    case .turntable: NPTurntable(c: canvas)
                     }
                 }
                 .environment(\.npScale, canvas.s)
@@ -48,8 +48,8 @@ struct NowPlayingView: View {
         }
         .environmentObject(info)
         .onAppear { info.load(path: songPath, store: m.library.store); m.prefetchUpcomingArtwork() }
-        .onChange(of: songPath) { _, p in info.load(path: p, store: m.library.store); m.prefetchUpcomingArtwork() }
-        .onChange(of: m.items.count) { _, _ in m.prefetchUpcomingArtwork() }
+        .onChangeCompat(of: songPath) { _, p in info.load(path: p, store: m.library.store); m.prefetchUpcomingArtwork() }
+        .onChangeCompat(of: m.items.count) { _, _ in m.prefetchUpcomingArtwork() }
         // Escape closes an open panel, and otherwise leaves for the page Now Playing was opened from
         .background(Button("") { if stage.panel != nil { stage.panel = nil } else { stage.close(m, reduceMotion: reduceMotion) } }
             .keyboardShortcut(.escape, modifiers: []).opacity(0).frame(width: 0, height: 0).accessibilityHidden(true))
@@ -107,7 +107,7 @@ private struct PanelPage<Content: View>: View {
             .scrim(scrolledUnder: scrolled.v)
             .zIndex(1)
             ScrollView(showsIndicators: false) { content.padding(16) }
-                .onScrollGeometryChange(for: Bool.self) { $0.contentOffset.y > 2 } action: { _, now in if scrolled.v != now { scrolled.v = now } }
+                .onScrollOffsetChange { y in let now = y > 2; if scrolled.v != now { scrolled.v = now } }
         }
     }
 }

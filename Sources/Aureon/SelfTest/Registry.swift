@@ -2,8 +2,9 @@
 func extraTests() -> [(String, TestFn)] {
     var t: [(String, TestFn)] = []
     t += powerFeatureTests()
-    t += naturalPlaylistTests()
     t += lyricsTests()
+    t += searchEdgeTests()
+    t += soulseekTests()
     t += stageInteractionTests()
     t += pulseTests()
     t += navigationTests()
@@ -80,8 +81,6 @@ func extraTests() -> [(String, TestFn)] {
           ("dj.deck", dj.deckLifecycle), ("dj.mixing", dj.djModelMixing)]
     let djan = DJAnalysisTests()
     t += [("dj.camelot", djan.camelotWheel), ("dj.key", djan.keyDetection), ("dj.grid", djan.beatGridAndSections), ("dj.cache", djan.analysisCache)]
-    let auto = AutoDJTests()
-    t += [("net.quality", auto.netSeparatesGoodFromBadMixes), ("net.learn", auto.netLearnsFromFeedback), ("net.persist", auto.netPersists), ]
     let deckT = DJDeckTests()
     t += [("dj.hotcuesLoops", deckT.hotCuesAndLoops)]
     let coll = CollectionTests()
@@ -91,7 +90,7 @@ func extraTests() -> [(String, TestFn)] {
     let rep = RepeatTests()
     t += [("repeat.off", rep.repeatOffEnds), ("repeat.all", rep.repeatAllWrapsAround), ("repeat.one", rep.repeatOneStaysOnTheTrack), ("queue.order", rep.reorderingTheQueue)]
     let shf = ShuffleTests()
-    t += [("shuffle.normal", shf.normalShuffleIsAPermutation), ("shuffle.smart", shf.smartShuffleSpreadsArtists), ("shuffle.liked", shf.smartShuffleKeepsTheCurrentSongFirstAndFavoursLiked), ("shuffle.flow", shf.smartShuffleUsesTheTransitionNetwork), ("shuffle.restore", shf.restoreOrder)]
+    t += [("shuffle.normal", shf.normalShuffleIsAPermutation), ("shuffle.smart", shf.smartShuffleSpreadsArtists), ("shuffle.liked", shf.smartShuffleKeepsTheCurrentSongFirstAndFavoursLiked), ("shuffle.flow", shf.balancedShuffleFavoursTracksThatMix), ("shuffle.restore", shf.restoreOrder)]
     let dspm = DSPModelTests()
     t += [("dspm.profiles", dspm.profilesSaveAndComeBack), ("dspm.throttle", dspm.appliesAreThrottled), ("dspm.prompt", dspm.leavingTheDSPPageAsksFirst), ("dspm.master", dspm.turningOnTheEqualizerSwitchesTheDSPPathOn)]
     let rmx = RemixTests()
@@ -109,17 +108,14 @@ func extraTests() -> [(String, TestFn)] {
     let cl = CloudTests()
     let cs = CastTests()
     let sm = StreamingTests()
-    let sdj = SmartDJTests()
     t += [("rip.ids", rip.discIdentifiersMatchTheDatabases), ("rip.enhanced", rip.enhancedDiscsLoseTheirDataTrack), ("rip.toc", rip.rawTOCParses), ("rip.checksums", rip.checksumsMatchAnIndependentImplementation), ("rip.database", rip.theDatabaseAnswerParsesAndVerifies), ("rip.musicbrainz", rip.musicBrainzKnowsTheDisc), ("rip.clean", rip.aCleanDiscRipsExactly), ("rip.offset", rip.theDrivesOffsetIsCorrected), ("rip.c2", rip.errorsThatTheDriveAdmitsAreRetried), ("rip.hidden", rip.errorsTheDriveHidesAreCaughtByRereading), ("rip.hopeless", rip.sectorsThatNeverSettleAreReportedNotHidden), ("rip.ioerrors", rip.readErrorsAreSurvivedOrReported), ("rip.cancel", rip.cancellingStopsTheRip), ("rip.files", rip.filesAreBitExactAndTagged), ("rip.log", rip.cueAndLogDescribeTheRip), ("rip.image", rip.aDiscImageRipsLikeADisc), ("rip.tagwriters", rip.tagWritersKeepTheAudioAndTheRestOfTheTags)]
     t += [("tc.gain", tc.gainMath), ("tc.aac", tc.aacLevelledWithTags), ("tc.peaks", tc.peaksStayUnderTheCeiling), ("tc.lossless", tc.losslessIsBitExact), ("tc.rates", tc.ratesAreConverted), ("tc.batch", tc.batchesRunInParallel), ("tc.failures", tc.failuresAndCancelling), ("tc.names", tc.namingAndFolders), ("tc.surround", tc.surroundBecomesStereo)]
     t += [("cloud.sigv4", cl.awsPublishedVectors), ("cloud.keys", cl.keysAreEncodedTheAwsWay), ("cloud.list", cl.listingsPageAndMapErrors), ("cloud.reader", cl.readerReturnsTheRightBytes), ("cloud.readahead", cl.readAheadHidesTheLatency), ("cloud.bitrate", cl.lookaheadFollowsTheBitrate), ("cloud.cache", cl.cacheStaysBounded), ("cloud.warm", cl.warmPreparesTheNextTrack), ("cloud.trouble", cl.networkTroubleIsRiddenOut), ("cloud.decode", cl.remoteFilesDecodeIdentically), ("cloud.import", cl.importingABucket), ("cloud.play", cl.cloudTracksPlayLikeFiles)]
     t += [("cast.flac", cs.flacEncoderIsLossless), ("cast.join", cs.joiningMidStream), ("cast.speed", cs.flacEncoderKeepsUpWithTheEngine), ("cast.codec", cs.castMessagesRoundTrip), ("cast.session", cs.castSessionStartsAndPlays), ("cast.trouble", cs.castTroubleIsReportedPlainly), ("cast.server", cs.streamServerServesLiveFrames), ("cast.player", cs.playerFeedsTheCastStream), ("cast.tls", cs.castOverRealTLS)]
     t += [("stream.client", sm.subsonicClientTalksToTheServer), ("stream.import", sm.importingAServer), ("stream.play", sm.serverTracksPlayLikeFiles)]
-    t += [("smartdj.intent", sdj.requestsAreUnderstood), ("smartdj.rank", sdj.rankingFavoursWhatWasAsked), ("smartdj.context", sdj.contextIsSmallAndRelevant), ("smartdj.answers", sdj.answersAreCheckedAndRepaired), ("smartdj.pipeline", sdj.theWholePipeline), ("smartdj.service", sdj.modelLivesOnlyWhileSwitchedOn), ("smartdj.fallback", sdj.withoutAModelTheRankingStillAnswers), ("smartdj.process", sdj.theHelperProcessFollowsTheProtocol), ("smartdj.misbehave", sdj.theHelperProcessMisbehaves), ("smartdj.driver", sdj.theServiceDrivesTheHelperProcess), ("smartdj.real", sdj.theRealModelPicksTracks), ("smartdj.decks", sdj.aSetLandsOnTheDecks)]
-    let it = IntelligenceTests()
-    t += [("intelligence.hardware", it.hardwareIsDetected), ("intelligence.intel", it.intelIsOffByDefaultAndWarnsFirst), ("intelligence.intelUnavailable", it.intelShowsAppleSiliconOnlyFeaturesAsUnavailable), ("intelligence.helperArch", it.helperProgramsAreCheckedForTheirProcessorType), ("intelligence.killswitch", it.killswitchClosesEveryFeature),
-          ("intelligence.gate", it.gateReadsAreAtomicWhilePublishing), ("intelligence.settings", it.settingsPersistAndKeysStayInTheKeychain), ("intelligence.models", it.modelsAreMeasuredAndCapped),
-          ("intelligence.api", it.apiClientSpeaksOpenAICompatible), ("intelligence.smartdj", it.smartDJUsesTheChosenEngineAndObeysTheSwitch), ("intelligence.search", it.semanticSearchFindsSongsByMeaning)]
+    let en = EnhancerTests()
+    t += [("enhancer.hardware", en.hardwareIsDetected), ("enhancer.switch", en.switchFollowsTheSettingsAndTheHardware), ("enhancer.gate", en.gateReadsAreAtomicWhilePublishing), ("enhancer.models", en.modelsAreMeasuredAndCapped),
+          ("atomics.wrapper", en.atomicsBehaveLikeTheirSystemCounterparts)]
     let p5 = Phase5Tests()
     t += [("dither.stats", p5.ditherStatistics), ("dither.quiet", p5.ditherKeepsQuietSignals), ("dither.safety", p5.ditherSafety), ("dither.player", p5.ditherInThePlayer),
           ("zone.delay", p5.delayLineIsSampleExact), ("zone.balance", p5.balancerAndProbe), ("zone.feed", p5.feedDelaysTheStreamExactly), ("upnp.parse", p5.upnpDescriptionsAndSOAP),
@@ -135,6 +131,10 @@ func extraTests() -> [(String, TestFn)] {
     let mix = DJMixerTests()
     t += [("mixer.crossfade", mix.crossfaderGainsSelectTheDecks), ("mixer.masterEQ", mix.masterEqAndTrim), ("mixer.limiter", mix.limiterHoldsTheCeiling), ("mixer.cue", mix.cueBusCarriesOnlyTheCuedDeck),
           ("mixer.cueResampler", mix.cueResamplerFollowsAnotherClock), ("mixer.recorder", mix.recorderWritesAReadableWav)]
+    let pro = DJProTests()
+    t += [("djpro.stretch", pro.stretcherKeepsThePitch), ("djpro.keyLock", pro.keyLockAndKeyShiftInTheSource), ("djpro.reverse", pro.reverseAndScratchMoveTheTrack), ("djpro.sampler", pro.samplerPlaysAndRestarts),
+          ("djpro.live", pro.liveChannelsReachTheMaster), ("djpro.booth", pro.boothCarriesTheMasterAtItsOwnLevel), ("djpro.detail", pro.detailWaveformShowsBassAndTreble), ("djpro.modes", pro.gridAndSlipAndModes),
+          ("djpro.fxUnits", pro.effectUnitsFollowTheirSettings), ("djpro.master", pro.masterAndSync), ("djpro.preset", pro.presetsAndWindowRules), ("djpro.layout", pro.layoutNeverOverlapsAtAnyWidth), ("djpro.maths", pro.discAndScratchMaths), ("djpro.fit", pro.consoleFitsTheWindowWithoutScrolling)]
     let ai = ArtistImageTests()
     t += [("artist.deezer", ai.deezerParsing), ("artist.portrait", ai.portraitFromDeezerThenCache), ("artist.wikipedia", ai.wikipediaIsTheSecondChoice),
           ("artist.offline", ai.missingAndOfflineAreHandled), ("artist.mosaic", ai.mosaicLayouts)]

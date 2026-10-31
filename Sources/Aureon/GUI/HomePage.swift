@@ -24,7 +24,7 @@ struct HomePage: View {
             LinearGradient(colors: [m.hero.palette.accent.color.opacity(0.22), .clear], startPoint: .top, endPoint: .bottom).frame(height: 300).allowsHitTesting(false)
         }
         .onAppear { home.load(l.store, tracks: l.stats.tracks) }
-        .onChange(of: l.stats.tracks) { _, n in home.load(l.store, tracks: n) }
+        .onChangeCompat(of: l.stats.tracks) { _, n in home.load(l.store, tracks: n) }
     }
 
     @ViewBuilder private var mixContent: some View {
@@ -265,14 +265,13 @@ enum SettingsIndex {
         .init(title: "Page transitions", section: .appearance, words: "fade motion animation"),
         .init(title: "Scroll to change volume", section: .appearance, words: "wheel trackpad"),
         .init(title: "Launch animation", section: .appearance, words: "splash start"),
-        .init(title: "Now Playing layout", section: .nowPlaying, words: "stage classic full-bleed carousel lumen chillax orbit"),
+        .init(title: "Now Playing layout", section: .nowPlaying, words: "stage classic full-bleed carousel chillax poster turntable vinyl record tonearm"),
         .init(title: "Lyrics: show, size, timing, lookup", section: .nowPlaying, words: "words karaoke offset lrc online"),
         .init(title: "Add to playlist button", section: .nowPlaying, words: "heart"),
         .init(title: "Credits under the artist", section: .nowPlaying, words: "composer producer conductor"),
         .init(title: "Signal path and format tags", section: .nowPlaying, words: "lossless hi-res quality"),
         .init(title: "Hide the controls when the pointer rests", section: .nowPlaying, words: "idle fade top bar"),
         .init(title: "Seek bar", section: .nowPlaying, words: "waveform line scrubber progress"),
-        .init(title: "Orbit: turn the cover", section: .nowPlaying, words: "spin rotate ring"),
         .init(title: "Mini player: form", section: .miniPlayer, words: "bar strip card popover"),
         .init(title: "Mini player: background and opacity", section: .miniPlayer, words: "solid gradient blur transparent"),
         .init(title: "Mini player: keep on top, every desktop, remember place", section: .miniPlayer, words: "float pin spaces"),
@@ -294,8 +293,6 @@ enum SettingsIndex {
         .init(title: "Cloud storage", section: .cloud, words: "s3 b2 backblaze r2 wasabi minio bucket"),
         .init(title: "Music servers", section: .cloud, words: "navidrome subsonic lyrion lms"),
         .init(title: "Share this library with a phone", section: .cloud, words: "bridge companion local network sharing key"),
-        .init(title: "Intelligence features: master switch", section: .intelligence, words: "models on-device apple silicon"),
-        .init(title: "API keys", section: .intelligence, words: "provider text keychain"),
         .init(title: "Quiet mode and system optimisation", section: .system, words: "scheduling helper power"),
         .init(title: "Freeze recorder", section: .system, words: "stall hang"),
         .init(title: "Hardware path diagnostics", section: .system, words: "exclusive integer rates dac"),
@@ -396,9 +393,9 @@ struct SettingsPage: View {
         } else if m.settingsSection == .cloud {
             CloudPage().id(m.settingsSection)
         } else {
-            PageScaffold(title: m.settingsSection.rawValue, subtitle: m.settingsSection == .intelligence ? "Models, features and the keys for text providers" : nil, trailing: { if m.settingsSection == .appearance, m.look != LookSettings.defaults { resetLook } }) {
+            PageScaffold(title: m.settingsSection.rawValue, subtitle: nil, trailing: { if m.settingsSection == .appearance, m.look != LookSettings.defaults { resetLook } }) {
                 switch m.settingsSection {
-                case .general: GeneralSettings()
+                case .general: VStack(spacing: 16) { GeneralSettings(); SoulseekSettingsCard() }
                 case .appearance: AppearanceSettings()
                 case .nowPlaying: NowPlayingSettings()
                 case .miniPlayer: MiniPlayerSettings()
@@ -407,7 +404,6 @@ struct SettingsPage: View {
                 case .connect: ConnectTab()
                 case .midi: MIDIPage()
                 case .cloud: EmptyView()
-                case .intelligence: IntelligenceTab()
                 case .system: DiagnosticsTab()
                 }
             }
@@ -433,6 +429,9 @@ struct AppearanceSettings: View {
         VStack(spacing: 16) {
             preview
             Card(title: "Theme", subtitle: "Twelve colours and true black AMOLED, each with a dark and a light side. The whole interface follows them") { ThemePicker() }
+            Card(title: "Window edge", subtitle: "A very faint shade that falls in from the rim of the window, on every page. Off by default") {
+                SegmentedChoice(selection: $m.look.windowEdge, items: WindowEdgeStrength.allCases, label: { $0.title }, singleLine: true)
+            }
             if m.backdrop == .starlight { StarlightGroup() }
             if m.backdrop != .off {
                 Card(title: "Backdrop strength", subtitle: "How far the cover's colours and the wash reach into the pages") {
@@ -485,7 +484,7 @@ struct GeneralSettings: View {
             }
             Card(title: "Lyrics", subtitle: "Lyrics come from an .lrc file next to the song and from the file's own tags first") {
                 LyricsSettingsToggle()
-                Note(text: "Only the song's title, artist, album and length are sent, to LRCLIB (lrclib.net). Results are cached on this Mac. Writing lyrics by listening to a song is a separate, on-device feature in Intelligence, and only happens when you say yes for that song.")
+                Note(text: "Only the song's title, artist, album and length are sent, to LRCLIB (lrclib.net). Results are cached on this Mac.")
             }
             Card(title: "About", subtitle: "") {
                 HStack(spacing: 16) {

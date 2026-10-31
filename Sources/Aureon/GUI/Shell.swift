@@ -55,7 +55,9 @@ struct ContentView: View {
                     .overlay(Label(m.djMode ? "Drop to load on a deck" : "Drop to play", systemImage: "play.circle.fill").font(Typo.t3.weight(.semibold)))
                     .padding(12).transition(.opacity).allowsHitTesting(false)
             }
+            WindowEdgeOverlay(strength: m.look.windowEdge, light: m.theme.isLight)
         }
+        .overlayPreferenceValue(SearchFieldAnchorKey.self) { anchor in SearchDropdownHost(s: m.search, anchor: anchor) }
         .ignoresSafeArea(.container, edges: .top)           // the sidebar and pages run under the (transparent) title bar, so the window buttons sit inside the app
         .background(WindowChrome().frame(width: 0, height: 0))
         .alert("Save your DSP settings?", isPresented: Binding(get: { m.showDSPPrompt }, set: { _ in })) {
@@ -70,14 +72,14 @@ struct ContentView: View {
         .background(DuplicateSheetHost(lib: m.library))
         .animation(.easeOut(duration: 0.2), value: m.djMode)
         // page changes fade quickly, unless the change comes with its own animation (opening Now Playing from the bar springs)
-        .transaction(value: m.tab) { t in if t.animation == nil { t.animation = TabMotion.animation } }
+        .transactionCompat(value: m.tab) { t in if t.animation == nil { t.animation = TabMotion.animation } }
         // leaving Now Playing any other way (the rail, Back, DJ mode) ends its full-window state
-        .onChange(of: m.tab) { old, tab in
+        .onChangeCompat(of: m.tab) { old, tab in
             chrome.scrolled = false
             if tab == .player, old != .player { stage.returnTab = old }
             if tab != .player, stage.immersive { withAnimation(.easeOut(duration: 0.2)) { stage.immersive = false } }
         }
-        .onChange(of: m.djMode) { _, dj in if dj, stage.immersive { stage.immersive = false } }
+        .onChangeCompat(of: m.djMode) { _, dj in if dj, stage.immersive { stage.immersive = false } }
         .animation(.smooth(duration: 0.22), value: dropping.v)
         // popovers are drawn in a layer over the window so they can never hang outside it (the objects they need are added by the modifiers that follow)
         .overlay { WindowPopoverLayer(center: m.popovers) }
@@ -86,7 +88,7 @@ struct ContentView: View {
         .environmentObject(stage).environmentObject(idle).environmentObject(chrome).environment(\.stageNamespace, stageSpace)
         // pointer movement and keys wake the Gallery's rail and controls; a few quiet seconds put them away again
         .onContinuousHover { phase in if case .active = phase { idle.poke() } }
-        .onKeyPress { _ in idle.poke(); return .ignored }
+        .onKeyPressCompat(nil, repeats: true) { _ in idle.poke(); return .ignored }
         .onAppear { idle.holdsAwake = { [unowned m] in m.tab != .player || m.djMode || m.status.state != .playing || m.showQueue }; idle.poke(); if ProcessInfo.processInfo.environment["AUREON_IDLE"] != nil { idle.rest() } }
         .environmentObject(m.albumArt).environmentObject(m.artistArt).environmentObject(m.progress).environmentObject(m.navigator)
         .environmentObject(m.radio).environmentObject(m.podcasts).environmentObject(m.dj).environmentObject(m.collections).environmentObject(m.dspModel).environmentObject(m.rip).environmentObject(m.convert).environmentObject(m.cloud).environmentObject(m.lms).environmentObject(m.cast).environmentObject(m.zone).environmentObject(m.speakers).environmentObject(m.bridge)
@@ -182,9 +184,10 @@ struct ContentView: View {
         case .audio: PageScaffold(title: "Sound", subtitle: m.soundSection.blurb, ruled: false) { AudioTab() }
         case .rip: RipPage()
         case .convert: ConvertPage()
-        case .cloud, .intelligence: SettingsPage()          // sections of Settings (see `PlayerModel.go`)
+        case .cloud: SettingsPage()          // sections of Settings (see `PlayerModel.go`)
         case .folders: LibraryFoldersPage()
         case .abx: ABXPage()
+        case .soulseek: SoulseekPage()
         case .dsp: PageScaffold(title: "DSP", subtitle: "Parametric EQ and plug-ins", ruled: false) { DSPTab() }
         case .deepDive: PageScaffold(title: "Deep Dive", subtitle: "Credits, biographies and releases", ruled: false) { DeepDiveTab() }
         case .rooms: RoomsPage()

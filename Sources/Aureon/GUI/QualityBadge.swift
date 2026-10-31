@@ -175,7 +175,7 @@ struct NowPlayingBadge: View {
                 .padding(20).frame(width: 420).glassPopover().foregroundStyle(Brand.ink)
             }
             .onAppear { requestBitrate(raw) }
-            .onChange(of: m.status.trackID) { _, _ in if let r = m.status.sourceInfo { requestBitrate(r) } }
+            .onChangeCompat(of: m.status.trackID) { _, _ in if let r = m.status.sourceInfo { requestBitrate(r) } }
             .help("Quality of the song. Hover for the detail.")
         }
     }

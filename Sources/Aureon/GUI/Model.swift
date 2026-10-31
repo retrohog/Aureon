@@ -56,8 +56,9 @@ enum Tab: String, CaseIterable, Identifiable {
     case deepDive = "Deep Dive"
     case rooms = "Rooms"
     case audio = "Audio", dsp = "DSP"
-    case rip = "Rip CD", convert = "Convert", cloud = "Cloud", intelligence = "Intelligence"
+    case rip = "Rip CD", convert = "Convert", cloud = "Cloud"
     case folders = "Folders", abx = "ABX Test"
+    case soulseek = "Soulseek"
     case settings = "Settings"
     var id: String { rawValue }
 
@@ -67,7 +68,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .albums: "square.stack"; case .artists: "music.mic"; case .songs: "music.note"
         case .liked: "heart"; case .playlists: "music.note.list"
         case .composers: "music.quarternote.3"; case .works: "book"; case .conductors: "wand.and.rays"; case .ensembles: "person.3"
-        case .deepDive: "sparkle.magnifyingglass"; case .rooms: "hifispeaker.2"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .intelligence: "brain"; case .folders: "folder"; case .abx: "ear"; case .settings: "gearshape"
+        case .deepDive: "sparkle.magnifyingglass"; case .rooms: "hifispeaker.2"; case .audio: "waveform"; case .dsp: "slider.vertical.3"; case .rip: "opticaldisc"; case .convert: "arrow.triangle.2.circlepath"; case .cloud: "icloud"; case .folders: "folder"; case .abx: "ear"; case .soulseek: "arrow.down.circle"; case .settings: "gearshape"
         }
     }
 
@@ -79,7 +80,7 @@ enum Tab: String, CaseIterable, Identifiable {
         case .composers, .works, .conductors, .ensembles: .classical
         case .deepDive: .discover
         case .rooms, .audio, .dsp: .sound
-        case .rip, .convert, .cloud, .intelligence, .abx: .tools
+        case .rip, .convert, .cloud, .abx, .soulseek: .tools
         case .settings: .footer
         }
     }
@@ -98,14 +99,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance = "Appearance", nowPlaying = "Now Playing", miniPlayer = "Mini player", sidebar = "Pages"
     case general = "General", startup = "Startup & memory", midi = "MIDI"
     case connect = "Connect", cloud = "Cloud"
-    case intelligence = "Intelligence"
     case system = "System"
     var id: String { rawValue }
     var icon: String {
         switch self {
         case .appearance: "paintpalette"; case .nowPlaying: "play.rectangle"; case .miniPlayer: "pip"; case .sidebar: "sidebar.left"
         case .general: "gearshape"; case .startup: "memorychip"; case .midi: "pianokeys"
-        case .connect: "network"; case .cloud: "icloud"; case .intelligence: "brain"; case .system: "stethoscope"
+        case .connect: "network"; case .cloud: "icloud"; case .system: "stethoscope"
         }
     }
     var group: SettingsGroup {
@@ -113,7 +113,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance, .nowPlaying, .miniPlayer, .sidebar: .look
         case .general, .startup, .midi: .playback
         case .connect, .cloud: .connected
-        case .intelligence: .intelligence
         case .system: .advanced
         }
     }
@@ -121,7 +120,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
 /// The groups of the Settings menu (small capitals over their rows).
 enum SettingsGroup: String, CaseIterable, Identifiable {
-    case look = "Look", playback = "Playback and sound", connected = "Connected", intelligence = "Intelligence", advanced = "Advanced"
+    case look = "Look", playback = "Playback and sound", connected = "Connected", advanced = "Advanced"
     var id: String { rawValue }
     var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.group == self } }
 }
@@ -153,6 +152,8 @@ final class PlayerModel: ObservableObject {
                 return
             }
             updateAnalysisActivity()
+            // the search field belongs to the Search page: leaving it empties the field and closes the suggestions (Back brings the query back with the page)
+            if oldValue == .search, tab != .search { if !searchText.isEmpty { searchText = "" }; search.dropdownOpen = false; search.highlight = -1 }
             // the page's filter belongs to that page: it does not follow you to the next one
             if tab != oldValue, !library.search.isEmpty { library.search = "" }
             if tab == .deepDive { loadDeepDiveForCurrent() }
@@ -172,10 +173,12 @@ final class PlayerModel: ObservableObject {
 
     /// The console takes over the output: the normal player stops, and two decks play side by side on the same device.
     private func enterDJ() {
+        if djMinimumSink == nil { djMinimumSink = dj.$preset.sink { [weak self] p in self?.djMinimum = p.minimumWindow } }
         if started { player.stop(); started = false; resetStatus() }
         player.analysis.setActive(false)
         library.category = .songs
         LibraryModelBridge.shared.model = library
+        LibraryModelBridge.shared.collections = collections
         collections.attach(library.store)
         if ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil {
             repeatMode = RepeatMode(rawValue: defaults.integer(forKey: "aureon.repeat")) ?? .off
@@ -266,6 +269,8 @@ final class PlayerModel: ObservableObject {
     func showLevelSpeakers() { quickPanel = nil; roomsFocus = .levelSpeakers; djMode = false; settingsPage = nil; tab = .rooms }
     /// Where the quick control panel is open (from the rail or from the player bar), if it is.
     @Published var quickPanel: QuickPanelAnchor?
+    /// Opens the panel at `anchor`, or closes it when that very one is showing. A panel left open for another place does not swallow the click; a chip
+    /// rebuilt while open clears its own flag (see `windowPopover`).
     func toggleQuickPanel(_ anchor: QuickPanelAnchor = .rail) { quickPanel = quickPanel == nil ? anchor : nil }
     /// Where the appearance switch sits in the window (top-left origin), so the change of appearance grows out of it.
     var switchAnchor: CGPoint?
@@ -316,7 +321,12 @@ final class PlayerModel: ObservableObject {
     let podcasts = PodcastModel()
     let artistArt = ArtistArt()
     let dj = DJModel()
+    /// The smallest window the DJ console in use is designed for (follows the Pro / Compact choice).
+    @Published var djMinimum = DJLayoutPreset.load().minimumWindow
+    private var djMinimumSink: AnyCancellable?
     let collections = CollectionsModel()
+    /// The search field's state: filter chip, recent searches, the suggestions list.
+    let search = SearchModel()
     let rip = RipModel()
     let convert = ConvertModel()
     let cloud = CloudModel()
@@ -354,17 +364,18 @@ final class PlayerModel: ObservableObject {
     private var metaSeen = Set<UUID>()
     private var metaRunning = 0
     private var metaFor: UUID?
-    private var shuffleNet: TransitionNet?
     private var countedPlay: UUID?
     @Published var viewOptions: [String: ViewOptions] = [:] { didSet { if let d = try? JSONEncoder().encode(viewOptions), ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] == nil { defaults.set(d, forKey: "aureon.viewOptions") } } }
 
-    var place: Place { Place(tab: tab, library: library.selectedID, radio: radio.navKey, podcast: podcasts.navKey) }
+    var place: Place { Place(tab: tab, library: library.selectedID, radio: radio.navKey, podcast: podcasts.navKey, search: tab == .search ? Self.searchKey(searchText) : nil) }
+    static func searchKey(_ q: String) -> String? { let t = q.trimmingCharacters(in: .whitespaces); return t.isEmpty ? nil : t }
     func options(for t: Tab) -> ViewOptions { viewOptions[t.rawValue] ?? ViewOptions.defaults(for: t) }
     func setOptions(_ o: ViewOptions, for t: Tab) { viewOptions[t.rawValue] = o }
     @Published var searchText = "" {
         didSet {
             library.runSearch(searchText.trimmingCharacters(in: .whitespaces))
             if !searchText.isEmpty && tab != .search { withAnimation(.smooth(duration: 0.3)) { tab = .search } }
+            if tab == .search { navigator.updateSearch(Self.searchKey(searchText)) }
         }
     }
     let albumArt = AlbumArt()
@@ -493,7 +504,6 @@ final class PlayerModel: ObservableObject {
         fetchMissingArt = defaults.object(forKey: "aureon.fetchArt") as? Bool ?? true
         volumeLimit = defaults.object(forKey: "aureon.volumeLimit") as? Float ?? 1
         LibraryModelBridge.shared.model = library
-        IntelligenceCenter.shared.attach(self)
         if let d = defaults.data(forKey: "aureon.viewOptions"), let v = try? JSONDecoder().decode([String: ViewOptions].self, from: d) { viewOptions = v }
         refreshDevices()
         availableEffects = DSPChain.availableEffects()
@@ -518,6 +528,7 @@ final class PlayerModel: ObservableObject {
         navigator.restore = { [weak self] p in
             guard let self else { return }
             self.tab = p.tab
+            if p.tab == .search { self.searchText = p.search ?? "" }
             if self.library.selectedID != p.library { self.library.selectedID = p.library }
             if let r = p.radio, r != self.radio.navKey { self.radio.restore(r) }
             if let q = p.podcast, q != self.podcasts.navKey { self.podcasts.restore(q) }
@@ -909,7 +920,7 @@ final class PlayerModel: ObservableObject {
     func apply(_ plan: SessionRestore) {
         ScrollMemory.shared.all = plan.scroll
         if let uid = plan.deviceUID, let d = devices.first(where: { $0.uid == uid }), d.id != deviceID { deviceID = d.id }
-        if let t = plan.tab { if t == .cloud || t == .intelligence { go(.tab(t)) } else { tab = t } }
+        if let t = plan.tab { if t == .cloud { go(.tab(t)) } else { tab = t } }
         if plan.tab != nil { settingsSection = plan.section; if let id = plan.selectedID, tab != .settings { library.selectedID = id } }
         guard !plan.paths.isEmpty else { return }
         let known = library.store?.tracks(paths: plan.paths) ?? [:]
@@ -1057,10 +1068,7 @@ final class PlayerModel: ObservableObject {
             player.setOrder(head + (cur.map { [$0] } ?? []) + Shuffler.normal(rest, using: &rng))
         case .smart:
             let paths = Dictionary(items.map { ($0.id, $0.path) }, uniquingKeysWith: { a, _ in a })
-            // the transition network is a smart feature: with Intelligence (or Smart Shuffle's network) off, the shuffle uses plain rules
-            let useNet = IntelligenceGate.shared.isEnabled(.smartShuffle)
-            let store = library.store, net: TransitionNet? = useNet ? (shuffleNet ?? TransitionNet.loadOrCreate()) : nil
-            shuffleNet = net
+            let store = library.store
             let wanted = Set(ids)
             Task {
                 let order: [UUID] = await Task.detached(priority: .userInitiated) {
@@ -1072,16 +1080,16 @@ final class PlayerModel: ObservableObject {
                                                 liked: t?.isLiked ?? false, playCount: t?.playCount ?? 0, lastPlayedAt: t?.lastPlayedAt, analysis: AnalysisCache.shared.cached(path: path))
                     }
                     var rng = SystemRandomNumberGenerator()
-                    return head + (cur.map { [$0] } ?? []) + Shuffler.smart(rest.map(cand), start: cur.map(cand), net: net, using: &rng).filter { $0 != cur }
+                    return head + (cur.map { [$0] } ?? []) + Shuffler.smart(rest.map(cand), start: cur.map(cand), using: &rng).filter { $0 != cur }
                 }.value
-                // apply only if the queue is still the one we shuffled and smart shuffle is still on
+                // apply only if the queue is still the one we shuffled and balanced shuffle is still on
                 guard shuffle == mode, Set(items.map(\.id)) == wanted else { return }
                 player.setOrder(order)
             }
         }
     }
 
-    /// Counts a play once a song has been heard for ten seconds (feeds Smart Shuffle and “most played”).
+    /// Counts a play once a song has been heard for ten seconds (feeds Balanced Shuffle and “most played”).
     private func countPlay() {
         guard started, status.state == .playing, status.position > 10, let id = status.trackID, countedPlay != id, let item = items.first(where: { $0.id == id }), !item.isStream else { return }
         countedPlay = id

@@ -152,18 +152,18 @@ struct PulseTests {
 
 extension PulseTests {
     func theLayoutsAreChosenAndRemembered() {
-        expect(NowPlayingLayout.allCases.map(\.rawValue) == ["stage", "classic", "fullbleed", "carousel", "lumen", "chillax", "orbit"], "seven layouts")
+        expect(NowPlayingLayout.allCases.map(\.rawValue) == ["stage", "classic", "fullbleed", "carousel", "chillax", "poster", "turntable"], "seven layouts, in this order")
         expect(NowPlayingLayout.standard == .chillax && LookSettings().nowPlayingLayout == "chillax" && !LookSettings().nowPlayingLayoutChosen, "Chillax is the default")
         // a record that never picked a layout shows the default; one that picked shows the pick (Stage included)
         let never = try? JSONDecoder().decode(LookSettings.self, from: Data(#"{"nowPlayingLayout":"stage"}"#.utf8))
         let picked = try? JSONDecoder().decode(LookSettings.self, from: Data(#"{"nowPlayingLayout":"stage","nowPlayingLayoutChosen":true}"#.utf8))
         expect(never?.nowPlayingLayout == "chillax" && picked?.nowPlayingLayout == "stage", "an old record shows the default; a chosen layout is kept")
-        var chosen = LookSettings(); chosen.nowPlayingLayout = "orbit"
+        var chosen = LookSettings(); chosen.nowPlayingLayout = "turntable"
         let again = (try? JSONEncoder().encode(chosen)).flatMap { try? JSONDecoder().decode(LookSettings.self, from: $0) }
-        expect(chosen.nowPlayingLayoutChosen && again?.nowPlayingLayout == "orbit" && again?.nowPlayingLayoutChosen == true, "choosing a layout is remembered")
-        expect(NowPlayingLayout.resolve("lumen") == .lumen && NowPlayingLayout.resolve("vinyl") == .chillax && NowPlayingLayout.resolve(nil) == .chillax && NowPlayingLayout.resolve("") == .chillax, "an unknown id is the default")
+        expect(chosen.nowPlayingLayoutChosen && again?.nowPlayingLayout == "turntable" && again?.nowPlayingLayoutChosen == true, "choosing a layout is remembered")
+        expect(NowPlayingLayout.resolve("lumen") == .classic && NowPlayingLayout.resolve("orbit") == .chillax && NowPlayingLayout.resolve("poster") == .poster && NowPlayingLayout.resolve("vinyl") == .chillax && NowPlayingLayout.resolve(nil) == .chillax && NowPlayingLayout.resolve("") == .chillax, "an unknown id is the default")
         expect(NowPlayingLayout.allCases.allSatisfy { !$0.title.isEmpty && !$0.blurb.isEmpty } && Set(NowPlayingLayout.allCases.map(\.title)).count == 7, "each has a name and a line")
-        expect(NowPlayingLayout.stage.hasTabs && NowPlayingLayout.classic.hasTabs && !NowPlayingLayout.lumen.hasTabs && !NowPlayingLayout.chillax.hasTabs, "tabs where the layout has them")
+        expect(NowPlayingLayout.stage.hasTabs && NowPlayingLayout.classic.hasTabs && !NowPlayingLayout.poster.hasTabs && !NowPlayingLayout.turntable.hasTabs && !NowPlayingLayout.chillax.hasTabs, "tabs where the layout has them")
         let suite = UserDefaults(suiteName: "aureon.test.np.\(UUID().uuidString)")!
         var s = LookSettings(); s.nowPlayingLayout = "chillax"; s.lyricSize = .huge; s.seekChoice = .line; s.showPlaylistButton = false; s.showCredits = false; s.showSignalTags = false
         s.save(suite)
@@ -434,6 +434,50 @@ extension PulseTests {
         }
     }
 
+    /// The detail panels (Signal path, File) open as cards in the window layer: wholly inside the window, whatever the layout, size and lyrics.
+    @MainActor func detailPanelsLieInsideTheWindow() {
+        guard !NSScreen.screens.isEmpty else { return }
+        setenv("AUREON_NULLSINK", "1", 1)
+        let dir = tempDir("npdetail")
+        let song = dir.appendingPathComponent("Detail Check.wav")
+        _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 600) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        let lrc = (0..<12).map { String(format: "[00:%02d.00]A made-up line number %d for the panels", $0 * 3 + 1, $0) }.joined(separator: "\n")
+        try? Data(("[ti:Detail Check]\n" + lrc + "\n").utf8).write(to: dir.appendingPathComponent("Detail Check.lrc"))
+        let m = PlayerModel(); pulseKeepAlive.append(m)
+        let stage = StageModel(); pulseKeepAlive.append(stage)
+        let saved = LyricsService.shared.isOnlineAllowed
+        LyricsService.shared.isOnlineAllowed = { false }
+        defer { m.clear(); LyricsService.shared.isOnlineAllowed = saved; NPDetailModel.shared.set(nil) }
+        m.add(urls: [song], play: false)
+        for it in m.items { m.play(it.id) }
+        stage.open(m, reduceMotion: true)
+        var opened = 0, checked = 0
+        for size in [CGSize(width: 1180, height: 640), CGSize(width: 1440, height: 900)] {
+            for layout in NowPlayingLayout.allCases {
+                for lyrics in [true, false] {
+                    m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = lyrics
+                    let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
+                    host.frame = NSRect(origin: .zero, size: size)
+                    let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                    win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
+                    pumpFor(0.9)
+                    for kind in [NPDetailKind.signal, .format] {
+                        NPDetailModel.shared.set(kind); pumpFor(0.35)
+                        checked += 1
+                        if m.popovers.isOpen {
+                            opened += 1
+                            let f = m.popovers.shownFrame
+                            expect(CGRect(origin: .zero, size: size).insetBy(dx: -0.5, dy: -0.5).contains(f) && f.width > 100 && f.height > 60, "\(layout.rawValue) \(Int(size.width))×\(Int(size.height)) lyrics \(lyrics) \(kind.rawValue): the panel lies inside the window: \(f)")
+                        }
+                        NPDetailModel.shared.set(nil); pumpFor(0.15)
+                    }
+                    win.orderOut(nil); win.contentView = nil
+                }
+            }
+        }
+        expect(opened >= checked * 3 / 4, "the panels open in the layouts that carry the keys: \(opened) of \(checked)")
+    }
+
     /// On Now Playing, in every layout, the output popover and the Add-to-playlist card stay open once opened: after a turn of the run loop, and while the
     /// lyrics keep ticking and redrawing under them.
     @MainActor func popoversStayOpenOnNowPlaying() {
@@ -462,17 +506,17 @@ extension PulseTests {
             let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.makeKeyAndOrderFront(nil)
             pumpFor(1.2)
-            for (what, key) in [("output popover", "output.stage"), ("playlist card", "playlistButton")] {
+            for (what, key) in [("output popover", "output.rail"), ("playlist card", "playlistButton")] {   // one output chip, in the top bar
                 guard let r = LayoutProbe.frames[key] else { expect(false, "\(layout.rawValue): the \(what) button is on screen"); continue }
                 expect(!m.popovers.isOpen, "\(layout.rawValue): nothing is open before the \(what) is opened")
                 clickMiddle(win, r, height: size.height)
                 pumpFor(0.1)
                 expect(m.popovers.isOpen, "\(layout.rawValue): the \(what) opened")
-                if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover belongs to the stage chip") }
+                if what == "output popover" { expect(m.quickPanel == .rail, "\(layout.rawValue): the output popover belongs to the top bar chip") }
                 expect(CGRect(origin: .zero, size: size).insetBy(dx: -0.5, dy: -0.5).contains(m.popovers.shownFrame) && m.popovers.shownFrame.width > 50, "\(layout.rawValue): the \(what) is inside the window: \(m.popovers.shownFrame)")
                 pumpFor(1.6)                                           // the lyrics tick and redraw meanwhile
                 expect(m.popovers.isOpen, "\(layout.rawValue): the \(what) is still open after the lyrics redraw")
-                if what == "output popover" { expect(m.quickPanel == .stage, "\(layout.rawValue): the output popover was not closed by a redraw") }
+                if what == "output popover" { expect(m.quickPanel == .rail, "\(layout.rawValue): the output popover was not closed by a redraw") }
                 m.popovers.dismiss(); m.quickPanel = nil
                 pumpFor(0.3)
             }
@@ -705,7 +749,7 @@ extension PulseTests {
             (.nowPlaying, [
                 ("lyrics", { m.look.showLyrics.toggle() }), ("lyric size", { m.look.lyricSize = .huge }), ("lyric size back", { m.look.lyricSize = .large }),
                 ("playlist button", { m.look.showPlaylistButton.toggle() }), ("credits", { m.look.showCredits.toggle() }), ("tags", { m.look.showSignalTags.toggle() }),
-                ("seek", { m.look.seekChoice = .line }), ("seek back", { m.look.seekChoice = .layout }), ("layout", { m.look.nowPlayingLayout = "lumen" }), ("layout back", { m.look.nowPlayingLayout = "stage" }),
+                ("seek", { m.look.seekChoice = .line }), ("seek back", { m.look.seekChoice = .layout }), ("layout", { m.look.nowPlayingLayout = "poster" }), ("layout back", { m.look.nowPlayingLayout = "stage" }),
                 ("rest controls", { m.look.restControls.toggle() }),
             ]),
             (.miniPlayer, [
@@ -905,7 +949,7 @@ extension PulseTests {
         for mini in [MiniLayout.card, .popover] {
             run("mini player, \(mini.rawValue)", setup: {}, make: { p in AnyView(MiniLayoutView(layout: mini).environment(\.miniActions, MiniActions()).miniEnvironment(m).environment(\.probeToken, p).frame(width: size.width, height: size.height)) })
         }
-        expect(hosts == 9, "every place was looked at: \(hosts)")
+        expect(hosts == 3 + NowPlayingLayout.allCases.count, "every place was looked at: \(hosts)")
     }
 
     /// A bare seek bar: a press and a little drag in its middle seeks to the middle of the song, for each choice.
@@ -1012,73 +1056,134 @@ extension PulseTests {
         expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("bridge.key").path), "starting over removes the file")
     }
 
-    /// The Orbit layout: the ring's sums, its frame rate cap and its rest, and a press on the ring seeks.
-    @MainActor func theOrbitRingDrawsAndSeeks() {
-        // the sums
-        let flat = OrbitRing.heights(bands: [])
-        expect(flat.count == OrbitRing.barCount && Set(flat).count == 1, "no bands: a static ring of even bars")
-        let bands: [Float] = (0..<192).map { Float(-90 + 90 * Double($0) / 191) }          // rising from silence to full scale
-        let h = OrbitRing.heights(bands: bands)
-        expect(h.count == 96 && h.allSatisfy { $0 >= 0 && $0 <= 1 } && (0..<96).allSatisfy { abs(h[$0] - h[95 - $0]) < 1e-9 }, "bars are in range and the ring is symmetrical")
-        expect(h[0] < h[47] && h[47] > 0.9, "louder bands, longer bars")
-        let r = OrbitRing.radii(side: 500)
-        expect(r.cover < r.barsInner && r.barsInner < r.barsOuter && r.barsOuter < r.arc && r.arc < 250, "the cover, the bars and the arc sit one inside the other, inside the square: \(r)")
-        let c = CGPoint(x: 250, y: 250)
-        expect(abs(OrbitRing.fraction(of: CGPoint(x: 250, y: 0), around: c) - 0) < 1e-9 && abs(OrbitRing.fraction(of: CGPoint(x: 500, y: 250), around: c) - 0.25) < 1e-9
-               && abs(OrbitRing.fraction(of: CGPoint(x: 250, y: 500), around: c) - 0.5) < 1e-9 && abs(OrbitRing.fraction(of: CGPoint(x: 0, y: 250), around: c) - 0.75) < 1e-9, "from the top, clockwise")
-        expect(OrbitRing.hits(CGPoint(x: 250 + r.arc, y: 250), around: c, radii: r) && !OrbitRing.hits(c, around: c, radii: r) && !OrbitRing.hits(CGPoint(x: 250 + r.cover * 0.5, y: 250), around: c, radii: r), "a press on the ring counts, one on the cover does not")
-        // frame rate cap and rest
-        expect(OrbitRing.frameInterval >= 1.0 / 60.0 - 1e-9, "never redrawn more than 60 times a second: \(OrbitRing.frameInterval)")
-        expect(!OrbitRing.paused(playing: true, visible: true, reduceMotion: false, analyserOn: true), "it moves while the music plays and the window is seen")
-        expect(OrbitRing.paused(playing: false, visible: true, reduceMotion: false, analyserOn: true) && OrbitRing.paused(playing: true, visible: false, reduceMotion: false, analyserOn: true)
-               && OrbitRing.paused(playing: true, visible: true, reduceMotion: true, analyserOn: true) && OrbitRing.paused(playing: true, visible: true, reduceMotion: false, analyserOn: false), "it stands still when paused, hidden, with Reduce Motion on, or with the analyser off")
-        // the layout, in a real window: the ring is there, the controls are, and a press on the ring seeks
+    /// The sums behind Poster and Turntable: the title's size, the credit rows, the backdrop, the three lines of words, the record's angle and the arm's path.
+    func posterAndTurntableSums() {
+        // Poster: the title is sized to its column, never below 28 pt or above 190 pt, and a longer title is never larger
+        let short = PosterMath.titleSize("Go", width: 600, height: 400), long = PosterMath.titleSize("A Very Long Title That Needs Two Lines To Fit In Its Column", width: 600, height: 400)
+        expect(short <= 190 && long >= 28 && long < short, "a long title is set smaller than a short one: \(short) \(long)")
+        expect(PosterMath.titleSize("Go", width: 600, height: 60) <= 60 / 2 + 1, "the title is limited by the height it has")
+        expect(PosterMath.label(item: nil, items: []) == "Now playing", "no song: just the label")
+        var item = QueueItem(id: UUID(), url: URL(fileURLWithPath: "/tmp/a.flac"), title: "A")
+        let other = QueueItem(id: UUID(), url: URL(fileURLWithPath: "/tmp/b.flac"), title: "B")
+        expect(PosterMath.label(item: other, items: [item, other]) == "Now playing · Track 2 of 2", "without album numbers, the place in the queue")
+        item.trackNumber = 3; item.trackTotal = 12
+        expect(PosterMath.label(item: item, items: [item, other]) == "Now playing · Track 3 of 12", "with album numbers, the place on the album")
+        let credits = [NPCredit(label: "Written by", value: "W"), NPCredit(label: "Produced by", value: "P"), NPCredit(label: "Engineered by", value: "E"), NPCredit(label: "Conductor", value: "C")]
+        expect(PosterMath.creditRows(credits).map(\.label) == ["Produced by", "Written by"], "the producer first, then the next credit")
+        expect(PosterMath.creditRows([]).isEmpty && PosterMath.creditRows([credits[0]]).count == 1, "fewer credits, fewer rows")
+        expect(PosterMath.footCredits(credits).map(\.label) == ["Engineered by", "Conductor"] && PosterMath.footCredits([credits[0]]).count == 1, "the foot shows the credits the cover column does not")
+        let canvas = RGB(0.9, 0.9, 0.9)
+        let paper = PosterMath.backdrop(light: true, canvas: canvas), night = PosterMath.backdrop(light: false, canvas: RGB(0.1, 0.1, 0.12))
+        expect(paper.luminance > 0.8 && paper.r > paper.b && night.luminance < 0.1, "Paper is a warm light, Night is dark")
+        // the three lines of words
+        let lyrics = Lyrics(lines: [LyricLine(id: 0, time: 1, text: "one"), LyricLine(id: 1, time: 2, text: ""), LyricLine(id: 2, time: 3, text: "two"), LyricLine(id: 3, time: 4, text: "three")], synced: true, origin: .sidecar, source: "x")
+        expect(NPLyricWindow.lines(lyrics, active: nil) == NPLyricWindow.Lines(previous: nil, current: nil, next: "one"), "before the first line, it is the one to come")
+        expect(NPLyricWindow.lines(lyrics, active: 2) == NPLyricWindow.Lines(previous: "one", current: "two", next: "three"), "pauses are skipped on both sides")
+        expect(NPLyricWindow.lines(lyrics, active: 3) == NPLyricWindow.Lines(previous: "two", current: "three", next: nil), "at the end there is nothing to come")
+        expect(NPLyricWindow.shows(lyrics, wanted: true) && !NPLyricWindow.shows(lyrics, wanted: false) && !NPLyricWindow.shows(nil, wanted: true), "the words show when wanted and found")
+        var plain = lyrics; plain.synced = false
+        expect(!NPLyricWindow.shows(plain, wanted: true), "untimed words cannot follow the song, so the credits take the room")
+        // Turntable: the record turns only while playing and never with Reduce Motion
+        expect(TTSpin.spinning(playing: true, reduceMotion: false) && !TTSpin.spinning(playing: false, reduceMotion: false) && !TTSpin.spinning(playing: true, reduceMotion: true), "it turns while the music plays, never paused, never with Reduce Motion")
+        let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+        expect(abs(TTSpin.angle(base: 0, since: t0, now: t0.addingTimeInterval(TTSpin.secondsPerTurn / 4)) - 90) < 1e-9, "a quarter of a turn in a quarter of the time")
+        expect(TTSpin.angle(base: 40, since: nil, now: t0.addingTimeInterval(99)) == 40, "stopped, it holds its angle")
+        // the motor: spins up to speed in about 0.8 s and spools down the same way; the angle follows the speed
+        let spin = TurntableSpin()
+        var clock = t0
+        spin.advance(to: clock, target: TTMotor.cruise, reduceMotion: false)
+        for _ in 0..<40 { clock = clock.addingTimeInterval(0.02); spin.advance(to: clock, target: TTMotor.cruise, reduceMotion: false) }      // 0.8 s
+        expect(abs(spin.speed - TTMotor.cruise) < 1e-9, "at speed after the ramp: \(spin.speed)")
+        expect(abs(spin.angle - TTMotor.cruise * TTMotor.ramp / 2) < 1.0, "the turning during the ramp is half of what full speed would give: \(spin.angle)")
+        for _ in 0..<20 { clock = clock.addingTimeInterval(0.02); spin.advance(to: clock, target: 0, reduceMotion: false) }
+        expect(spin.speed > 0 && spin.speed < TTMotor.cruise, "spooling down takes time, it does not stop dead: \(spin.speed)")
+        for _ in 0..<40 { clock = clock.addingTimeInterval(0.02); spin.advance(to: clock, target: 0, reduceMotion: false) }
+        expect(spin.speed == 0 && spin.isSettled, "and has stopped after the ramp")
+        expect(TTMotor.step(speed: 10, target: 200, dt: 0.5, reduceMotion: true) == 200 && TTMotor.step(speed: 0, target: 90, dt: 1, reduceMotion: false) == 90, "Reduce Motion: no ramp; a long step never overshoots")
+        // a hand on the platter: the angle follows the pointer, the speed is the pointer's, and on release the platter coasts back to speed
+        let hand = TurntableSpin()
+        hand.drag(by: 30, dt: 0.05)
+        expect(abs(hand.angle - 30) < 1e-9 && hand.speed > 0, "dragging turns it by exactly the pointer's travel")
+        expect(abs(TTDrag.delta(from: 170, to: -170) - 20) < 1e-9 && abs(TTDrag.delta(from: -170, to: 170) + 20) < 1e-9, "crossing 180° is a small step, not a jump")
+        expect(abs(TTDrag.scratchSeconds(degrees: 360) - TTSpin.secondsPerTurn) < 1e-9 && TTDrag.scratchSeconds(degrees: -90) < 0, "a turn forward is a turn's worth of song; backwards goes back")
+        // the arm: the needle is where the song's place puts it, moving inward, and rests beside the record when nothing plays
+        let side: CGFloat = 400
+        func distance(_ a: Double) -> Double { let t = TTArm.tip(angle: a, side: side); return Double(hypot(t.x - TTArm.centre.x * side, t.y - TTArm.centre.y * side)) / Double(side) }
+        let start = TTArm.angle(fraction: 0, engaged: true), mid = TTArm.angle(fraction: 0.5, engaged: true), end = TTArm.angle(fraction: 1, engaged: true), rest = TTArm.angle(fraction: 0, engaged: false)
+        expect(abs(distance(start) - TTArm.outer) < 1e-6 && abs(distance(end) - TTArm.inner) < 1e-6, "the needle starts on the outer groove and ends on the inner")
+        expect(start < mid && mid < end && rest < start, "the arm moves steadily across the record, and rests outside it")
+        expect(distance(rest) > TTArm.record, "at rest the needle is off the record: \(distance(rest))")
+        expect(TTArm.angle(fraction: -3, engaged: true) == start && TTArm.angle(fraction: 9, engaged: true) == end, "a place outside the song is held to its ends")
+        // dropping the needle: the place on the record is the place in the song (outer groove start, inner end); beside the record it seeks nothing
+        func point(radius r: Double) -> CGPoint { CGPoint(x: (TTArm.centre.x + CGFloat(r)) * side, y: TTArm.centre.y * side) }
+        expect(abs((TTDrag.seekTime(at: point(radius: TTArm.outer), side: side, duration: 200) ?? -1) - 0) < 1e-6 && abs((TTDrag.seekTime(at: point(radius: TTArm.inner), side: side, duration: 200) ?? -1) - 200) < 1e-6, "outer groove is the start, inner groove the end")
+        let midR = (TTArm.outer + TTArm.inner) / 2
+        expect(abs((TTDrag.seekTime(at: point(radius: midR), side: side, duration: 200) ?? -1) - 100) < 1e-6, "halfway in is halfway through")
+        expect(TTDrag.seekTime(at: point(radius: TTArm.outer + 0.2), side: side, duration: 200) == nil && TTDrag.seekTime(at: point(radius: 0.02), side: side, duration: 200) == nil && TTDrag.seekTime(at: point(radius: midR), side: side, duration: 0) == nil, "off the record, or with no song, nothing is sought")
+        let engagedAngle = TTArm.angle(fraction: 0.3, engaged: true)
+        expect(TTDrag.grabsArm(at: TTArm.tip(angle: engagedAngle, side: side), side: side, armAngle: engagedAngle) && !TTDrag.grabsArm(at: CGPoint(x: 20, y: 380), side: side, armAngle: engagedAngle), "the arm is grabbed on its line, not on the plinth")
+        expect(abs(TTArm.fraction(radius: TTArm.radius(fraction: 0.37)) - 0.37) < 1e-9, "radius and fraction are each other's inverse")
+    }
+
+    /// Poster and Turntable in a real window: the dock is whole, Poster keeps its grid (title and cover inside equal margins, cover a square) and Turntable's
+    /// deck is a square above the dock.
+    @MainActor func posterAndTurntableDrawAndFollow() {
         guard !NSScreen.screens.isEmpty else { return }
         setenv("AUREON_NULLSINK", "1", 1)
-        let dir = tempDir("orbit")
-        let song = dir.appendingPathComponent("Orbit Check.wav")
+        let dir = tempDir("posterturntable")
+        let song = dir.appendingPathComponent("Poster Check.wav")
         _ = writeWAV(song, rate: 8000, bits: 16, frames: 8000 * 40) { f, _ in Int(2500 * sin(Double(f) * 0.12)) }
+        // AUREON_NP_SHOTS=<folder> also writes a picture of each layout (with timed words) there
+        let shots = ProcessInfo.processInfo.environment["AUREON_NP_SHOTS"]
+        if shots != nil {
+            let lrc = (0..<12).map { String(format: "[00:%02d.00]A made-up line number %d of the words", $0 * 3 + 1, $0) }.joined(separator: "\n")
+            try? Data(("[ti:Poster Check]\n" + lrc + "\n").utf8).write(to: dir.appendingPathComponent("Poster Check.lrc"))
+        }
         let m = PlayerModel(); pulseKeepAlive.append(m)
         let stage = StageModel(); pulseKeepAlive.append(stage)
         LayoutProbe.enabled = true
-        defer { m.clear(); LayoutProbe.enabled = false }
+        let savedOnline = LyricsService.shared.isOnlineAllowed
+        LyricsService.shared.isOnlineAllowed = { false }
+        defer { m.clear(); LayoutProbe.enabled = false; LyricsService.shared.isOnlineAllowed = savedOnline }
         m.add(urls: [song], play: false)
         for it in m.items { m.play(it.id) }
-        m.look.nowPlayingLayout = "orbit"; m.look.showLyrics = false
         stage.open(m, reduceMotion: true)
-        let size = CGSize(width: 1100, height: 700)
-        let probe = LayoutProbe.begin()
-        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(.dark)))
-        host.frame = NSRect(origin: .zero, size: size)
-        let win = KeyableWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        let place = (NSScreen.main ?? NSScreen.screens[0]).visibleFrame
-        win.contentView = host; win.setFrameOrigin(NSPoint(x: place.minX + 20, y: place.minY + 20)); win.orderFrontRegardless(); win.makeKey()
-        defer { win.orderOut(nil); win.contentView = nil }
-        func settle(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
-        settle(1.2)
-        guard let ring = LayoutProbe.frames["orbit.ring"], let dock = LayoutProbe.frames["dock"], let transport = LayoutProbe.frames["transport"] else { expect(false, "the ring, the dock and the transport are on screen: \(LayoutProbe.frames.keys.sorted())"); return }
-        let window = CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1)
-        expect(window.contains(ring) && window.contains(dock) && window.contains(transport) && ring.maxY <= dock.minY + 1 && abs(ring.width - ring.height) < 1, "the ring is a square inside the window, above the dock: \(ring) \(dock)")
-        // a press on the arc a quarter of the way round (3 o'clock) seeks to a quarter of the song
-        let rr = OrbitRing.radii(side: ring.width)
-        let at = NSPoint(x: ring.midX + rr.arc, y: size.height - ring.midY)
-        m.player.send(.seekTo(1)); settle(0.5)
-        for (type, dy) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 1.0), (.leftMouseUp, 1.0)] {
-            if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: at.x, y: at.y + dy), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { win.sendEvent(e) }
-            settle(0.05)
+        let savedTheme = Theme.current
+        defer { Theme.current = savedTheme }
+        for dark in [true, false] {
+            Theme.current = dark ? Theme.dark[0] : Theme.light[0]
+            for layout in [NowPlayingLayout.poster, .turntable] {
+                m.look.nowPlayingLayout = layout.rawValue; m.look.showLyrics = shots != nil
+                let size = CGSize(width: 1100, height: 700)
+                let probe = LayoutProbe.begin()
+                let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).environment(\.probeToken, probe).frame(width: size.width, height: size.height).preferredColorScheme(dark ? .dark : .light)))
+                host.frame = NSRect(origin: .zero, size: size)
+                let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+                win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.orderFront(nil)
+                let end = Date().addingTimeInterval(shots != nil ? 3.0 : 1.0)
+                while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.02)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+                if let shots, let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try? FileManager.default.createDirectory(atPath: shots, withIntermediateDirectories: true)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: shots).appendingPathComponent("\(layout.rawValue)-\(dark ? "night" : "paper").png"))
+                }
+                let f = LayoutProbe.frames
+                let window = CGRect(origin: .zero, size: size).insetBy(dx: -1, dy: -1)
+                let name = "\(layout.rawValue) \(dark ? "dark" : "light")"
+                if let dock = f["dock"], let transport = f["transport"] { expect(window.contains(dock) && window.contains(transport), "\(name): the dock is whole and inside the window") } else { expect(false, "\(name): the dock is on screen: \(f.keys.sorted())") }
+                if layout == .poster {
+                    if let title = f["poster.title"], let cover = f["poster.cover"], let dock = f["dock"] {
+                        expect(abs(cover.width - cover.height) < 1 && cover.maxY <= dock.minY + 1, "\(name): the cover is a square above the dock: \(cover)")
+                        expect(title.minX >= 27 && abs(title.minX - (size.width - cover.maxX)) < 1.5 && cover.maxX <= size.width - 27 && title.maxX <= cover.minX, "\(name): the title and the cover keep equal margins and do not meet: \(title) \(cover)")
+                        expect(title.maxY <= dock.minY, "\(name): the title ends above the dock")
+                    } else { expect(false, "\(name): the title and the cover are on screen: \(f.keys.sorted())") }
+                } else if let deck = f["turntable"], let dock = f["dock"] {
+                    expect(abs(deck.width - deck.height) < 1 && window.contains(deck) && deck.maxY <= dock.minY + 1, "\(name): the deck is a square above the dock: \(deck)")
+                } else { expect(false, "\(name): the deck is on screen: \(f.keys.sorted())") }
+                win.orderOut(nil); win.contentView = nil
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+            }
         }
-        settle(1.0)
-        expect(m.status.position > 7 && m.status.position < 14, "a press at 3 o'clock seeks to about a quarter of 40 s: \(String(format: "%.1f", m.status.position)) s")
-        // a press on the cover does not seek
-        m.player.send(.seekTo(30)); settle(0.5)
-        let before = m.status.position
-        let cover = NSPoint(x: ring.midX, y: size.height - ring.midY)
-        for (type, dx) in [(NSEvent.EventType.leftMouseDown, 0.0), (.leftMouseDragged, 1.0), (.leftMouseUp, 1.0)] {
-            if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: cover.x + dx, y: cover.y), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: win.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { win.sendEvent(e) }
-            settle(0.05)
-        }
-        settle(0.5)
-        expect(m.status.position >= before - 0.5, "a press on the cover leaves the song where it is: \(String(format: "%.1f", before)) → \(String(format: "%.1f", m.status.position))")
     }
 
     /// The top bar: Add folder sits beside the search on every page (and on Now Playing), and at the smallest window and a usual one nothing in the bar overlaps
@@ -1174,7 +1279,7 @@ extension PulseTests {
         expect(Set(items.map(\.id)).count == items.count, "no setting is listed twice")
         expect(Set(SettingsSection.allCases).isSubset(of: Set(items.map(\.section))), "every section has settings that can be found: \(Set(SettingsSection.allCases).subtracting(items.map(\.section)))")
         for (q, section) in [("pure black", SettingsSection.appearance), ("amoled", .appearance), ("lyrics timing", .nowPlaying), ("seek bar", .nowPlaying), ("menu bar", .miniPlayer), ("volume safety", .general),
-                             ("resume", .startup), ("midi learn", .midi), ("last.fm", .connect), ("navidrome", .cloud), ("phone", .cloud), ("api keys", .intelligence), ("freeze", .system), ("diagnostics", .system), ("font", .appearance)] {
+                             ("resume", .startup), ("midi learn", .midi), ("last.fm", .connect), ("navidrome", .cloud), ("phone", .cloud), ("freeze", .system), ("diagnostics", .system), ("font", .appearance)] {
             expect(SettingsIndex.search(q).contains { $0.section == section }, "searching \"\(q)\" finds a setting in \(section.rawValue): \(SettingsIndex.search(q).map(\.title))")
         }
         expect(SettingsIndex.search("").isEmpty && SettingsIndex.search("zzzqqq").isEmpty, "nothing for an empty or an unknown search")
@@ -1538,6 +1643,6 @@ func pulseTests() -> [(String, TestFn)] {
     return [("pulse.settings", t.settingsAreSavedAndRestored), ("pulse.mix", t.theMixFollowsTheClockAndTheListener), ("pulse.history", t.theListenersHistoryShapesTheMix),
             ("pulse.sky", t.theSkyFollowsItsSettings), ("pulse.folders", t.theFoldersPageReadsStatus),
             ("pulse.miniSettings", t.theMiniPlayerSettingsAreRemembered), ("pulse.miniPlaces", t.positionsComeBackOnScreen), ("pulse.miniCountdown", t.thePopoverClosesOnItsOwnTimeAndWaitsForThePointer),
-            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.orbit", { MainActor.assumeIsolated { t.theOrbitRingDrawsAndSeeks() } }), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.fontFamilies", { MainActor.assumeIsolated { t.everyFontFamilyLoadsAppliesAndSurvivesARestart() } }), ("pulse.settingsOnePage", { MainActor.assumeIsolated { t.settingsIsOnePageWithOneMenu() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
+            ("pulse.miniWindow", { MainActor.assumeIsolated { t.theFloatingWindowFollowsTheSettings() } }), ("pulse.layoutFit", { MainActor.assumeIsolated { t.everyLayoutKeepsItsControlsApart() } }), ("pulse.playedLog", { MainActor.assumeIsolated { t.playedHistoryKeepsTheOrder() } }), ("pulse.playHistory", { MainActor.assumeIsolated { t.playingFillsTheHistory() } }), ("pulse.themeMigration", { MainActor.assumeIsolated { t.savedThemesAreCarriedOver() } }), ("pulse.themeModes", { MainActor.assumeIsolated { t.modelShowsFamilyInEveryMode() } }), ("pulse.miniDragAnywhere", { MainActor.assumeIsolated { t.theMiniPlayerDragsFromAnywhereAndRemembersItsPlace() } }), ("pulse.settingsStay", { MainActor.assumeIsolated { t.settingsPagesStayWhereTheyAreWhenAnythingChanges() } }), ("pulse.miniKeepsApp", { MainActor.assumeIsolated { t.theAppStaysOpenWhileTheMiniPlayerHasTheScreen() } }), ("pulse.miniSwitch", { MainActor.assumeIsolated { t.switchingToTheMiniPlayerNeverCrashes() } }), ("pulse.controlsStay", { MainActor.assumeIsolated { t.theControlsStayInViewUnlessAskedToRest() } }), ("pulse.privateKey", { MainActor.assumeIsolated { t.theSharingKeyIsAPrivateFile() } }), ("pulse.noKeychainAtStart", { MainActor.assumeIsolated { t.startingUpNeverTouchesTheKeychain() } }), ("pulse.posterTurntable", { MainActor.assumeIsolated { t.posterAndTurntableDrawAndFollow() } }), ("pulse.posterTurntableMath", t.posterAndTurntableSums), ("pulse.topBar", { MainActor.assumeIsolated { t.theTopBarKeepsEverythingApart() } }), ("pulse.fontFamilies", { MainActor.assumeIsolated { t.everyFontFamilyLoadsAppliesAndSurvivesARestart() } }), ("pulse.settingsOnePage", { MainActor.assumeIsolated { t.settingsIsOnePageWithOneMenu() } }), ("pulse.seekBare", { MainActor.assumeIsolated { t.aSeekBarSeeksWhereItIsPressed() } }), ("pulse.seekChoices", { MainActor.assumeIsolated { t.theSeekBarChoiceReachesEverySeekBar() } }), ("pulse.podcastsRail", { MainActor.assumeIsolated { t.podcastsHaveTheirOwnPlaceOnTheRail() } }), ("pulse.popoverFrames", { MainActor.assumeIsolated { t.popoversNeverLeaveTheWindow() } }), ("pulse.detailPanels", { MainActor.assumeIsolated { t.detailPanelsLieInsideTheWindow() } }), ("pulse.popovers", { MainActor.assumeIsolated { t.popoversStayOpenOnNowPlaying() } }), ("pulse.upcomingArt", { MainActor.assumeIsolated { t.upcomingArtworkIsPrefetched() } }), ("pulse.queuePick", { MainActor.assumeIsolated { t.pickingFromTheQueueDoesNotReorderIt() } }), ("pulse.miniDrag", { MainActor.assumeIsolated { t.theMiniPlayerDragsAndSwapsWithTheMainWindow() } }), ("pulse.miniDraw", { MainActor.assumeIsolated { t.theMiniLayoutsDrawWithoutTrouble() } }), ("pulse.session", t.theLastSessionIsPlannedFromTheSettings), ("pulse.sessionRecord", t.theSessionRecordIsWrittenSmallAndReadBack), ("pulse.windows", t.theWindowComesBackToItsDisplay),
             ("pulse.resume", { MainActor.assumeIsolated { t.theQueueComesBackReadyToPlay() } }), ("pulse.scroll", t.scrollMemoryKeepsWhereEachPageWas), ("pulse.layouts", t.theLayoutsAreChosenAndRemembered), ("pulse.credits", t.creditsAndTheSignalPathReadWell), ("pulse.queue", t.theQueueSeenFromNowPlaying)]
 }

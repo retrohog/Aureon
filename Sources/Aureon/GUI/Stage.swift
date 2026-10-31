@@ -319,9 +319,9 @@ struct StageBackdrop: View {
         .clipped()
         .allowsHitTesting(false)
         .onAppear { prepare(); shownKey = drawKey }
-        .onChange(of: key) { _, _ in prepare() }
-        .onChange(of: drawKey) { _, k in if let k { shownKey = k } }
-        .onChange(of: image == nil) { _, _ in prepare() }
+        .onChangeCompat(of: key) { _, _ in prepare() }
+        .onChangeCompat(of: drawKey) { _, k in if let k { shownKey = k } }
+        .onChangeCompat(of: image == nil) { _, _ in prepare() }
     }
 
     private func prepare() {

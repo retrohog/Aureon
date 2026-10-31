@@ -42,13 +42,13 @@ struct UXTests {
 
     func sidebarLayout() {
         var l = SidebarLayout()
-        expect(l.visible(in: .sound) == [.rooms, .audio, .dsp] && l.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx] && l.visible(in: .listen) == [.home, .player, .radio, .podcasts], "the default is the usual sidebar")
+        expect(l.visible(in: .sound) == [.rooms, .audio, .dsp] && l.visible(in: .tools) == [.rip, .convert, .cloud, .abx] && l.visible(in: .listen) == [.home, .player, .radio, .podcasts], "the default is the usual sidebar")
         l.setHidden(.dsp, true); l.setHidden(.cloud, true)
         expect(l.visible(in: .sound) == [.rooms, .audio] && l.hiddenTabs == [.dsp, .cloud] && l.isHidden(.dsp), "hidden pages leave the sidebar")
         l.setHidden(.settings, true); l.setHidden(.search, true)
         expect(!l.isHidden(.settings) && !l.isHidden(.search), "Settings and search cannot be removed")
         l.move(.convert, by: -1)
-        expect(l.ordered(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx].swapped(0, 1) , "\(l.ordered(in: .tools))")
+        expect(l.ordered(in: .tools) == [.rip, .convert, .cloud, .abx].swapped(0, 1) , "\(l.ordered(in: .tools))")
         l.move(.convert, by: -1)
         expect(l.ordered(in: .tools).first == .convert, "moving past the top does nothing more")
         l.move(.home, by: 1)
@@ -64,7 +64,7 @@ struct UXTests {
         expect(reachable.count == Tab.allCases.count, "hiding everything leaves each page listed under Hidden pages")
         // saved by a version that had fewer pages: new pages still appear
         var old = SidebarLayout(); old.order = [Tab.dsp.rawValue]
-        expect(old.ordered(in: .sound) == [.dsp, .rooms, .audio] && old.visible(in: .tools) == [.rip, .convert, .cloud, .intelligence, .abx], "pages missing from a saved order keep their place after the listed ones")
+        expect(old.ordered(in: .sound) == [.dsp, .rooms, .audio] && old.visible(in: .tools) == [.rip, .convert, .cloud, .abx], "pages missing from a saved order keep their place after the listed ones")
     }
 
 

@@ -96,7 +96,7 @@ private struct WindowPopoverCard: View {
         ScrollView(.vertical, showsIndicators: false) {
             entry.content.fixedSize().onGeometryChange(for: CGSize.self, of: { $0.size }) { natural = $0 }
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .scrollBounceBasedOnSize()
         .frame(width: size.width, height: size.height, alignment: .topLeading)
         .background(shape.fill(Brand.canvas))
         .overlay(shape.strokeBorder(Brand.rule, lineWidth: Metrics.hairline))
@@ -104,8 +104,8 @@ private struct WindowPopoverCard: View {
         .shadow(color: .black.opacity(0.28), radius: 18, y: 6)
         .opacity(natural == nil ? 0 : 1)
         .offset(x: frame.minX, y: frame.minY)
-        .onChange(of: frame) { _, f in if natural != nil { center.shownFrame = f } }
-        .onChange(of: natural == nil) { _, waiting in if !waiting { center.shownFrame = frame } }
+        .onChangeCompat(of: frame) { _, f in if natural != nil { center.shownFrame = f } }
+        .onChangeCompat(of: natural == nil) { _, waiting in if !waiting { center.shownFrame = frame } }
         .transition(.opacity)
     }
 }
@@ -125,9 +125,9 @@ private struct WindowPopoverModifier<PopContent: View>: ViewModifier {
                     anchor = f
                     if isPresented { center.move(id, anchor: f) }
                 }
-                .onChange(of: isPresented) { _, now in if now { present(center) } else { center.close(id) } }
+                .onChangeCompat(of: isPresented) { _, now in if now { present(center) } else { center.close(id) } }
                 .onAppear { if isPresented { present(center) } }
-                .onDisappear { center.close(id) }
+                .onDisappear { center.close(id); if isPresented { isPresented = false } }      // a chip rebuilt while open must not leave its owner believing it is still open
         } else {
             content.popover(isPresented: $isPresented, arrowEdge: edge) { popContent() }
         }

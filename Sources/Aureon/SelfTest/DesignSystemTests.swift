@@ -127,7 +127,7 @@ struct DesignSystemTests {
 
     func noScatteredFontsOrSprings() {
         let sources = guiSources + {
-            let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Intelligence")
+            let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Upscaler")
             return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".swift") }.compactMap { n in (try? String(contentsOfFile: dir.appendingPathComponent(n).path, encoding: .utf8)).map { (n, $0) } }
         }()
         guard !sources.isEmpty else { return }          // not run from a checkout

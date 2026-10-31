@@ -1,8 +1,7 @@
 import Foundation
-import Synchronization
 import AureonNeuralCore
 
-// The neural upscaler ("Real-Time Audio Enhancer" in the Intelligence tab).
+// The neural upscaler ("Real-Time Audio Enhancer" in the Audio settings).
 //
 //   lossy source ─► [sinc resample to the model rate] ─► NeuralUpscaleSource ─► [sinc resample to the device rate] ─► … ─► ring ─► render
 //                                                         │            ▲
@@ -14,15 +13,15 @@ import AureonNeuralCore
 // on the audio thread, and a late block costs nothing there: the decode thread commits that block as fallback (the sinc-resampled
 // input) without waiting, and the overlap-add crossfades into and out of it.
 //
-// The Intelligence settings own the switch: `IntelligenceGate.isEnabled(.audioEnhancer)` (master switch, Intel opt-in and the feature
-// toggle) is read once per block, and the model is the one the user picked there, already checked against the size cap.
+// The enhancer settings own the switch: `EnhancerGate.isEnabled` (the toggle, and never on Intel) is read once per block, and the model
+// is the one the user picked there, already checked against the size cap.
 
-/// What the enhancer is doing, for the Intelligence tab. Counters are atomics; the text is behind a lock (not for the audio thread).
+/// What the enhancer is doing, for the audio settings card. Counters are atomics; the text is behind a lock (not for the audio thread).
 final class NeuralUpscaleStatus: @unchecked Sendable {
     static let shared = NeuralUpscaleStatus()
 
     enum State: Equatable, Sendable {
-        /// The feature is switched off (or the master switch is).
+        /// The feature is switched off.
         case off
         /// The model is being compiled, loaded and timed.
         case loading
@@ -71,7 +70,7 @@ final class NeuralUpscaleStatus: @unchecked Sendable {
         code.store(c, ordering: .relaxed)
     }
     func setError(_ e: String?) { lock.lock(); error = e; lock.unlock() }
-    /// For the Intelligence tab (`EnhancerStatusBoard`): atomics and one short lock, never blocks for long.
+    /// For the audio settings card (`EnhancerStatusBoard`): atomics and one short lock, never blocks for long.
     func snapshot() -> EnhancerStatusSnapshot {
         let s: EnhancerStatusSnapshot.State
         switch state {
@@ -160,14 +159,14 @@ final class UpscaleStream: @unchecked Sendable {
     }
 }
 
-/// The process-wide upscaler service: loads the model the Intelligence settings name, runs one worker thread for every stream, and
+/// The process-wide upscaler service: loads the model the enhancer settings name, runs one worker thread for every stream, and
 /// tells the player when a stream should be rebuilt with (or could be built without) the enhancer.
 final class NeuralUpscaler: @unchecked Sendable {
     static let shared = NeuralUpscaler(gate: .shared, status: .shared, loader: CoreMLUpscaleBackend.load)
 
     typealias Loader = (URL?, HostHardware) throws -> UpscaleBackend
 
-    let gate: IntelligenceGate
+    let gate: EnhancerGate
     let status: NeuralUpscaleStatus
     private let loader: Loader
     private let lock = NSLock()
@@ -182,16 +181,16 @@ final class NeuralUpscaler: @unchecked Sendable {
     /// A model slower than this (inference time ÷ audio time, measured when it loads) is refused outright.
     var admissionRTF = 0.7
 
-    init(gate: IntelligenceGate, status: NeuralUpscaleStatus, loader: @escaping Loader) {
+    init(gate: EnhancerGate, status: NeuralUpscaleStatus, loader: @escaping Loader) {
         self.gate = gate; self.status = status; self.loader = loader
     }
 
-    /// Follows the Intelligence settings from now on, loads the model if the enhancer is on, and feeds the Intelligence tab's status line.
+    /// Follows the enhancer settings from now on, loads the model if the enhancer is on, and feeds the settings card's status line.
     /// Idempotent and callable from any thread: the app calls it at launch, and the player on first use (for the headless daemon).
     func observeSettings() {
         lock.lock()
         guard observer == nil else { lock.unlock(); return }
-        observer = NotificationCenter.default.addObserver(forName: .intelligenceSettingsChanged, object: gate, queue: nil) { [weak self] _ in self?.reconcile() }
+        observer = NotificationCenter.default.addObserver(forName: .enhancerSettingsChanged, object: gate, queue: nil) { [weak self] _ in self?.reconcile() }
         lock.unlock()
         let st = status
         EnhancerStatusBoard.shared.register { st.snapshot() }
@@ -210,14 +209,14 @@ final class NeuralUpscaler: @unchecked Sendable {
     }
 
     func wouldInsert(for raw: StreamInfo, deckRate: Double?) -> Bool {
-        Self.applies(to: raw, deckRate: deckRate) && gate.isEnabled(.audioEnhancer) && isReady
+        Self.applies(to: raw, deckRate: deckRate) && gate.isEnabled && isReady
     }
 
     /// Loads, swaps or drops the model to match the settings. Asynchronous unless `wait` (tests).
     func reconcile(wait: Bool = false) {
         let work = { [self] in
-            let enabled = gate.isEnabled(.audioEnhancer)
-            let url = enabled ? gate.enhancerModelURL : nil
+            let enabled = gate.isEnabled
+            let url = enabled ? gate.modelURL : nil
             let key = enabled ? (url?.standardizedFileURL.path ?? "") : nil
             lock.lock(); let same = key == loadedKey; lock.unlock()
             if same { if !enabled { status.set(.off) }; return }

@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 struct RingTests {
     final class Flag: @unchecked Sendable { let on = Atomic<Bool>(true) }

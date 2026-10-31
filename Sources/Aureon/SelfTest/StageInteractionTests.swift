@@ -123,11 +123,14 @@ struct StageInteractionTests {
             pump(1.5, r.host)
             // leave: a click on Home in the top bar
             var left = false
-            for x in stride(from: 340.0, to: 400.0, by: 6.0) where !left {
-                click(r, CGPoint(x: x, y: 32))
+            // the Home button sits wherever the top bar puts it for this window width
+            let home = LayoutProbe.frames["top.home"]
+            let xs: [Double] = home.map { [Double($0.midX)] } ?? Array(stride(from: 300.0, to: 400.0, by: 6.0))
+            for x in xs where !left {
+                click(r, CGPoint(x: x, y: home.map { Double($0.midY) } ?? 32))
                 left = r.m.tab != .player
             }
-            expect(left, "round \(round): a click on Home leaves the Gallery")
+            expect(left, "round \(round): a click on Home leaves the Gallery (home \(String(describing: home)), tab \(r.m.tab), host \(r.host.bounds.size))")
             pump(1.5, r.host)
             let after = probe(r)
             expect(after.rail >= before.rail - 2 && after.bar >= before.bar - 1, "round \(round): after the Gallery the rail and the bar answer as before: \(after) vs \(before)")

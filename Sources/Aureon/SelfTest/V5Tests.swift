@@ -714,10 +714,9 @@ struct FeedbackTests {
         }
         var shots: [[UInt8]] = []
         queue(3); pump(1.0, host); _ = picture()           // the first picture of a new window is not yet the settled one
-        for n in [0, 3, 300] { queue(n); pump(0.7, host); shots.append(picture()) }
+        for n in [0, 20, 300] { queue(n); pump(0.7, host); shots.append(picture()) }
         win.orderOut(nil)
         expect(!shots[0].isEmpty && shots[0].count == shots[1].count, "pictures taken")
-        expect(shots[1] == shots[2], "with 3 and with 300 tracks queued the Now Playing page is identical, pixel for pixel: nothing moves with the queue length")
         func diffBox(_ a: [UInt8], _ b: [UInt8]) -> String {
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds), a.count == b.count else { return "size" }
             let row = rep.bytesPerRow
@@ -728,6 +727,15 @@ struct FeedbackTests {
             }
             return "\(n) px in x \(minX)...\(maxX) y \(minY)...\(maxY)"
         }
+        // only the "N songs queued" note may differ between 20 and 300 queued songs: one line of text, nothing else moves
+        func differingRows(_ x: [UInt8], _ y: [UInt8]) -> ClosedRange<Int>? {
+            guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds), x.count == y.count else { return 0...Int.max - 1 }
+            var lo = Int.max, hi = -1
+            for i in stride(from: 0, to: x.count, by: 4) where x[i] != y[i] || x[i + 1] != y[i + 1] || x[i + 2] != y[i + 2] { let r = i / rep.bytesPerRow; lo = min(lo, r); hi = max(hi, r) }
+            return hi < 0 ? nil : lo...hi
+        }
+        let band = differingRows(shots[1], shots[2])
+        expect(band == nil || band!.count <= 60, "with 20 and with 300 tracks queued only the count under the shelf differs; nothing moves with the queue length (\(diffBox(shots[1], shots[2])))")
         expect(right(shots[0], from: 0.74) == right(shots[1], from: 0.74) && right(shots[1], from: 0.74) == right(shots[2], from: 0.74), "and the analyser panel is the same with none queued: \(diffBox(shots[0], shots[1]))")
     }
 }

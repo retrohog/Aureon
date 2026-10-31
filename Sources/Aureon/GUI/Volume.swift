@@ -112,11 +112,11 @@ struct VolumeSlider: View {
             }
         }
         .frame(height: height)
-        .focusable(enabled).focused($focused).focusEffectDisabled()
-        .onKeyPress(.leftArrow, phases: [.down, .repeat]) { k in value = VolumeMath.key(-1, current: value, fine: k.modifiers.contains(.option)); return .handled }
-        .onKeyPress(.rightArrow, phases: [.down, .repeat]) { k in value = VolumeMath.key(1, current: value, fine: k.modifiers.contains(.option)); return .handled }
-        .onKeyPress(.downArrow, phases: [.down, .repeat]) { k in value = VolumeMath.key(-1, current: value, fine: k.modifiers.contains(.option)); return .handled }
-        .onKeyPress(.upArrow, phases: [.down, .repeat]) { k in value = VolumeMath.key(1, current: value, fine: k.modifiers.contains(.option)); return .handled }
+        .focusable(enabled).focused($focused).focusEffectDisabledCompat()
+        .onKeyPressCompat(.leftArrow, whileFocused: focused, repeats: true) { k in value = VolumeMath.key(-1, current: value, fine: k.modifiers.contains(.option)); return .handled }
+        .onKeyPressCompat(.rightArrow, whileFocused: focused, repeats: true) { k in value = VolumeMath.key(1, current: value, fine: k.modifiers.contains(.option)); return .handled }
+        .onKeyPressCompat(.downArrow, whileFocused: focused, repeats: true) { k in value = VolumeMath.key(-1, current: value, fine: k.modifiers.contains(.option)); return .handled }
+        .onKeyPressCompat(.upArrow, whileFocused: focused, repeats: true) { k in value = VolumeMath.key(1, current: value, fine: k.modifiers.contains(.option)); return .handled }
         .opacity(enabled ? 1 : 0.6)
         .accessibilityElement().accessibilityLabel("Volume").accessibilityValue(Text("\(Int((value * 100).rounded())) percent"))
         .accessibilityAdjustableAction { dir in value = VolumeMath.key(dir == .increment ? 1 : -1, current: value, step: 0.05) }

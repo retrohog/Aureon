@@ -19,7 +19,7 @@ final class NeuralUpscaleSource: FrameSource {
     let stream: UpscaleStream
     private let upstream: FrameSource
     private weak var service: NeuralUpscaler?
-    private let gate: IntelligenceGate
+    private let gate: EnhancerGate
     private let status: NeuralUpscaleStatus
     private let gauge: PlayoutGauge?
     private let ch: Int
@@ -74,7 +74,7 @@ final class NeuralUpscaleSource: FrameSource {
 
     // MARK: -
 
-    private var enabled: Bool { gate.isEnabled(.audioEnhancer) }
+    private var enabled: Bool { gate.isEnabled }
 
     private func advance() {
         fill()

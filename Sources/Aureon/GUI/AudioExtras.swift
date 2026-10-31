@@ -39,7 +39,7 @@ struct HeadphoneCard: View {
             } else { Note(text: "No profile selected.") }
             HStack {
                 TextField("Search your headphones, e.g. HD 650", text: $hp.query).textFieldStyle(.plain).ruleField().onSubmit { hp.loadIndex() }
-                    .onChange(of: hp.query) { _, _ in if !hp.indexLoaded { hp.loadIndex() } }
+                    .onChangeCompat(of: hp.query) { _, _ in if !hp.indexLoaded { hp.loadIndex() } }
                 if hp.loading { ProgressView().controlSize(.small) }
             }
             if !hp.results.isEmpty {
@@ -64,7 +64,7 @@ struct ResponseGraph: View {
         Canvas { ctx, size in
             let n = 160, rate = 48_000.0
             func y(_ db: Double) -> CGFloat { size.height * (0.5 - CGFloat(db / 24)) }
-            for g in [-12.0, 0, 12] { var p = Path(); p.move(to: CGPoint(x: 0, y: y(g))); p.addLine(to: CGPoint(x: size.width, y: y(g))); ctx.stroke(p, with: .color(Brand.ink.opacity(g == 0 ? 0.25 : 0.08)), lineWidth: 0.6) }
+            for g: Double in [-12, 0, 12] { var p = Path(); p.move(to: CGPoint(x: 0, y: y(g))); p.addLine(to: CGPoint(x: size.width, y: y(g))); ctx.stroke(p, with: .color(Brand.ink.opacity(g == 0 ? 0.25 : 0.08)), lineWidth: 0.6) }
             var line = Path()
             for i in 0..<n {
                 let f = 20 * pow(1000, Double(i) / Double(n - 1))
@@ -73,8 +73,8 @@ struct ResponseGraph: View {
                 if i == 0 { line.move(to: pt) } else { line.addLine(to: pt) }
             }
             ctx.stroke(line, with: .color(.accentColor), lineWidth: 1.6)
-            for (hz, t) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] { ctx.draw(Text(t).font(Typo.sans(9)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6)) }
-            ctx.draw(Text("+12 dB").font(Typo.sans(9)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: 22, y: 6))
+            for (hz, t) in [(100.0, "100"), (1000, "1k"), (10000, "10k")] { ctx.draw(Text(t).font(Typo.sans(9)).foregroundColor(Brand.inkSecondary), at: CGPoint(x: size.width * CGFloat(logX(hz)), y: size.height - 6)) }
+            ctx.draw(Text("+12 dB").font(Typo.sans(9)).foregroundColor(Brand.inkSecondary), at: CGPoint(x: 22, y: 6))
         }
         .background(RoundedRectangle(cornerRadius: Metrics.radius(6)).fill(Color.black.opacity(0.2)))
     }

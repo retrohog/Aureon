@@ -2,37 +2,8 @@ import Foundation
 import SwiftUI
 import AppKit
 
-// Lyrics: the LRC reader and writer, ID3 USLT/SYLT, files and tags, LRCLIB, the cache, the speech-model pipeline and the service that ties them
+// Lyrics: the LRC reader and writer, ID3 USLT/SYLT, files and tags, LRCLIB, the cache and the service that ties them
 // together. All text in these fixtures is made up.
-
-/// A speech model stand-in: returns a canned transcription, can be slow, and counts what happens to it.
-final class ScriptedTranscriber: LyricsTranscribing, @unchecked Sendable {
-    private let lock = NSLock()
-    private(set) var calls = 0, cancels = 0, unloads = 0
-    private(set) var lastModel: WhisperModelSize?, lastLanguage: String?
-    private var cancelled = false
-    var result = Transcription(segments: [], language: "en", model: .base)
-    var duration: TimeInterval = 0
-    var error: Error?
-    var onFinish: (() -> Void)?
-
-    func transcribe(audio: URL, model: WhisperModelSize, language: String?, progress: @escaping @Sendable (Double, String) -> Void) async throws -> Transcription {
-        lock.lock(); calls += 1; lastModel = model; lastLanguage = language; cancelled = false; lock.unlock()
-        progress(0.3, "Listening to the song")
-        let end = Date().addingTimeInterval(duration)
-        while Date() < end {
-            lock.lock(); let c = cancelled; lock.unlock()
-            if c { throw CancellationError() }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        if let error { throw error }
-        onFinish?()
-        var r = result; r.model = model
-        return r
-    }
-    func cancel() { lock.lock(); cancels += 1; cancelled = true; lock.unlock() }
-    func unload() async { lock.lock(); unloads += 1; lock.unlock() }
-}
 
 final class DownHTTP: HTTPClient, @unchecked Sendable {
     private let lock = NSLock()
@@ -414,157 +385,6 @@ struct LyricsTests {
         s.remove("k"); expect(s.found("k") == nil && LyricsStore(directory: d).found("k") == nil, "removed")
     }
 
-    // MARK: - Speech model pipeline
-
-    func whisperText() {
-        expect(WhisperLyrics.clean("<|startoftranscript|><|0.00|> ♪ Hello   there ♪ <|3.20|>") == "Hello there", "markers, notes and spaces removed")
-        for cue in ["[Music]", "(upbeat music)", "[BLANK_AUDIO]", "*instrumental*", "♪♪", "  ", "...", "[ Guitar ]", "(piano playing)"] { expect(WhisperLyrics.isMusicCue(cue), "“\(cue)” is a cue") }
-        for words in ["hello there", "(whispering) hello", "[Chorus] sing along", "♪ la la la ♪"] { expect(!WhisperLyrics.isMusicCue(words), "“\(words)” is words") }
-        expect(WhisperLyrics.isInvention("Thanks for watching!") && WhisperLyrics.isInvention("Subtitles by the Amara.org community") && !WhisperLyrics.isInvention("watching the sun go down"), "inventions")
-        expect(SpeechAudio.languageCode("eng") == "en" && SpeechAudio.languageCode("FRA") == "fr" && SpeechAudio.languageCode("de") == "de" && SpeechAudio.languageCode("xyz") == nil && SpeechAudio.languageCode(nil) == nil && SpeechAudio.languageCode(" ") == nil, "language codes")
-        let long = "this is a rather long made up sentence, which goes on and on for a good while, and then some more words follow to make it longer still"
-        let parts = WhisperLyrics.splitText(long)
-        expect(parts.count >= 3 && parts.allSatisfy { $0.count <= WhisperLyrics.maxLineCharacters } && parts.joined(separator: " ").replacingOccurrences(of: "  ", with: " ") == long, "\(parts)")
-        expect(WhisperLyrics.splitText("short line") == ["short line"] && WhisperLyrics.splitText("  ").isEmpty, "short text")
-    }
-
-    private func seg(_ start: Double, _ end: Double, _ text: String, words: [(Double, Double, String)] = [], lp: Double? = nil, ns: Double? = nil) -> TranscribedSegment {
-        TranscribedSegment(start: start, end: end, text: text, words: words.map { TranscribedWord(start: $0.0, end: $0.1, text: $0.2) }, avgLogprob: lp, noSpeechProb: ns)
-    }
-
-    func whisperLyricsBuild() {
-        var segs = [
-            seg(2, 5, " First made-up line", words: [(2, 2.4, " First"), (2.4, 2.8, " made-up"), (2.8, 3.2, " line")]),
-            seg(6, 8, "<|6.00|> Second made-up line <|8.00|>"),
-            seg(9, 12, "[Music]"),
-            seg(30, 33, " Far later line"),                          // 18 s of silence before it: an instrumental stretch
-            seg(34, 36, "Thanks for watching!"),                       // an invention: dropped
-            seg(40, 42, "quiet nonsense", lp: -2.0, ns: 0.95),         // the model heard no speech: a pause
-            seg(50, 52, "Final line"),
-        ]
-        guard let l = WhisperLyrics.build(Transcription(segments: segs, language: "en", model: .small), title: "T", artist: "A") else { expect(false, "builds"); return }
-        expect(l.synced && l.origin == .generated && l.source == "Whisper small" && l.language == "en" && l.title == "T", "metadata")
-        let texts = l.lines.map(\.text)
-        expect(texts == ["First made-up line", "Second made-up line", "", "Far later line", "", "Final line"], "\(texts)")
-        expect(l.lines[0].words.count == 3 && l.lines[0].words[1].text == " made-up" && l.lines[0].words[0].text == "First", "words carry spacing: \(l.lines[0].words)")
-        expect(zip(l.lines, l.lines.dropFirst()).allSatisfy { $0.time <= $1.time } && l.lines.map(\.id) == Array(0..<6), "in order")
-        expect(near(l.lines[0].time, 2) && near(l.lines[1].time, 6), "times come from the segments")
-        // out of order input is sorted
-        segs.reverse()
-        expect(WhisperLyrics.build(Transcription(segments: segs, language: "en", model: .base))?.lines.first?.text == "First made-up line", "sorted")
-        // a long silence before a line closes the line before with a break
-        let gap = WhisperLyrics.build(Transcription(segments: [seg(1, 3, "one"), seg(20, 22, "two")], language: nil, model: .base))!
-        expect(gap.lines.map(\.text) == ["one", "", "two"] && near(gap.lines[1].time, 4), "instrumental gap: \(gap.lines)")
-        // only music and silence: nothing
-        expect(WhisperLyrics.build(Transcription(segments: [seg(0, 30, "[Music]"), seg(30, 60, "♪")], language: nil, model: .base)) == nil, "no singing")
-        expect(WhisperLyrics.build(Transcription(segments: [], language: nil, model: .base)) == nil, "empty")
-        // the model stuck on one line: a run keeps four
-        let loop = (0..<30).map { seg(Double($0) * 2, Double($0) * 2 + 2, "stuck on this line") } + [seg(70, 72, "after the loop")]
-        let stuck = WhisperLyrics.build(Transcription(segments: loop, language: nil, model: .base))!
-        expect(stuck.lines.filter { $0.text == "stuck on this line" }.count == 4 && stuck.lines.last?.text == "after the loop", "loop collapsed")
-        // a real repeated chorus with other lines between is kept
-        let chorus = WhisperLyrics.build(Transcription(segments: [seg(0, 2, "la la"), seg(2, 4, "verse"), seg(4, 6, "la la"), seg(6, 8, "verse two"), seg(8, 10, "la la")], language: nil, model: .base))!
-        expect(chorus.lines.filter { $0.text == "la la" }.count == 3, "choruses stay")
-        // words without times in a long segment: split by length, times shared out
-        let longSeg = WhisperLyrics.build(Transcription(segments: [seg(10, 20, "this is a rather long made up sentence, which goes on and on for a good while, and then some more words")], language: nil, model: .base))!
-        expect(longSeg.lines.count >= 2 && longSeg.lines.allSatisfy { $0.text.count <= WhisperLyrics.maxLineCharacters } && near(longSeg.lines[0].time, 10) && longSeg.lines[1].time > 10, "\(longSeg.lines.map(\.text))")
-        // a pause between words splits a segment's line
-        let paused = WhisperLyrics.build(Transcription(segments: [seg(0, 6, "one two three four", words: [(0, 0.4, "one"), (0.5, 0.9, "two"), (3.0, 3.4, "three"), (3.5, 3.9, "four")])], language: nil, model: .base))!
-        expect(paused.lines.map(\.text) == ["one two", "three four"], "\(paused.lines.map(\.text))")
-        // languages written without spaces
-        let ja = WhisperLyrics.build(Transcription(segments: [seg(0, 2, "春が来た", words: [(0, 1, "春"), (1, 2, "が来た")])], language: "ja", model: .base))!
-        expect(ja.lines[0].text == "春が来た", "no spaces added for Japanese: \(ja.lines[0].text)")
-        // it reads back through the LRC text it is saved as
-        let again = LRCParser.parse(l.lrc())!
-        expect(again.lines.count == l.lines.count && again.wordSynced, "round trip through LRC")
-    }
-
-    func helperProtocol() {
-        let any: Any = [["start": 1.5, "end": 3, "text": "hello", "words": [["start": 1.5, "end": 2.0, "text": "hel"], ["start": 2, "end": 3, "text": "lo"]], "avgLogprob": -0.4, "noSpeechProb": 0.1],
-                        ["start": 4, "end": 5, "text": "no words"], ["bad": 1]]
-        let segs = WhisperHelperProcess.segments(any)
-        expect(segs.count == 2 && segs[0].words.count == 2 && segs[0].avgLogprob == -0.4 && segs[1].words.isEmpty && segs[1].noSpeechProb == nil, "\(segs)")
-        expect(WhisperHelperProcess.segments(nil).isEmpty && WhisperHelperProcess.segments("x").isEmpty)
-        expect(WhisperHelperLocator.find(environment: ["AUREON_WHISPER_HELPER": "/nonexistent/AureonWhisper"], bundle: Bundle(for: DownHTTP.self), cwd: "/nonexistent") == nil, "missing helper is nil")
-        let fake = fresh("helper").appendingPathComponent("AureonWhisper")
-        FileManager.default.createFile(atPath: fake.path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
-        expect(WhisperHelperLocator.find(environment: ["AUREON_WHISPER_HELPER": fake.path], cwd: "/nonexistent") == fake, "the override is found")
-        for m in WhisperModelSize.allCases { expect(m.parametersMillions < 1000 && m.approxMB > 0 && !m.detail.isEmpty, "\(m) is under the 1B cap") }
-    }
-
-    /// Runs the helper protocol against a shell script that speaks it.
-    func helperConversation() {
-        let d = fresh("fakehelper")
-        let script = d.appendingPathComponent("AureonWhisper")
-        let body = """
-        #!/bin/bash
-        while IFS= read -r line; do
-          case "$line" in
-            *'"op":"transcribe"'*)
-              id=$(echo "$line" | sed -E 's/.*"id":([0-9]+).*/\\1/')
-              if echo "$line" | grep -q '"model":"small"'; then echo '{"event":"error","id":'$id',"message":"no small today"}'; continue; fi
-              echo '{"event":"progress","id":'$id',"fraction":0.5,"message":"Listening"}'
-              echo '{"event":"result","id":'$id',"language":"en","segments":[{"start":1,"end":2,"text":"made up","words":[]}]}' ;;
-            *'"op":"unload"'*) echo '{"event":"unloaded"}'; exit 0 ;;
-          esac
-        done
-        """
-        try! body.write(to: script, atomically: true, encoding: .utf8)
-        try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-        let helper = WhisperHelperProcess(executable: script)
-        helper.modelFolder = d
-        let seen = FlagBox(false)
-        let wav = d.appendingPathComponent("x.wav")
-        FileManager.default.createFile(atPath: wav.path, contents: SpeechAudio.wavHeader(samples: 0))
-        let ok = runAsync(timeout: 20) { try await helper.transcribe(audio: wav, model: .base, language: "en") { f, _ in if f == 0.5 { seen.value = true } } }
-        if case .success(let t) = ok { expect(t.segments.count == 1 && t.segments[0].text == "made up" && t.language == "en" && t.model == .base && seen.value, "\(t)") } else { expect(false, "\(ok)") }
-        let bad = runAsync(timeout: 20) { try await helper.transcribe(audio: wav, model: .small, language: nil) { _, _ in } }
-        if case .failure(let e) = bad { expect(e.localizedDescription == "no small today", "\(e)") } else { expect(false, "an error answer throws") }
-        _ = runAsync(timeout: 10) { await helper.unload() }
-        expect(!helper.isRunning, "unloaded")
-        // a helper that is not there
-        let none = WhisperHelperProcess(executable: d.appendingPathComponent("missing"))
-        let r = runAsync(timeout: 10) { try await none.transcribe(audio: wav, model: .base, language: nil) { _, _ in } }
-        if case .failure = r {} else { expect(false, "a missing program throws") }
-    }
-
-    private func readSamples(_ url: URL) -> (rate: Int, channels: Int, samples: [Int16]) {
-        let d = try! Data(contentsOf: url)
-        func u32(_ o: Int) -> Int { Int(d[o]) | Int(d[o + 1]) << 8 | Int(d[o + 2]) << 16 | Int(d[o + 3]) << 24 }
-        expect(d.prefix(4) == Data("RIFF".utf8) && d.subdata(in: 8..<16) == Data("WAVEfmt ".utf8) && d.subdata(in: 36..<40) == Data("data".utf8), "WAV header")
-        let n = u32(40) / 2
-        expect(u32(4) == 36 + n * 2 && d.count == 44 + n * 2, "sizes in the header match the data")
-        let s = (0..<n).map { Int16(bitPattern: UInt16(d[44 + $0 * 2]) | UInt16(d[45 + $0 * 2]) << 8) }
-        return (u32(24), Int(d[22]), s)
-    }
-
-    func speechAudio() {
-        let d = fresh("speech")
-        for rate in [44_100, 48_000, 96_000, 16_000] {
-            let src = sineWAV(d.appendingPathComponent("s\(rate).wav"), rate: rate, bits: 16, freq: 1000, amp: 0.5, seconds: 2)
-            let out = d.appendingPathComponent("o\(rate).wav")
-            var last = 0.0, monotonic = true
-            let secs = try? SpeechAudio.prepare(path: src.path, to: out, progress: { if $0 < last { monotonic = false }; last = $0 })
-            expect(near(secs ?? 0, 2, 0.01) && monotonic && last == 1, "\(rate) Hz: \(String(describing: secs)), progress \(last)")
-            let (r, ch, s) = readSamples(out)
-            expect(r == 16_000 && ch == 1 && abs(s.count - 32_000) <= 2, "\(rate) Hz → 16 kHz mono, \(s.count) samples")
-            let peak = s.dropFirst(400).dropLast(400).map { abs(Int($0)) }.max() ?? 0
-            expect(peak > 15_000 && peak < 17_800, "a 1 kHz tone at half scale keeps its level: \(peak)")
-        }
-        // a tone above the new Nyquist (8 kHz) must not come back as an alias
-        let hi = sineWAV(d.appendingPathComponent("hi.wav"), rate: 48_000, bits: 16, freq: 12_000, amp: 0.5, seconds: 1)
-        _ = try? SpeechAudio.prepare(path: hi.path, to: d.appendingPathComponent("hi16.wav"))
-        let hs = readSamples(d.appendingPathComponent("hi16.wav")).samples
-        expect((hs.dropFirst(400).dropLast(400).map { abs(Int($0)) }.max() ?? 0) < 600, "frequencies above 8 kHz are filtered out, not folded down")
-        // stereo is mixed, opposite phases cancel
-        let anti = writeWAV(d.appendingPathComponent("anti.wav"), rate: 16_000, bits: 16, channels: 2, frames: 16_000) { f, c in Int(10_000 * sin(Double(f) * 0.1)) * (c == 0 ? 1 : -1) }
-        _ = try? SpeechAudio.prepare(path: anti.path, to: d.appendingPathComponent("anti16.wav"))
-        expect((readSamples(d.appendingPathComponent("anti16.wav")).samples.map { abs(Int($0)) }.max() ?? 0) < 4, "channels are averaged")
-        // cancellation and bad input
-        do { _ = try SpeechAudio.prepare(path: hi.path, to: d.appendingPathComponent("c.wav"), cancelled: { true }); expect(false, "cancelled") } catch { expect(error is CancellationError, "\(error)") }
-        do { _ = try SpeechAudio.prepare(path: d.appendingPathComponent("nothing.flac").path, to: d.appendingPathComponent("n.wav")); expect(false, "missing file") } catch { expect(error is LyricsError, "\(error)") }
-    }
-
     // MARK: - Service
 
     @MainActor private func wait(_ timeout: Double = 8, _ cond: () -> Bool) {
@@ -574,18 +394,13 @@ struct LyricsTests {
 
     private func suite() -> UserDefaults { UserDefaults(suiteName: "aureon.lyricstest.\(UUID().uuidString.prefix(8))")! }
 
-    @MainActor private func service(_ http: HTTPClient, store: LyricsStore? = nil, local: LocalLyricsResult = LocalLyricsResult(), allowGeneration: FlagBox = FlagBox(true)) -> LyricsService {
-        let s = LyricsService(defaults: suite(), observesSettings: false)
+    @MainActor private func service(_ http: HTTPClient, store: LyricsStore? = nil, local: LocalLyricsResult = LocalLyricsResult()) -> LyricsService {
+        let s = LyricsService(defaults: suite())
         s.online = LRCLIBClient(http: http)
         s.store = store ?? LyricsStore(directory: fresh("svc"))
         s.isOnlineAllowed = { true }
-        s.isGenerationAllowed = { allowGeneration.value }
-        s.whisperModel = { .base }
         s.findLocal = { _ in local }
-        s.idleUnload = 0.05
         s.saveRetryDelay = 0.02
-        s.languageHint = { _ in "en" }
-        s.prepareAudio = { _, url, _, progress in progress(0.5); progress(1); FileManager.default.createFile(atPath: url.path, contents: Data([1])); return 180 }
         return s
     }
 
@@ -689,119 +504,6 @@ struct LyricsTests {
         expect(s.lyrics == before && s.phase == .ready, "same song, same state")
     }
 
-    @MainActor func serviceGeneratesLyrics() {
-        let http = StubHTTP(); http.on("api/get", "{}", status: 404); http.on("api/search", "[]")
-        let allow = FlagBox(true)
-        let store = LyricsStore(directory: fresh("gen"))
-        let model = ScriptedTranscriber()
-        model.result = Transcription(segments: [seg(2, 5, "Made up first line"), seg(6, 9, "Made up second line")], language: "en", model: .base)
-        let s = service(http, store: store, allowGeneration: allow)
-        s.makeTranscriber = { model }
-        let r = req("/m/a.flac")
-        s.show(r)
-        wait { isMissing(s) }
-        expect(isMissing(s) && s.canOfferGeneration && !s.declined, "nothing found: the page may offer to write them")
-        expect(model.calls == 0, "nothing runs until the owner agrees")
-
-        s.generate()
-        expect(s.isGenerating, "generating")
-        wait { s.phase == .ready }
-        expect(s.lyrics?.origin == .generated && s.lyrics?.lines.map(\.text) == ["Made up first line", "Made up second line"] && s.unsaved, "generated and unsaved")
-        expect(model.calls == 1 && model.lastModel == .base && model.lastLanguage == "en", "the chosen model and the file's language were used")
-        expect(store.found(r.cacheKey)?.origin == .generated, "kept, so it is never generated twice")
-        wait { model.unloads == 1 }
-        expect(model.unloads == 1, "the model is unloaded after a short idle time")
-        // next time it comes from the cache, with no model at all
-        let again = service(http, store: store, allowGeneration: allow)
-        again.makeTranscriber = { model }
-        again.show(r)
-        wait { again.phase == .ready }
-        expect(again.lyrics?.origin == .generated && model.calls == 1, "from the cache")
-
-        // the owner says no: remembered
-        let s2 = service(http, store: LyricsStore(directory: fresh("decline")), allowGeneration: allow)
-        s2.show(r)
-        wait { isMissing(s2) }
-        s2.decline()
-        expect(s2.declined && model.calls == 1, "declined")
-        let s2b = service(http, store: s2.store, allowGeneration: allow)
-        s2b.show(r)
-        wait { isMissing(s2b) }
-        expect(s2b.declined, "the refusal is remembered for that song")
-
-        // the feature is off
-        let off = FlagBox(false)
-        let s3 = service(http, store: LyricsStore(directory: fresh("off")), allowGeneration: off)
-        s3.makeTranscriber = { model }
-        s3.show(r)
-        wait { isMissing(s3) }
-        expect(!s3.canOfferGeneration, "not offered when Intelligence has it off")
-        s3.generate()
-        if case .failed(let m) = s3.phase { expect(m.contains("switched off"), m) } else { expect(false, "generate() refuses: \(s3.phase)") }
-        expect(model.calls == 1, "the model was not touched")
-
-        // streams and cloud tracks are never offered
-        let s4 = service(http, store: LyricsStore(directory: fresh("remote")))
-        s4.show(LyricsRequest(path: "cloud://bucket/a.flac", title: "T", artist: "A", duration: 100))
-        wait { isMissing(s4) }
-        expect(!s4.canOfferGeneration, "only files on this Mac")
-
-        // cancelling
-        let slowModel = ScriptedTranscriber(); slowModel.duration = 5
-        slowModel.result = model.result
-        let s5 = service(http, store: LyricsStore(directory: fresh("cancel")))
-        s5.makeTranscriber = { slowModel }
-        s5.show(r)
-        wait { isMissing(s5) }
-        s5.generate()
-        wait { slowModel.calls == 1 }
-        s5.cancelGeneration()
-        expect(isMissing(s5) && s5.lyrics == nil, "cancelled")
-        wait { slowModel.cancels >= 1 }
-        expect(slowModel.cancels >= 1, "the model was told to stop")
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        expect(isMissing(s5) && s5.lyrics == nil, "nothing arrives after cancelling")
-
-        // switching the feature off while it listens: the result is dropped
-        let flip = FlagBox(true)
-        let flipModel = ScriptedTranscriber(); flipModel.result = model.result
-        let flipStore = LyricsStore(directory: fresh("flip"))
-        flipModel.onFinish = { flip.value = false }
-        let s6 = service(http, store: flipStore, allowGeneration: flip)
-        s6.makeTranscriber = { flipModel }
-        s6.show(r)
-        wait { isMissing(s6) }
-        s6.generate()
-        wait { flipModel.calls == 1 }
-        wait { isMissing(s6) }
-        expect(isMissing(s6) && s6.lyrics == nil && flipStore.found(r.cacheKey) == nil, "nothing is kept once the switch is off")
-
-        // failures
-        let broken = ScriptedTranscriber(); broken.error = LyricsError.helperMissing
-        let s7 = service(http, store: LyricsStore(directory: fresh("broken")))
-        s7.makeTranscriber = { broken }
-        s7.show(r)
-        wait { isMissing(s7) }
-        s7.generate()
-        wait { if case .failed = s7.phase { return true }; return false }
-        if case .failed(let m) = s7.phase { expect(m.contains("not installed"), m) } else { expect(false, "failed: \(s7.phase)") }
-        let music = ScriptedTranscriber(); music.result = Transcription(segments: [seg(0, 60, "[Music]")], language: nil, model: .base)
-        let s8 = service(http, store: LyricsStore(directory: fresh("music")))
-        s8.makeTranscriber = { music }
-        s8.show(r)
-        wait { isMissing(s8) }
-        s8.generate()
-        wait { if case .failed = s8.phase { return true }; return false }
-        if case .failed(let m) = s8.phase { expect(m.contains("No singing"), m) } else { expect(false, "failed: \(s8.phase)") }
-        let noHelper = service(http, store: LyricsStore(directory: fresh("nohelper")))
-        noHelper.makeTranscriber = { throw LyricsError.helperMissing }
-        noHelper.show(r)
-        wait { isMissing(noHelper) }
-        noHelper.generate()
-        wait { if case .failed = noHelper.phase { return true }; return false }
-        if case .failed = noHelper.phase {} else { expect(false, "a missing helper is a clear failure") }
-    }
-
     @MainActor func serviceSavesLyrics() {
         let d = fresh("save")
         let path = d.appendingPathComponent("song.flac").path
@@ -844,35 +546,13 @@ struct LyricsTests {
         wait { s2.phase == .ready }
         s2.saveToTags()
         wait { s2.saveNote != nil }
-        expect(s2.saveNote == "Saved in the file's tags." && !s2.unsaved, "saved")
+        expect(s2.saveNote == "Saved in the file's tags.", "saved")
         // file types the tag writer does not handle
         let s3 = service(StubHTTP(), local: local)
         s3.show(req(d.appendingPathComponent("a.ogg").path))
         wait { s3.phase == .ready }
         s3.saveToTags()
         expect(s3.saveNote?.contains(".lrc") == true, "points to the .lrc instead")
-    }
-
-    // MARK: - Intelligence
-
-    func lyricsGeneration_switches() {
-        let hw = IntelligenceTests.appleM
-        var settings = IntelligenceSettings(masterEnabled: true)
-        var gate = IntelligenceGate(hardware: hw, settings: settings)
-        expect(gate.isEnabled(.lyricsGeneration) && !IntelligenceFeature.lyricsGeneration.allowsAPI, "on, and never sent to an API")
-        settings.set(.lyricsGeneration, false)
-        gate = IntelligenceGate(hardware: hw, settings: settings)
-        expect(!gate.isEnabled(.lyricsGeneration) && gate.isEnabled(.smartDJ), "its own switch")
-        settings.set(.lyricsGeneration, true); settings.masterEnabled = false
-        expect(!IntelligenceGate(hardware: hw, settings: settings).isEnabled(.lyricsGeneration), "the master switch")
-        let intel = IntelligenceSettings(masterEnabled: true)
-        expect(!IntelligenceGate(hardware: IntelligenceTests.intel, settings: intel).isEnabled(.lyricsGeneration), "Intel waits for the warning to be accepted")
-        let bits = IntelligenceFeature.allCases.map { f -> UInt32 in var s = IntelligenceSettings(masterEnabled: false); s.masterEnabled = true; for g in IntelligenceFeature.allCases { s.set(g, g == f) }; return IntelligenceGate.mask(for: s, hardware: hw) }
-        expect(Set(bits).count == IntelligenceFeature.allCases.count, "every feature has its own bit")
-        let decoded = try? JSONDecoder().decode(IntelligenceSettings.self, from: Data(#"{"masterEnabled":true,"naturalPlaylists":false}"#.utf8))
-        expect(decoded?.lyricsGeneration == true && decoded?.whisperModel == .base && decoded?.naturalPlaylists == false, "settings from before decode with the defaults")
-        let round = try? JSONDecoder().decode(IntelligenceSettings.self, from: JSONEncoder().encode({ var s = IntelligenceSettings(masterEnabled: true); s.whisperModel = .small; return s }()))
-        expect(round?.whisperModel == .small, "the model choice is saved")
     }
 }
 
@@ -902,10 +582,9 @@ extension LyricsTests {
 
     /// A service that reads the real files and never goes online.
     @MainActor private func offlineService() -> LyricsService {
-        let s = LyricsService(defaults: UserDefaults(suiteName: "aureon.lyricstest.\(UUID().uuidString.prefix(8))")!, observesSettings: false)
+        let s = LyricsService(defaults: UserDefaults(suiteName: "aureon.lyricstest.\(UUID().uuidString.prefix(8))")!)
         s.store = LyricsStore(directory: fresh("driver-store"))
         s.isOnlineAllowed = { false }
-        s.isGenerationAllowed = { false }
         return s
     }
 
@@ -976,14 +655,14 @@ extension LyricsTests {
     /// The Lyrics buttons: whatever else happens on the page, the lookup for the song in focus starts.
     @MainActor func lyricsButtonStartsTheLookup() {
         let shared = LyricsService.shared
-        let online = shared.isOnlineAllowed, gen = shared.isGenerationAllowed
+        let online = shared.isOnlineAllowed
         let ud = UserDefaults.standard
         let savedShow = ud.object(forKey: "aureon.lyrics.show"), savedExpanded = ud.object(forKey: "aureon.lyrics.expanded")
         defer {
-            shared.isOnlineAllowed = online; shared.isGenerationAllowed = gen; shared.show(nil)
+            shared.isOnlineAllowed = online; shared.show(nil)
             ud.set(savedShow, forKey: "aureon.lyrics.show"); ud.set(savedExpanded, forKey: "aureon.lyrics.expanded")
         }
-        shared.isOnlineAllowed = { false }; shared.isGenerationAllowed = { false }
+        shared.isOnlineAllowed = { false }
         shared.show(nil)
         expect(shared.phase == .idle)
         let item = songWithLRC("button")
@@ -1004,11 +683,11 @@ extension LyricsTests {
     @MainActor func nowPlayingStartsTheLookup() {
         guard !NSScreen.screens.isEmpty else { return }
         let shared = LyricsService.shared
-        let online = shared.isOnlineAllowed, gen = shared.isGenerationAllowed
+        let online = shared.isOnlineAllowed
         let ud = UserDefaults.standard
         let savedShow = ud.object(forKey: "aureon.lyrics.show")
         ud.set(true, forKey: "aureon.lyrics.show")
-        shared.isOnlineAllowed = { false }; shared.isGenerationAllowed = { false }
+        shared.isOnlineAllowed = { false }
         shared.show(nil)
         let item = songWithLRC("hosted")
         let m = PlayerModel()
@@ -1026,7 +705,7 @@ extension LyricsTests {
         win.orderFront(nil)
         defer {
             win.orderOut(nil); win.contentView = nil
-            shared.isOnlineAllowed = online; shared.isGenerationAllowed = gen; shared.show(nil)
+            shared.isOnlineAllowed = online; shared.show(nil)
             ud.set(savedShow, forKey: "aureon.lyrics.show")
         }
         // lyrics are not shown, and not looked up, while they are switched off
@@ -1107,10 +786,8 @@ func lyricsTests() -> [(String, TestFn)] {
     return [("lyrics.timestamps", t.lrcTimestamps), ("lyrics.lrc", t.lrcParsing), ("lyrics.words", t.lrcWords), ("lyrics.plain", t.lrcPlainText), ("lyrics.writing", t.lrcWriting),
             ("lyrics.cursor", t.lrcCursor), ("lyrics.clock", t.playheadClock), ("lyrics.cursorPublishes", { MainActor.assumeIsolated { t.cursorPublishesLineChangesOnly() } }),
             ("lyrics.id3", t.id3Lyrics), ("lyrics.files", t.lyricsFiles), ("lyrics.tags", t.lyricsInTags), ("lyrics.tagWriting", t.lyricsTagWriting),
-            ("lyrics.lrclib", t.lrclibLookup), ("lyrics.store", t.lyricsStore), ("lyrics.whisperText", t.whisperText), ("lyrics.whisperBuild", t.whisperLyricsBuild),
-            ("lyrics.helperProtocol", t.helperProtocol), ("lyrics.helperConversation", t.helperConversation), ("lyrics.speechAudio", t.speechAudio),
-            ("lyrics.service", { MainActor.assumeIsolated { t.serviceFindsLyrics() } }), ("lyrics.generate", { MainActor.assumeIsolated { t.serviceGeneratesLyrics() } }),
-            ("lyrics.save", { MainActor.assumeIsolated { t.serviceSavesLyrics() } }), ("lyrics.switches", t.lyricsGeneration_switches),
+            ("lyrics.lrclib", t.lrclibLookup), ("lyrics.store", t.lyricsStore),             ("lyrics.service", { MainActor.assumeIsolated { t.serviceFindsLyrics() } }),
+            ("lyrics.save", { MainActor.assumeIsolated { t.serviceSavesLyrics() } }),
             ("lyrics.driver", { MainActor.assumeIsolated { t.driverStartsTheLookup() } }), ("lyrics.button", { MainActor.assumeIsolated { t.lyricsButtonStartsTheLookup() } }),
             ("lyrics.nowPlaying", { MainActor.assumeIsolated { t.nowPlayingStartsTheLookup() } }), ("lyrics.queryEncoding", t.lrclibQueryEncoding), ("lyrics.live", t.lrclibLive)]
 }

@@ -8,7 +8,7 @@ struct SidebarLayout: Codable, Equatable {
 
     static let sections: [Tab.Section] = [.listen, .library, .classical, .discover, .sound, .tools]
     /// Pages that can be moved or hidden. Search lives in the field above the list, Settings is always at the bottom.
-    static func editable(in sec: Tab.Section) -> [Tab] { Tab.allCases.filter { $0.section == sec && $0 != .search && $0 != .settings } }
+    static func editable(in sec: Tab.Section) -> [Tab] { Tab.allCases.filter { $0.section == sec && $0 != .search && $0 != .settings && $0 != .soulseek } }
 
     func ordered(in sec: Tab.Section) -> [Tab] {
         let base = Self.editable(in: sec)

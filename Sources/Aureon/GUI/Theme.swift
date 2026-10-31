@@ -55,6 +55,20 @@ struct Theme: Identifiable, Equatable {
         }
         return inkRGB
     }
+    /// The outline of a control in the top bar: on light themes the ink at the lowest opacity that is 3:1 against the bar and the page; nil on dark themes,
+    /// whose raised fills already read.
+    var controlEdgeRGB: RGB? {
+        guard isLight else { return nil }
+        var a = 0.3
+        while a < 1 {
+            let e = WCAG.over(inkRGB, alpha: a, sidebarRGB)
+            if WCAG.contrast(e, sidebarRGB) >= 3, WCAG.contrast(e, canvasRGB) >= 3 { return e }
+            a += 0.01
+        }
+        return inkRGB
+    }
+    /// The gold of the quality chip and the format stamp: #a8700a on light themes (darkened where it must be to hold 4.5:1), a bright gold on dark ones.
+    var goldRGB: RGB { surfaces.reduce(isLight ? RGB(0.659, 0.439, 0.039) : RGB(0.949, 0.722, 0.294)) { WCAG.fit($0, against: $1, minimum: 4.5, towardWhite: !isLight) } }
     /// Secondary text (artist lines, captions): AAA, 7:1.
     var inkSecondaryRGB: RGB { Theme.cachedStep(self, 7) }
     /// Tertiary text (hints, units, placeholders): AA, 4.5:1.
@@ -366,7 +380,7 @@ struct ThemePicker: View {
     /// One family as a tile: "Aa" set in it, and its name; the one in use has an accent outline.
     private func fontTile(_ f: FontFamily) -> some View {
         let on = TypeFace.chosen == f
-        let sample: Font = f.name.map { .custom($0, size: 24) } ?? .system(size: 24)
+        let sample: Font = f.name.map { .custom($0, size: 24) } ?? Typo.sans(24)
         return Button { withAnimation(.easeOut(duration: 0.15)) { m.look.fontFamily = f.rawValue } } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Aa").font(sample).foregroundStyle(Brand.ink)

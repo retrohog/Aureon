@@ -54,6 +54,58 @@ indirect enum QueryNode: Equatable, Sendable {
     case and([QueryNode]), or([QueryNode]), not(QueryNode), term(QueryTerm)
 }
 
+// MARK: writing a query back as text
+
+extension QueryTerm {
+    /// The term as a person would type it, so a chip can be taken out of a query and the rest typed back into the search field.
+    var text: String {
+        func num(_ x: Double) -> String { x == x.rounded() ? String(Int(x)) : String(x) }
+        let f = field == .any ? "" : field.rawValue + ":"
+        switch value {
+        case .text(let v, let exact, _): return f + (exact ? "\"\(v)\"" : v)
+        case .flag(let b): return f + (b ? "yes" : "no")
+        case .range(let lo, let hi):
+            switch (lo, hi) {
+            case let (a?, b?) where a == b: return f + "=" + num(a)
+            case let (a?, b?): return f + num(a) + ".." + num(b)
+            case let (a?, nil): return f + ">=" + num(a)
+            case let (nil, b?): return f + "<=" + num(b)
+            default: return f
+            }
+        }
+    }
+}
+
+extension QueryNode {
+    /// The query as text that parses back to the same query.
+    var text: String {
+        switch self {
+        case .term(let t): return t.text
+        case .not(.term(let t)): return "-" + t.text
+        case .not(let x): return "NOT (" + x.text + ")"
+        case .and(let parts): return parts.map { if case .or = $0 { return "(" + $0.text + ")" }; return $0.text }.joined(separator: " ")
+        case .or(let parts): return parts.map { if case .and = $0 { return "(" + $0.text + ")" }; return $0.text }.joined(separator: " OR ")
+        }
+    }
+
+    /// The pieces that are shown as chips with a remove button: the parts of a top-level AND, or the whole query.
+    var removableParts: [QueryNode] { if case .and(let p) = self { return p }; return [self] }
+
+    /// The query text without the chip at `index` (empty when it was the last one).
+    func text(removing index: Int) -> String {
+        var parts = removableParts
+        guard parts.indices.contains(index) else { return text }
+        parts.remove(at: index)
+        return parts.isEmpty ? "" : QueryNode.and(parts).text
+    }
+
+    /// When the whole query is one `tag:` filter: the tag's name, for the page heading.
+    var singleTagName: String? {
+        if case .term(let t) = self, t.field == .tag, case .text(let v, _, _) = t.value { return v.split(separator: "/").last.map(String.init) ?? v }
+        return nil
+    }
+}
+
 struct QueryError: Error, Equatable, CustomStringConvertible {
     var message: String
     /// Character offset in the query where the problem is.

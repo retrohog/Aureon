@@ -7,8 +7,7 @@ import SwiftUI
 ///   1. an .lrc file next to the song, then the file's own tags (`LocalLyrics`)
 ///   2. what was found or made before (`LyricsStore`)
 ///   3. LRCLIB on the internet, if "Look up lyrics online" is on and Aureon is not offline
-///   4. nothing: the page offers to write them with the on-device speech model. That runs only when the owner says yes for that song, only when
-///      the Intelligence master switch and "Lyrics Generation" are on, and never leaves this Mac.
+///   4. nothing: the page says so
 /// Plain (untimed) lyrics found on the way are shown at once while a synced version is looked for.
 ///
 /// All reading, network and audio work runs off the main thread; this object only publishes the outcome.
@@ -22,7 +21,6 @@ final class LyricsService: ObservableObject {
         case ready
         case instrumental
         case missing
-        case generating(Double, String)
         case failed(String)
     }
 
@@ -31,16 +29,12 @@ final class LyricsService: ObservableObject {
         didSet { if phase != oldValue { LyricsDebug.log("phase \(oldValue) -> \(phase) for \(request?.title ?? "nil")") } }
     }
     @Published private(set) var request: LyricsRequest?
-    /// The owner said "not for this song": the page stops offering to generate them.
-    @Published private(set) var declined = false
+    /// What happened to the last "save" request, for the page.
+    @Published private(set) var saveNote: String?
     /// Plain lyrics are showing while a synced version is looked for.
     @Published private(set) var upgrading = false
     /// The online lookup could not reach the service (as opposed to the song not being in it).
     @Published private(set) var onlineUnreachable = false
-    /// What happened to the last "save" request, for the page.
-    @Published private(set) var saveNote: String?
-    /// Generated lyrics that have not been written to the file or an .lrc yet.
-    @Published private(set) var unsaved = false
 
     @Published var onlineLookup: Bool {
         didSet {
@@ -53,44 +47,22 @@ final class LyricsService: ObservableObject {
 
     // Everything the outside world provides, replaceable in tests.
     var isOnlineAllowed: () -> Bool = { ProcessInfo.processInfo.environment["AUREON_OFFLINE"] == nil }
-    var isGenerationAllowed: () -> Bool = { IntelligenceGate.shared.isEnabled(.lyricsGeneration) }
-    var whisperModel: () -> WhisperModelSize = { IntelligenceCenter.shared.settings.whisperModel }
-    var makeTranscriber: () throws -> LyricsTranscribing = {
-        guard let exe = WhisperHelperLocator.find() else { throw LyricsError.helperMissing }
-        return WhisperHelperProcess(executable: exe)
-    }
     var online = LRCLIBClient()
     var store = LyricsStore.shared
-    var findLocal: @Sendable (LyricsRequest) -> LocalLyricsResult = { LocalLyrics.find($0) }
-    var prepareAudio: @Sendable (String, URL, () -> Bool, (Double) -> Void) throws -> Double = { try SpeechAudio.prepare(path: $0, to: $1, cancelled: $2, progress: $3) }
-    var languageHint: @Sendable (String) -> String? = { SpeechAudio.languageCode(TagReader.read(path: $0).first("LANGUAGE", "LANG")) }
     var writeTags: @Sendable (String, String) throws -> Void = { try TagEditing.write(path: $0, edits: [.lyrics: $1]) }
-    var idleUnload: TimeInterval = 90
     var saveRetryDelay: TimeInterval = 3
+    var findLocal: @Sendable (LyricsRequest) -> LocalLyricsResult = { LocalLyrics.find($0) }
 
     private let defaults: UserDefaults
     private var epoch = 0
     private var work: Task<Void, Never>?
-    private var transcriber: LyricsTranscribing?
-    private var idleTask: Task<Void, Never>?
     private var pendingTagWrite: (path: String, text: String, tries: Int)?
-    private var observer: NSObjectProtocol?
 
-    init(defaults: UserDefaults = .standard, observesSettings: Bool = true) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         onlineLookup = defaults.object(forKey: Self.onlineKey) as? Bool ?? true
-        if observesSettings {
-            observer = NotificationCenter.default.addObserver(forName: .intelligenceSettingsChanged, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.settingsChanged() }
-            }
-        }
     }
 
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-
-    var isGenerating: Bool { if case .generating = phase { return true }; return false }
-    /// The page may offer to generate lyrics: nothing synced is showing, it is a file on this Mac, and the feature is on.
-    var canOfferGeneration: Bool { request?.isLocalFile == true && isGenerationAllowed() && lyrics?.synced != true && !isGenerating }
 
     // MARK: asking
 
@@ -100,12 +72,12 @@ final class LyricsService: ObservableObject {
             // the same song: a different length (it arrived late) only matters when nothing synced has been found yet
             if abs(cur.duration - r.duration) < 1.5 || (phase == .ready && lyrics?.synced == true) { return }
         }
-        // leaving a song: a tag write that had to wait for it can go ahead now
         if let p = pendingTagWrite, p.path != r?.path { retryTagWrite() }
         cancelWork()
         epoch += 1
         request = r
-        lyrics = nil; declined = false; upgrading = false; onlineUnreachable = false; saveNote = nil; unsaved = false
+        saveNote = nil
+        lyrics = nil; upgrading = false; onlineUnreachable = false
         guard let r, !r.title.isEmpty || r.isLocalFile else { phase = .idle; return }
         phase = .loading("Looking for lyrics")
         let my = epoch
@@ -176,136 +148,11 @@ final class LyricsService: ObservableObject {
         }
         guard epoch == my else { return }
         if lyrics == nil {
-            declined = store.isDeclined(key)
             phase = .missing
         }
     }
 
-    // MARK: generating
-
-    /// The owner agreed: write the lyrics with the speech model.
-    func generate() {
-        guard let r = request, r.isLocalFile, !isGenerating, !upgrading else { return }
-        guard isGenerationAllowed() else { phase = .failed("Lyrics generation is switched off. Turn it on in Intelligence."); return }
-        store.undecline(r.cacheKey)
-        declined = false
-        let my = epoch
-        phase = .generating(0, "Preparing the audio")
-        idleTask?.cancel(); idleTask = nil
-        work = Task { await self.runGeneration(r, epoch: my) }
-    }
-
-    /// "Not for this song": the page stops asking.
-    func decline() {
-        guard let r = request else { return }
-        store.decline(r.cacheKey)
-        declined = true
-    }
-
-    /// Stops generating (the button on the progress line).
-    func cancelGeneration() {
-        guard isGenerating else { return }
-        work?.cancel()
-        transcriber?.cancel()
-        epoch += 1
-        phase = .missing
-        scheduleIdleUnload()
-    }
-
-    private func setProgress(_ fraction: Double, _ message: String, epoch my: Int) {
-        guard epoch == my, isGenerating else { return }
-        phase = .generating(min(1, max(0, fraction)), message)
-    }
-
-    private func runGeneration(_ r: LyricsRequest, epoch my: Int) async {
-        let model = whisperModel()
-        let wav = FileManager.default.temporaryDirectory.appendingPathComponent("aureon-lyrics-\(UUID().uuidString).wav")
-        defer { try? FileManager.default.removeItem(at: wav) }
-        do {
-            // 1. the song as the model wants it: 16 kHz mono, made with Aureon's own decoder
-            let prepare = prepareAudio, hint = languageHint
-            let path = r.path
-            let flag = CancelFlag()
-            let report: @Sendable (Double) -> Void = { [weak self] f in Task { @MainActor in self?.setProgress(f * 0.12, "Preparing the audio", epoch: my) } }
-            let language = await Task.detached(priority: .userInitiated) { () -> String? in hint(path) }.value
-            // a detached task does not inherit cancellation, so the flag carries it
-            _ = try await withTaskCancellationHandler {
-                try await Task.detached(priority: .userInitiated) { () -> Double in try prepare(path, wav, { flag.isSet }, report) }.value
-            } onCancel: { flag.set() }
-            try Task.checkCancellation()
-            guard epoch == my else { return }
-            guard isGenerationAllowed() else { throw CancellationError() }
-
-            // 2. the model
-            setProgress(0.12, "Starting the speech model", epoch: my)
-            let t = try acquireTranscriber()
-            let result = try await t.transcribe(audio: wav, model: model, language: language) { [weak self] f, msg in
-                Task { @MainActor [weak self] in self?.setProgress(0.12 + 0.88 * f, msg, epoch: my) }
-            }
-            guard epoch == my else { return }
-            guard isGenerationAllowed() else { throw CancellationError() }
-
-            // 3. lines
-            guard let l = WhisperLyrics.build(result, title: r.title.isEmpty ? nil : r.title, artist: r.artist.isEmpty ? nil : r.artist, album: r.album.isEmpty ? nil : r.album) else {
-                phase = .failed("No singing could be made out in this song. It may be instrumental.")
-                scheduleIdleUnload(); return
-            }
-            store.store(l, key: r.cacheKey)
-            lyrics = l; phase = .ready; unsaved = true
-            scheduleIdleUnload()
-        } catch is CancellationError {
-            if epoch == my { phase = .missing }
-            scheduleIdleUnload()
-        } catch {
-            guard epoch == my else { return }
-            phase = .failed(error.localizedDescription)
-            scheduleIdleUnload()
-        }
-    }
-
-    private func acquireTranscriber() throws -> LyricsTranscribing {
-        if let t = transcriber { return t }
-        let t = try makeTranscriber()
-        transcriber = t
-        return t
-    }
-
-    private func scheduleIdleUnload() {
-        idleTask?.cancel()
-        let seconds = idleUnload
-        idleTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-            guard !Task.isCancelled else { return }
-            await self?.releaseModel()
-        }
-    }
-
-    /// Unloads the speech model now; its memory goes back to the system.
-    func releaseModel() async {
-        idleTask?.cancel(); idleTask = nil
-        let t = transcriber
-        transcriber = nil
-        await t?.unload()
-    }
-
-    private func cancelWork() {
-        work?.cancel(); work = nil
-        if isGenerating { transcriber?.cancel(); scheduleIdleUnload() }
-    }
-
-    private func settingsChanged() {
-        guard !isGenerationAllowed() else { return }
-        if isGenerating { cancelGeneration() }
-        Task { await releaseModel() }
-    }
-
-    /// The master switch or the feature went off: stop whatever is running and free the model.
-    func shutDownAndWait() async {
-        cancelWork()
-        epoch += 1
-        if isGenerating { phase = .missing }
-        await releaseModel()
-    }
+    private func cancelWork() { work?.cancel(); work = nil }
 
     // MARK: keeping the result
 
@@ -329,7 +176,7 @@ final class LyricsService: ObservableObject {
             switch outcome {
             case .success:
                 self.pendingTagWrite = nil
-                if current { self.saveNote = "Saved in the file's tags."; self.unsaved = false }
+                if current { self.saveNote = "Saved in the file's tags." }
             case .failure(let e):
                 if let t = e as? TagEditError, t.isBusy {
                     p.tries += 1
@@ -363,7 +210,6 @@ final class LyricsService: ObservableObject {
         do {
             try Data(l.lrc().utf8).write(to: url, options: .atomic)
             saveNote = "Saved as \(url.lastPathComponent)."
-            unsaved = false
         } catch {
             saveNote = "Could not write \(url.lastPathComponent): \(error.localizedDescription)"
         }

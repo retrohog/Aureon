@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// A stage that runs on the real-time thread on interleaved Float32 audio, in place.
 /// Implementations must not lock, allocate, log or touch the disk inside `process`.

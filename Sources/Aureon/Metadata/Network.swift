@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// Minimal HTTP abstraction so every online service can be tested with canned responses.
 protocol HTTPClient: Sendable {
