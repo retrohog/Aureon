@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// A Float or Int that one thread writes and the audio thread reads, without locks.
 final class ParamF: @unchecked Sendable {

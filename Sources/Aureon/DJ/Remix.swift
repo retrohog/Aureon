@@ -1,6 +1,6 @@
 import Foundation
 
-// Smart Remixer: a live arrangement layer on top of a playing deck.
+// Remix: a live arrangement layer on top of a playing deck.
 //
 // It does not separate stems or generate new audio. What it does is what a DJ does with the controls in front of them: on bar boundaries it picks a
 // move (filter sweep, echo-out, reverb wash, loop roll, bass drop, riser, stutter, flanger sweep) according to where the track is (intro, build,
