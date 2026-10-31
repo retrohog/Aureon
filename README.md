@@ -42,10 +42,10 @@ switch them on; when they are off they are out of the path, not set to neutral.
 |:--|:--|
 | **Runs on macOS 13** | The minimum is now macOS 13 Ventura, down from 15, so older Intel and Apple Silicon Macs are covered. |
 | **Soulseek** | A native client with search, downloads, uploads, browse, chat rooms, private messages and a wishlist. Sharing is off by default, and finished downloads join your library when you want them to. |
-| **Quality tag** | A Hi-Res, Lossless or Lossy chip on the cover, the format as a boxed stamp (for example FLAC 24/96), and a quiet line of Exclusive, Signal path, Processing and Info. Each part opens its details. |
+| **Quality tag** | A Hi-Res, Lossless or Lossy chip on the cover, the format as a boxed stamp (for example FLAC 24/96), and a quiet line of Exclusive, Signal path, Processing and Info. |
 | **New layouts** | Cover flow, Poster and Turntable are new. The Turntable is playable: drag the record to scratch, with the sound following your hand. Chillax shows up to fifteen queued songs. |
-| **Search** | A new search with suggestions, filters and a genre grid built from your own covers. It closes when you click away. |
-| **DJ console** | Redesigned in the style of professional DJ software, fits any window without scrolling, and stays off until you turn it on. |
+| **Search** | A new search with suggestions, filters and a genre grid built from your own covers. |
+| **DJ console** | Redesigned in the style of professional DJ software. |
 | **Chunky controls** | New transport buttons that are easier to see and hit, in every layout and the mini player. |
 | **Extra panels** | Optional cards on Now Playing, such as listening stats and loudness, with a switch for each. |
 | **Simpler** | The Intelligence page, Smart DJ and the other model-based helpers are gone. Smart Shuffle is now Balanced Shuffle, based on tempo, key and energy. |
