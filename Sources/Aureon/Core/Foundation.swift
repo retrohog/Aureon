@@ -1,7 +1,6 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
-import Synchronization
 
 func fail(_ msg: String) -> Never {
     FileHandle.standardError.write(Data("error: \(msg)\n".utf8))

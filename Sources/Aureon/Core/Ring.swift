@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// Lock-free single-producer / single-consumer ring of interleaved Int32 frames.
 /// Producer = decode thread. Consumer = the real-time render callback (no locks, no allocation).

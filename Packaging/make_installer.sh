@@ -5,7 +5,7 @@
 #
 # The .dmg opens to Aureon.app next to an Applications shortcut: drag one onto the other. The .pkg installs into /Applications.
 # ARCHS (see build_app.sh) selects the architectures; ARTIFACT_SUFFIX (for example -universal) is added to the file names.
-# Output goes to OUTPUT_FOLDER (default: the repository folder). CODESIGN_IDENTITY / SKIP_SMARTDJ / SKIP_WHISPER work as in build_app.sh.
+# Output goes to OUTPUT_FOLDER (default: the repository folder). CODESIGN_IDENTITY works as in build_app.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"

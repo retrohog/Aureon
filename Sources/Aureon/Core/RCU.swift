@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// Read-copy-update cell for handing an object from a control thread to the real-time thread without locks.
 ///

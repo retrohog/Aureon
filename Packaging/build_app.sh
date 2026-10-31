@@ -3,16 +3,8 @@
 #
 #   ./Packaging/build_app.sh [--with-helper] [DEST_FOLDER]
 #
-# The Smart DJ language model is a separate program (Packages/SmartDJHelper, built with MLX). It is built with xcodebuild and embedded
-# when full Xcode with the Metal toolchain is installed; otherwise the app is built without it and Smart DJ falls back to plain ranking.
-#   SKIP_SMARTDJ=1  never build it       REBUILD_SMARTDJ=1  rebuild even if a build exists
-#
-# The lyrics speech model (Whisper) is another separate program (Packages/WhisperHelper, WhisperKit), built and embedded the same way.
-#   SKIP_WHISPER=1  never build it       REBUILD_WHISPER=1  rebuild even if a build exists
-#
 # ARCHS="arm64 x86_64" (default) builds a universal app: each slice is built on its own and joined with lipo. ARCHS=arm64 (or x86_64)
-#               gives a single-architecture build, which is faster for development. The Smart DJ helper is always arm64-only (MLX runs only on
-#               Apple Silicon); the lyrics helper is arm64 unless WHISPER_ARCHS="arm64 x86_64" is set and WhisperKit builds for it.
+#               gives a single-architecture build, which is faster for development. The app runs on macOS 13 or later (MINOS below).
 #
 # --with-helper embeds the privileged quiet-mode helper (Contents/MacOS/AureonHelper) and its launchd plist
 #               (Contents/Library/LaunchDaemons/org.aureon.helper.plist) for SMAppService. macOS only lets a *signed* app register it:
@@ -28,7 +20,7 @@ BUILD="$(echo "$VERSION" | awk -F. '{ print $1 * 10000 + $2 * 100 + $3 }')"
 IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ARCHS="${ARCHS:-arm64 x86_64}"
-MINOS=15.0
+MINOS=13.0
 # Each slice gets its own scratch folder: the products folder does not depend on --triple, so one shared folder would be overwritten.
 build_slice() { swift build -c release --triple "$1-apple-macosx$MINOS" --scratch-path ".build/slice-$1" "${@:2}"; }
 for a in $ARCHS; do
@@ -81,11 +73,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
   <key>CFBundleVersion</key><string>__BUILD__</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.music</string>
-  <key>NSMicrophoneUsageDescription</key><string>Some Audio Unit plugins request audio input access.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Aureon uses the microphone for the DJ console's mic channel, and some Audio Unit plugins also ask for audio input.</string>
   <key>NSLocalNetworkUsageDescription</key><string>Aureon lets your phone or tablet control playback and browse your library over the local network, finds other Aureon servers, finds Chromecast, Sonos and DLNA speakers to play to, and syncs your library to the companion app.</string>
   <key>NSDesktopFolderUsageDescription</key><string>Aureon reads and plays music that you keep in your Desktop folder.</string>
   <key>NSDocumentsFolderUsageDescription</key><string>Aureon reads and plays music that you keep in your Documents folder.</string>
@@ -119,58 +111,6 @@ if [ "$WITH_HELPER" = 1 ]; then
 PLIST
   codesign --force --options runtime -s "$IDENTITY" "$APP/Contents/MacOS/AureonHelper" 2>&1 | tail -1
 fi
-
-# Smart DJ language model helper
-SMART_SRC="Packages/SmartDJHelper"
-SMART_OUT="$SMART_SRC/.build/xcode/Build/Products/Release"
-if [ "${SKIP_SMARTDJ:-0}" != 1 ]; then
-  if [ ! -x "$SMART_OUT/AureonSmartDJ" ] || [ "${REBUILD_SMARTDJ:-0}" = 1 ]; then
-    if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find metal >/dev/null 2>&1; then
-      echo "Building the Smart DJ language model helper (first time: a few minutes)…"
-      ( cd "$SMART_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonSmartDJ -configuration Release -destination 'platform=macOS' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
-          -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-smartdj-build.log 2>&1 ) \
-        || echo "note: the Smart DJ helper did not build (see /tmp/aureon-smartdj-build.log); the app will use plain ranking."
-    else
-      echo "note: Xcode with the Metal toolchain was not found, so the Smart DJ language model is not included (xcodebuild -downloadComponent MetalToolchain)."
-    fi
-  fi
-  if [ -x "$SMART_OUT/AureonSmartDJ" ]; then
-    H="$APP/Contents/Helpers/AureonSmartDJ"
-    mkdir -p "$H"
-    cp "$SMART_OUT/AureonSmartDJ" "$H/"
-    for b in "$SMART_OUT"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$H/"; done
-    echo "Smart DJ language model helper included ($(du -sh "$H" | cut -f1))"
-  fi
-fi
-
-# Lyrics generation: the on-device speech model (Whisper via WhisperKit/CoreML), a separate program like the Smart DJ model.
-#   SKIP_WHISPER=1  never build it       REBUILD_WHISPER=1  rebuild even if a build exists
-WHISPER_SRC="Packages/WhisperHelper"
-WHISPER_OUT="$WHISPER_SRC/.build/xcode/Build/Products/Release"
-if [ "${SKIP_WHISPER:-0}" != 1 ]; then
-  if [ ! -x "$WHISPER_OUT/AureonWhisper" ] || [ "${REBUILD_WHISPER:-0}" = 1 ]; then
-    if DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun --find xcodebuild >/dev/null 2>&1; then
-      echo "Building the lyrics speech-model helper (first time: a few minutes)…"
-      ( cd "$WHISPER_SRC" && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -scheme AureonWhisper -configuration Release -destination 'platform=macOS' ARCHS="${WHISPER_ARCHS:-arm64}" ONLY_ACTIVE_ARCH=NO \
-          -derivedDataPath .build/xcode -skipMacroValidation -skipPackagePluginValidation build >/tmp/aureon-whisper-build.log 2>&1 ) \
-        || echo "note: the lyrics helper did not build (see /tmp/aureon-whisper-build.log); lyrics from files and the internet still work."
-    else
-      echo "note: Xcode was not found, so generating lyrics with a speech model is not included."
-    fi
-  fi
-  if [ -x "$WHISPER_OUT/AureonWhisper" ]; then
-    H="$APP/Contents/Helpers/AureonWhisper"
-    mkdir -p "$H"
-    cp "$WHISPER_OUT/AureonWhisper" "$H/"
-    for b in "$WHISPER_OUT"/*.bundle; do [ -e "$b" ] && cp -R "$b" "$H/"; done
-    echo "Lyrics speech-model helper included ($(du -sh "$H" | cut -f1))"
-  fi
-fi
-
-# Resource bundles inside the helpers are sealed first: codesign refuses to seal the app around nested code that is not signed.
-# A universal helper comes out of xcodebuild without a signature (a single-architecture one is signed by the linker), so sign each program too.
-for x in "$APP"/Contents/Helpers/*/Aureon*; do [ -f "$x" ] && [ -x "$x" ] && codesign --force -s "$IDENTITY" "$x" >/dev/null 2>&1; done
-for b in "$APP"/Contents/Helpers/*/*.bundle; do [ -e "$b" ] && codesign --force -s "$IDENTITY" "$b" >/dev/null 2>&1; done
 
 if [ "$IDENTITY" = "-" ]; then
   # An ad-hoc signature is identified by the hash of the binary, which changes with every build, so macOS forgets the folder and volume
