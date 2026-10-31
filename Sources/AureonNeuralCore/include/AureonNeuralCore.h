@@ -23,6 +23,7 @@
 #define AUREON_NEURAL_CORE_H
 
 #include <stdint.h>
+#include "AureonAtomics.h"
 
 #ifdef __cplusplus
 extern "C" {
