@@ -72,6 +72,38 @@ final class DJDeck: ObservableObject, Identifiable {
     @Published private(set) var loopActive = false
     @Published private(set) var bending = 0.0
 
+    // MARK: performance modes (the Pro console)
+    /// Plays the track backwards.
+    @Published var reverse = false { didSet { control.reverse = reverse; if reverse { slipBegin() } else { slipEnd() } } }
+    /// Keeps the key when the pitch fader moves the tempo.
+    @Published var keyLock = false { didSet { control.keyLock = keyLock } }
+    /// Whole semitones the key is shifted by, without changing the tempo.
+    @Published var keyShift = 0 { didSet { control.keyShift = Double(keyShift) } }
+    /// While on, loops, reverse and scratching run on in the background: when they end the track is where it would have been.
+    @Published var slip = false { didSet { if !slip { slipAnchor = nil } } }
+    /// Whether dragging the disc scratches (otherwise it only nudges the tempo while playing).
+    @Published var scratchEnabled = true
+    /// Editing the beat grid: the disc and buttons move the grid instead of the track.
+    @Published var gridEdit = false
+    /// How far the grid has been moved by hand, in seconds.
+    @Published private(set) var gridOffset = 0.0
+    /// Keeps this deck's tempo locked to the master deck.
+    @Published var syncOn = false
+    @Published var isMaster = false
+    @Published var padMode = PadMode.cues { didSet { padBank = 0 } }
+    @Published var padBank = 0
+    @Published private(set) var scratching = false
+    /// 0 = no effect unit, 1…3 = the unit this channel listens to.
+    @Published var fxUnit = 0 { didSet { onFX?() } }
+    @Published private(set) var detail: DJWaveDetail?
+    /// The loop size selected in the loop block, in beats.
+    @Published var loopSize = 4.0
+    var onFX: (() -> Void)?
+    var onLoaded: ((DJTrack) -> Void)?
+    private var fxSaved: (kind: DeckFXKind, on: Bool, wet: Double, param: Double)?
+    private var detailTask: Task<Void, Never>?
+    private var slipAnchor: (position: Double, at: Date)?
+
     var onMix: (() -> Void)?
     var options = PlayerOptions()
     var deckRate = 48_000.0
@@ -148,7 +180,10 @@ final class DJDeck: ObservableObject, Identifiable {
         analysisTask?.cancel()
         player.stop()
         clearLoop()
+        detailTask?.cancel(); detail = nil
         track = t; analysis = nil; error = nil; position = 0; cue = 0; playing = false; pitch = 0; bend(0); lastTick = nil
+        reverse = false; slipAnchor = nil; scratching = false; control.scratchOn = false; gridEdit = false
+        gridOffset = GridStore.load(path: t.path)
         hotCues = HotCueStore.load(path: t.path)
         guard let f = try? openLossless(path: t.path) else { error = "Could not open this file"; track = nil; return }
         if f.info.sourceBits == 1 { error = "DSD files cannot be loaded on a deck"; track = nil; return }
@@ -156,6 +191,13 @@ final class DJDeck: ObservableObject, Identifiable {
         player.settings = settings()
         player.setQueue([t.path])
         player.start(options: playerOptions(paused: true))
+        onLoaded?(t)
+        let wavePath = t.path
+        detailTask = Task { [weak self] in
+            let d = await Task.detached(priority: .utility) { DJWaveDetail.build(path: wavePath) }.value
+            guard !Task.isCancelled, let self, self.track?.path == wavePath else { return }
+            self.detail = d
+        }
         if let cached = AnalysisCache.shared.cached(path: t.path) { analysis = cached; analyzing = false; mix.params.bpm.value = Float(effectiveBPM ?? 0); return }
         analyzing = true
         let path = t.path
@@ -169,7 +211,8 @@ final class DJDeck: ObservableObject, Identifiable {
     func setAnalysisForTests(_ a: DJTrackAnalysis) { analysis = a }
 
     func unload() {
-        analysisTask?.cancel(); player.stop(); clearLoop(); track = nil; analysis = nil; playing = false; position = 0; duration = 0; hotCues = Array(repeating: nil, count: HotCueStore.count)
+        analysisTask?.cancel(); detailTask?.cancel(); detail = nil; player.stop(); clearLoop(); track = nil; analysis = nil; playing = false; position = 0; duration = 0; hotCues = Array(repeating: nil, count: HotCueStore.count)
+        reverse = false; slipAnchor = nil; scratching = false; control.scratchOn = false; gridOffset = 0; gridEdit = false; syncOn = false
         mix.params.fxOn.value = 0; fxOn = false; manualBPM = nil; bpmScale = 1; taps = []
     }
 
@@ -201,10 +244,30 @@ final class DJDeck: ObservableObject, Identifiable {
 
     /// The beat nearest to `t`, on the analysed grid (its first beat) at the tempo in use.
     func gridBeat(near t: Double) -> Double? {
-        guard let bpm, bpm > 0, let fb = analysis?.firstBeat else { return analysis?.nearestBeat(to: t) }
+        guard let bpm, bpm > 0, let fb = firstBeat else { return analysis?.nearestBeat(to: t) }
         let p = 60 / bpm
         return fb + ((t - fb) / p).rounded() * p
     }
+
+    /// The first beat of the grid: the analysed one, moved by whatever the DJ has nudged it by.
+    var firstBeat: Double? { analysis?.firstBeat.map { max(0, $0 + gridOffset) } }
+
+    /// Moves the beat grid by `seconds` (negative = earlier) and remembers it for this track.
+    func nudgeGrid(by seconds: Double) {
+        guard track != nil, analysis?.firstBeat != nil else { return }
+        gridOffset = max(-5, min(5, gridOffset + seconds))
+        persistGrid()
+    }
+    /// Puts a beat of the grid at the playhead.
+    func setGridHere() {
+        guard let t = track, let fb = analysis?.firstBeat, let bpm, bpm > 0 else { return }
+        let p = 60 / bpm
+        let n = ((position - fb) / p).rounded()
+        gridOffset = max(-5, min(5, position - (fb + n * p)))
+        _ = t; persistGrid()
+    }
+    func resetGrid() { gridOffset = 0; persistGrid() }
+    private func persistGrid() { if let p = track?.path { GridStore.save(path: p, offset: gridOffset) } }
 
     // MARK: hot cues
 
@@ -227,26 +290,35 @@ final class DJDeck: ObservableObject, Identifiable {
         guard track != nil, let a = loopIn else { return }
         let b = snapped(position)
         guard b > a + 0.02 else { return }
-        loopOut = b; loopActive = true; applyLoop()
+        loopOut = b; slipBegin(); loopActive = true; applyLoop()
     }
     /// A loop of `beats` beats starting at the current position (on the beat grid when there is one).
     func autoLoop(beats: Double, snap: Bool = false) {
         guard track != nil else { return }
         let len = beats * (beatLength ?? 0.5)
         let a = snap ? (gridBeat(near: position).map { max(0, $0) } ?? position) : snapped(position)
+        slipBegin()
         loopIn = a; loopOut = min(duration, a + len); loopActive = true; applyLoop()
     }
     func toggleLoop() {
         guard track != nil else { return }
-        if loopActive { loopActive = false; applyLoop(); return }
-        if loopIn != nil, loopOut != nil { loopActive = true; applyLoop() } else { autoLoop(beats: 4) }
+        if loopActive { loopActive = false; applyLoop(); slipEnd(); return }
+        if loopIn != nil, loopOut != nil { slipBegin(); loopActive = true; applyLoop() } else { autoLoop(beats: 4) }
     }
     func scaleLoop(_ f: Double) {
         guard let a = loopIn, let b = loopOut else { return }
         let len = max(0.03, min(duration - a, (b - a) * f))
         loopOut = a + len; applyLoop()
     }
-    func clearLoop() { loopIn = nil; loopOut = nil; loopActive = false; control.clearLoop() }
+    func clearLoop() { let was = loopActive; loopIn = nil; loopOut = nil; loopActive = false; control.clearLoop(); if was { slipEnd() } }
+    /// Starts the loop again from its start, or from where it was last set.
+    func reloop() { guard track != nil, loopIn != nil, loopOut != nil else { return }; if !loopActive { slipBegin(); loopActive = true; applyLoop() }; if let a = loopIn { seek(to: a) } }
+    /// Moves the whole loop by its own length (negative = earlier).
+    func moveLoop(by times: Double) {
+        guard let a = loopIn, let b = loopOut, b > a else { return }
+        let len = b - a, shift = max(-a, min(duration - b, times * len))
+        loopIn = a + shift; loopOut = b + shift; applyLoop()
+    }
     var loopBeats: Double? { guard let a = loopIn, let b = loopOut, let bl = beatLength else { return nil }; return (b - a) / bl }
 
     // MARK: pitch bend
@@ -309,8 +381,8 @@ final class DJDeck: ObservableObject, Identifiable {
         else if player.isRunning {
             // The engine reads ahead in chunks, so its figure steps; between looks the position is dead-reckoned at the current speed and gently
             // pulled toward the engine's figure, which keeps it smooth and prevents drift.
-            let engine = max(0, min(duration, control.sourceFrame / deckRate - st.bufferedSeconds * control.ratio))
-            let speed = control.ratio * (1 + control.bend)
+            let speed = control.effectiveSpeed
+            let engine = max(0, min(duration, control.sourceFrame / deckRate - st.bufferedSeconds * speed))
             if playing, let last = lastTick, now >= trustEngineAfter || lastTick != nil {
                 let dead = position + now.timeIntervalSince(last) * speed
                 position = now >= trustEngineAfter && !loopActive ? dead + (engine - dead) * 0.12 : dead
@@ -323,7 +395,79 @@ final class DJDeck: ObservableObject, Identifiable {
         peakL = mix.peakL.value; peakR = mix.peakR.value
     }
 
-    func shutdown() { analysisTask?.cancel(); player.stop() }
+    func shutdown() { analysisTask?.cancel(); detailTask?.cancel(); player.stop() }
+
+    // MARK: slip, scratch, live readings
+
+    /// With slip on, remembers where the track would be if nothing interrupted it.
+    func slipBegin() { if slip, playing, slipAnchor == nil { slipAnchor = (position, Date()) } }
+    /// Returns to where the track would have been.
+    func slipEnd() {
+        guard let a = slipAnchor else { return }
+        slipAnchor = nil
+        seek(to: a.position + Date().timeIntervalSince(a.at) * max(0.5, 1 + pitch))
+    }
+    var slipping: Bool { slipAnchor != nil }
+
+    /// A loop-size button: engages a loop of that many beats, or leaves the loop when it is already that size.
+    func loopSizePressed(_ beats: Double) {
+        guard track != nil else { return }
+        if loopActive, let b = loopBeats, abs(b - beats) < 0.05 { toggleLoop(); return }
+        loopSize = beats; autoLoop(beats: beats)
+    }
+
+    /// An effect pad held down: the preset replaces the deck's effect until it is let go.
+    func fxPadDown(_ p: DJPadSets.FXPreset) {
+        if fxSaved == nil { fxSaved = (fxKind, fxOn, fxWet, fxParam) }
+        fxKind = p.kind; fxWet = p.wet; fxParam = p.param; fxOn = true
+    }
+    func fxPadUp() {
+        guard let s = fxSaved else { return }
+        fxSaved = nil
+        fxKind = s.kind; fxWet = s.wet; fxParam = s.param; fxOn = s.on
+    }
+
+    /// The start of slice `index` of bank `bank`: eight one-beat slices of an eight-beat stretch, four banks to a 32-beat phrase of the grid.
+    func sliceTime(bank: Int, index: Int) -> Double? {
+        guard let bl = beatLength, let fb = firstBeat else { return nil }
+        let beat = Int(((position - fb) / bl).rounded(.down))
+        let phrase = max(0, beat) / 32
+        return fb + Double(phrase * 32 + bank * 8 + index) * bl
+    }
+    func sliceDown(bank: Int, index: Int) {
+        guard track != nil, let t = sliceTime(bank: bank, index: index) else { return }
+        slipBegin(); seek(to: min(t, max(0, duration - 0.2))); if !playing { play() }
+    }
+    func sliceUp() { slipEnd() }
+
+    /// A hand on the disc. While playing, the track follows the hand's speed; while stopped, the playhead follows the hand (a scrub).
+    func scratchBegin() {
+        guard track != nil, !scratching else { return }
+        scratching = true
+        slipBegin()
+        if playing { control.scratchSpeed = 0; control.scratchOn = true }
+    }
+    func scratchMove(speed: Double, deltaSeconds: Double) {
+        guard scratching else { return }
+        if playing || control.scratchOn { control.scratchSpeed = speed }
+        else { seek(to: position + deltaSeconds) }
+    }
+    func scratchEnd() {
+        guard scratching else { return }
+        scratching = false
+        let wasScratching = control.scratchOn
+        control.scratchOn = false
+        if wasScratching { trustEngineAfter = Date().addingTimeInterval(0.2) }
+        slipEnd()
+    }
+
+    /// The position at a moment, carried forward at the current speed from the last reading: smooth enough to draw at the display's rate.
+    func livePosition(at now: Date = Date()) -> Double {
+        guard playing, let last = lastTick else { return position }
+        return max(0, min(duration, position + now.timeIntervalSince(last) * control.effectiveSpeed))
+    }
+    var livePeak: (l: Float, r: Float) { (mix.peakL.value, mix.peakR.value) }
+    var remaining: Double { max(0, (duration - position) / max(0.5, abs(1 + pitch))) }
 }
 
 /// Which side of the crossfader a channel is on: left, right, or straight through (not affected by it).
@@ -361,7 +505,7 @@ final class DJModel: ObservableObject {
     @Published var cueMix = 0.0 { didSet { core.cueMix.value = Float(cueMix) } }
     @Published var cueLevel = 0.8 { didSet { core.cueLevel.value = Float(cueLevel) } }
     @Published var cueRoute = CueRoute.none { didSet { if active && oldValue != cueRoute { restartOutputs() } } }
-    @Published private(set) var outputError: String?
+    @Published var outputError: String?
 
     // recording
     @Published private(set) var recording = false
@@ -370,21 +514,53 @@ final class DJModel: ObservableObject {
     private var tap: RecorderTap?
 
     private(set) var core = DJMixerCore(sampleRate: 48_000)
-    private var outputs: [DJOutput] = []
+    var outputs: [DJOutput] = []
     private var cueRing: FloatRing?
     private var timer: Timer?
     private var options = PlayerOptions()
-    private var rate = 48_000.0
+    private(set) var rate = 48_000.0
     /// Tests and snapshots replace the real device output.
     var outputFactory: ((DJMixerCore) -> DJOutput?)?
     lazy var remix = RemixController(model: self)
     /// The language model that picks songs from a spoken request. Only in memory while it is switched on.
-    let smart = SmartDJService()
+
+    // MARK: Pro console state
+    @Published var preset = DJLayoutPreset.load() { didSet { if preset != oldValue { preset.save() } } }
+    /// The three shared effect units; a channel is assigned to one of them.
+    let fxUnits = [DJFXUnit(index: 1, kind: .echo), DJFXUnit(index: 2, kind: .reverb), DJFXUnit(index: 3, kind: .flanger)]
+    /// The microphone and auxiliary channels.
+    private(set) lazy var mic = DJLineChannel(name: "MIC", mix: core.mic, defaultFader: 0)
+    private(set) lazy var aux = DJLineChannel(name: "AUX", mix: core.aux, defaultFader: 0.8)
+    @Published var inputDevices: [InputDeviceInfo] = []
+    /// The deck whose tempo the others follow.
+    @Published var masterName: String?
+    @Published var boothLevel = 0.7 { didSet { core.boothLevel.value = Float(boothLevel) } }
+    @Published var boothRoute = CueRoute.none { didSet { if active && oldValue != boothRoute { restartOutputs() } } }
+    /// What each sampler slot holds (name and length in seconds), nil when empty.
+    @Published var sampleSlots: [(name: String, seconds: Double)?] = Array(repeating: nil, count: DJSampler.slots)
+    @Published var samplerLevel = 0.9 { didSet { core.sampler.level.value = Float(samplerLevel) } }
+    var sampleData: [SampleData?] = Array(repeating: nil, count: DJSampler.slots)
+    var sampleNames: [Int: String] = [:]
+    /// When each track was last put on a deck (seconds since 1970).
+    @Published var history: [String: Double] = DJModel.loadHistory()
+    var boothRing: FloatRing?
 
     init() {
         b.assign = .right
         a.onMix = { [weak self] in self?.applyMix() }
         b.onMix = { [weak self] in self?.applyMix() }
+        a.onFX = { [weak self] in self?.applyFX() }
+        b.onFX = { [weak self] in self?.applyFX() }
+        for u in fxUnits { u.changed = { [weak self] in self?.applyFX() } }
+        mic.onMix = { [weak self] in
+            guard let self else { return }
+            self.applyMix()
+            if self.active, self.mic.channel > 0, !self.mic.running, self.mic.error == nil { self.startLineInputs() }
+        }
+        aux.onMix = { [weak self] in self?.applyMix() }
+        a.onLoaded = { [weak self] t in self?.noteLoaded(t) }; b.onLoaded = { [weak self] t in self?.noteLoaded(t) }
+        mic.onFX = { [weak self] in self?.applyFX() }; aux.onFX = { [weak self] in self?.applyFX() }
+        mic.restart = { [weak self] in self?.startLineInputs() }; aux.restart = { [weak self] in self?.startLineInputs() }
         applyMix()
     }
 
@@ -396,6 +572,7 @@ final class DJModel: ObservableObject {
         func gain(_ d: DJDeck) -> Double { d.assign == .left ? g.a : d.assign == .right ? g.b : 1 }
         a.mix.gain.value = Float(DJMath.channelGain(a.channel) * gain(a))
         b.mix.gain.value = Float(DJMath.channelGain(b.channel) * gain(b))
+        mic.mix.gain.value = Float(DJMath.channelGain(mic.channel)); aux.mix.gain.value = Float(DJMath.channelGain(aux.channel))
     }
 
     /// Flips the crossfader's direction (a "hamster" switch).
@@ -445,8 +622,11 @@ final class DJModel: ObservableObject {
         let c = DJMixerCore(sampleRate: rate)
         c.masterLow.value = Float(DJMath.eqGainDB(masterLow)); c.masterMid.value = Float(DJMath.eqGainDB(masterMid)); c.masterHigh.value = Float(DJMath.eqGainDB(masterHigh))
         c.trim.value = Float(masterLevel); c.limiterOn.value = limiter ? 1 : 0; c.cueMix.value = Float(cueMix); c.cueLevel.value = Float(cueLevel)
+        c.boothLevel.value = Float(boothLevel); c.sampler.level.value = Float(samplerLevel)
+        for (i, d) in sampleData.enumerated() { c.sampler.load(d, slot: i) }
         core = c
         a.attach(c.a, rate: rate); b.attach(c.b, rate: rate)
+        mic.attach(c.mic); aux.attach(c.aux)
     }
 
     private func startOutputs() {
@@ -465,26 +645,28 @@ final class DJModel: ObservableObject {
             if let c = cueOut { do { try c.start(); outputs.append(c) } catch { outputError = "Headphones: \(error)" } }
         } catch { outputError = "\(error)" }
         cueRing = ring
+        startBooth()
+        startLineInputs()
     }
 
-    private func stopOutputs() { outputs.forEach { $0.stop() }; outputs = []; cueRing = nil }
-    private func restartOutputs() { startOutputs() }
+    private func stopOutputs() { core.booth.publish(nil); boothRing = nil; mic.stop(); aux.stop(); outputs.forEach { $0.stop() }; outputs = []; cueRing = nil }
+    func restartOutputs() { startOutputs() }
 
     func exit() {
         guard active else { return }
         active = false
-        smart.disable()
         remix.enabled = false
         stopRecording()
         timer?.invalidate(); timer = nil
         for d in decks { d.unload(); d.player.analysis.setActive(false) }
+        masterName = nil
         stopOutputs()
     }
 
     /// Ten times a second: the decks, the meters, the recording clock.
     func tick() {
         decks.forEach { $0.refresh() }
-        advanceSet()
+        followMaster()
         meterL = core.meterL.value; meterR = core.meterR.value; limiterReduction = core.limiterReduction.value
         if recording, let t = tap { recordedSeconds = Double(t.frames) / rate }
     }
@@ -593,29 +775,4 @@ final class DJModel: ObservableObject {
         return a
     }
     func load(_ t: DJTrack, into d: DJDeck) { d.load(t) }
-
-    // MARK: set list (Smart DJ)
-
-    /// The songs Smart DJ chose, in order. The first two sit on the decks; the next one is loaded on whichever deck frees up.
-    @Published private(set) var setList: [DJTrack] = []
-    @Published private(set) var setNext = 0
-
-    /// Puts a set on the table: track 1 on deck A, track 2 on deck B, crossfader on A. Nothing plays until the DJ presses play.
-    func loadSet(_ tracks: [DJTrack]) {
-        setList = tracks; setNext = 0
-        a.unload(); b.unload()
-        crossfader = -1
-        if tracks.indices.contains(0) { a.load(tracks[0]); setNext = 1 }
-        if tracks.indices.contains(1) { b.load(tracks[1]); setNext = 2 }
-    }
-
-    func startSet() { if a.isLoaded { crossfader = -1; a.play() } else if b.isLoaded { crossfader = 1; b.play() } }
-
-    private func advanceSet() {
-        guard setNext < setList.count else { return }
-        for d in [a, b] where d.isLoaded && !d.playing && d.duration > 0 && d.position >= d.duration - 0.6 {
-            d.load(setList[setNext]); setNext += 1
-            return
-        }
-    }
 }

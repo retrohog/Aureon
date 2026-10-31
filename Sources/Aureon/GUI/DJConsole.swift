@@ -263,7 +263,7 @@ struct Waveform: View {
                 ctx.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: Metrics.radius(8)), with: .color(.black.opacity(0.3)))
                 guard let a = deck.analysis, !a.peaks.isEmpty, deck.duration > 0 else {
                     let msg = deck.analyzing ? "Analysing…" : (deck.isLoaded ? "" : "No track")
-                    ctx.draw(Text(msg).font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary), at: CGPoint(x: size.width / 2, y: size.height / 2)); return
+                    ctx.draw(Text(msg).font(Typo.sans(11)).foregroundColor(Brand.inkSecondary), at: CGPoint(x: size.width / 2, y: size.height / 2)); return
                 }
                 let dur = deck.duration
                 func x(_ t: Double) -> CGFloat { size.width * CGFloat(t / dur) }
@@ -432,86 +432,6 @@ struct MasterBar: View {
     }
 }
 
-// MARK: - Smart DJ
-
-struct SmartDJPanel: View {
-    @EnvironmentObject var m: PlayerModel
-    @EnvironmentObject var model: DJModel
-    @ObservedObject var smart: SmartDJService
-    @StateObject private var prompt = Box("")
-
-    private static let examples = ["10 upbeat electronic tracks for a workout", "calm music to study", "8 songs from the 90s", "something slow and sad"]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles").foregroundStyle(Brand.accent)
-                Text("SMART DJ").microLabel()
-                statusView
-                Spacer()
-                if smart.modelActive { Text(smart.engineDescription).font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary).help("\(smart.model): an on-device model runs in a separate process that quits when Smart DJ is switched off; an API model is only asked when you request a set. Choose on the Intelligence page.") }
-            }
-            HStack(spacing: 8) {
-                TextField("Ask for a set: “10 upbeat electronic tracks for a workout”", text: Binding(get: { prompt.v }, set: { prompt.v = $0 }), onCommit: ask)
-                    .textFieldStyle(.plain).ruleField().disabled(!canAsk)
-                Button { ask() } label: { Label("Pick", systemImage: "wand.and.stars") }.buttonStyle(.solid).controlSize(.small).disabled(!canAsk || prompt.v.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            if smart.suggestion == nil, canAsk {
-                HStack(spacing: 8) {
-                    ForEach(Self.examples, id: \.self) { e in Button(e) { prompt.v = e; ask() }.buttonStyle(.rule).controlSize(.mini) }
-                }
-            }
-            if let p = smart.modelProblem { Text(p).font(Typo.sans(11)).foregroundStyle(Brand.caution).fixedSize(horizontal: false, vertical: true) }
-            if let s = smart.suggestion { result(s) }
-        }
-        .padding(12).background(RoundedRectangle(cornerRadius: Metrics.radius(10)).fill(Brand.ink.opacity(0.06)))
-        .onReceive(smart.$suggestion.dropFirst()) { s in if let s, !s.tracks.isEmpty { model.loadSet(s.tracks.map { model.track($0) }) } }
-    }
-
-    private var canAsk: Bool { if case .ready = smart.state { return true }; return false }
-
-    @ViewBuilder private var statusView: some View {
-        switch smart.state {
-        case .off: Text("off").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary)
-        case .loading(let f, let msg): HStack(spacing: 8) { ProgressView(value: f).frame(width: 90).controlSize(.small); Text(msg + (f > 0 && f < 1 ? " \(Int(f * 100))%" : "")).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary) }
-        case .ready: Text("ready").font(Typo.sans(12.5, .medium))
-        case .thinking: HStack(spacing: 8) { ProgressView().controlSize(.small); Text("choosing…").font(Typo.sans(12.5)) }
-        }
-    }
-
-    private func ask() { let q = prompt.v; Task { await smart.suggest(q) } }
-
-    private func result(_ s: SmartDJSuggestion) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(s.intent.summary).font(Typo.sans(11.5, .medium)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
-                Spacer()
-                Text(s.usedModel ? "\(s.modelPicked) chosen by the model" + (s.filled > 0 ? ", \(s.filled) by ranking" : "") : "chosen by ranking").font(Typo.sans(11)).foregroundStyle(Brand.inkTertiary)
-                Text(String(format: "%.1f s", s.seconds)).font(Typo.mono(11)).foregroundStyle(Brand.inkTertiary)
-            }
-            if let n = s.note { Text(n).font(Typo.sans(11)).foregroundStyle(Brand.caution).fixedSize(horizontal: false, vertical: true) }
-            ForEach(Array(s.tracks.enumerated()), id: \.offset) { i, t in
-                HStack(spacing: 8) {
-                    Text("\(i + 1)").font(Typo.mono(11)).foregroundStyle(Brand.inkTertiary).frame(width: 22, alignment: .trailing)
-                    Text(t.title).font(Typo.sans(12.5, .medium)).lineLimit(1)
-                    Text(t.artistLine).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary).lineLimit(1)
-                    Spacer()
-                    if let b = model.info[t.path]?.bpm { Text("\(Int(b.rounded()))").font(Typo.mono(11)).foregroundStyle(Brand.inkSecondary) }
-                    Button("A") { model.a.load(model.track(t)) }.buttonStyle(.rule).controlSize(.mini).help("Load on deck A")
-                    Button("B") { model.b.load(model.track(t)) }.buttonStyle(.rule).controlSize(.mini).help("Load on deck B")
-                }
-            }
-            if !s.tracks.isEmpty {
-                HStack(spacing: 8) {
-                    Button { model.startSet() } label: { Label("Start set", systemImage: "play.fill") }
-                    Button { model.loadSet(s.tracks.map { model.track($0) }) } label: { Label("Reload decks", systemImage: "arrow.counterclockwise") }
-                    Button { m.addTracks(s.tracks, play: false) } label: { Label("Add to player queue", systemImage: "text.badge.plus") }
-                }.buttonStyle(.rule).controlSize(.small)
-            }
-        }
-    }
-}
-
 struct RemixPanel: View {
     @ObservedObject var remix: RemixController
 
@@ -519,7 +439,7 @@ struct RemixPanel: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Image(systemName: "wand.and.stars").foregroundStyle(Brand.accent2)
-                Text("SMART REMIXER").microLabel()
+                Text("REMIX").microLabel()
                 Text(remix.status).font(Typo.sans(12.5, .medium)).lineLimit(1)
                 Spacer()
                 ForEach(Array(remix.history.suffix(6).enumerated()), id: \.offset) { _, a in
@@ -545,14 +465,14 @@ struct RemixPanel: View {
     }
 }
 
+
 // MARK: - The console
 
-struct DJView: View {
+/// The compact console: the two decks, mixer and master bar you can arrange yourself.
+struct DJCompactView: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var dj: DJModel
     @StateObject private var layoutOpen = Box(false)
-    @ObservedObject private var ai = IntelligenceCenter.shared
-
     var body: some View {
         VStack(spacing: 12) {
             header
@@ -567,7 +487,6 @@ struct DJView: View {
                     ForEach(dj.layout.visible(.page), id: \.self) { id in
                         if id == "masterbar" { MasterBar() }
                     }
-                    if dj.smart.isEnabled { SmartDJPanel(smart: dj.smart) }
                     if dj.remix.enabled { RemixPanel(remix: dj.remix) }
                     if dj.layout.isShown(.page, "browser") { DJBrowser().frame(minHeight: 340) }
                 }
@@ -575,41 +494,28 @@ struct DJView: View {
         }
         .padding(.horizontal, 16).padding(.top, 0).padding(.bottom, 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onAppear {
-            m.library.category = .songs
-            let lib = m.library
-            dj.smart.library = { [weak lib, weak dj] in
-                guard let lib, let dj else { return [] }
-                let all = lib.store?.allTracks(offset: 0, limit: 200_000) ?? lib.songs
-                return SmartDJService.tracks(from: all) { dj.info[$0] ?? AnalysisCache.shared.cached(path: $0) }
-            }
-        }
+        .onAppear { m.library.category = .songs }
     }
 
     private var header: some View {
         HStack(spacing: 12) {
             Text("DJ").font(Typo.serif(22, .regular)).tracking(1)
-            Button {
-                if dj.smart.isEnabled { dj.smart.disable() } else { dj.smart.enable() }
-            } label: {
-                Label(dj.smart.isEnabled ? "Smart DJ on" : "Smart DJ", systemImage: "sparkles").font(Typo.sans(12.5, .semibold))
-                    .padding(.horizontal, 12).padding(.vertical, 4)
-                    .background(Slab().fill(dj.smart.isEnabled ? AnyShapeStyle(Brand.gradient) : AnyShapeStyle(Brand.ink.opacity(0.10))))
-                    .foregroundStyle(dj.smart.isEnabled ? Color.black.opacity(0.85) : Brand.ink)
-            }.buttonStyle(.plain).disabled(!ai.isActive(.smartDJ)).opacity(ai.isActive(.smartDJ) ? 1 : 0.45)
-            .help(ai.isActive(.smartDJ) ? "Ask for a set in your own words: a language model picks the songs. It is loaded when you switch this on and unloaded when you switch it off." : "Smart DJ is switched off on the Intelligence page.")
             Button { dj.remix.enabled.toggle() } label: {
                 Label(dj.remix.enabled ? "Remix on" : "Remix", systemImage: "wand.and.stars").font(Typo.sans(12.5, .semibold))
                     .padding(.horizontal, 12).padding(.vertical, 4)
                     .background(Slab().fill(dj.remix.enabled ? AnyShapeStyle(Brand.accent2) : AnyShapeStyle(Brand.ink.opacity(0.10))))
                     .foregroundStyle(dj.remix.enabled ? Color.black.opacity(0.85) : Brand.ink)
-            }.buttonStyle(.plain).disabled(!ai.isActive(.remixer)).opacity(ai.isActive(.remixer) ? 1 : 0.45)
-            .help(ai.isActive(.remixer) ? "A smart remixer performs filter sweeps, echoes, loop rolls, drops and risers on the playing deck" : "The Smart Remixer is switched off on the Intelligence page.")
+            }.buttonStyle(.plain)
+            .help("Remix performs filter sweeps, echoes, loop rolls, drops and risers on the playing deck")
             Button { dj.quantize.toggle() } label: {
                 Label("Quantize", systemImage: "square.grid.3x1.below.line.grid.1x2").font(Typo.sans(12, .medium))
                     .padding(.horizontal, 12).padding(.vertical, 4)
                     .background(Slab().fill(dj.quantize ? AnyShapeStyle(Brand.accent.opacity(0.35)) : AnyShapeStyle(Brand.ink.opacity(0.08))))
             }.buttonStyle(.plain).help("Snap cues and loops to the beat grid")
+            Button { withAnimation(.easeOut(duration: 0.15)) { dj.preset = .pro } } label: {
+                Label("Pro", systemImage: "square.grid.3x3.square").font(Typo.sans(12, .medium))
+                    .padding(.horizontal, 12).padding(.vertical, 4).background(Slab().fill(Brand.ink.opacity(0.08)))
+            }.buttonStyle(.plain).help("The full console, with the waveform stage and the library")
             Button { layoutOpen.v.toggle() } label: {
                 Label("Layout", systemImage: "rectangle.3.group").font(Typo.sans(12, .medium))
                     .padding(.horizontal, 12).padding(.vertical, 4).background(Slab().fill(Brand.ink.opacity(0.08)))
@@ -650,7 +556,7 @@ struct DJBrowser: View {
                 Spacer()
                 if let p = dj.analysisProgress { ProgressView(value: Double(p.done), total: Double(max(1, p.total))).frame(width: 90).controlSize(.small); Text("\(p.done)/\(p.total)").font(Typo.mono(11)).foregroundStyle(Brand.inkSecondary) }
                 Button { dj.analyzeLibrary(songs.map { $0.path }) } label: { Label(dj.analysisProgress == nil ? "Analyse all" : "Stop", systemImage: dj.analysisProgress == nil ? "waveform.path.ecg" : "stop.fill") }
-                    .buttonStyle(.rule).controlSize(.small).help("Detect tempo and key for every song so they show here and Smart DJ can match tempo")
+                    .buttonStyle(.rule).controlSize(.small).help("Detect tempo and key for every song so they show here")
                 SearchField(prompt: "Filter", text: $lib.search, width: 170)
             }
             HStack(spacing: 12) {
@@ -671,7 +577,7 @@ struct DJBrowser: View {
 }
 
 /// Lets `DJBrowser` find the library model without threading it through every initialiser.
-@MainActor final class LibraryModelBridge { static let shared = LibraryModelBridge(); var model: LibraryModel? }
+@MainActor final class LibraryModelBridge { static let shared = LibraryModelBridge(); var model: LibraryModel?; var collections: CollectionsModel? }
 
 struct DJSongRow: View {
     @EnvironmentObject var dj: DJModel

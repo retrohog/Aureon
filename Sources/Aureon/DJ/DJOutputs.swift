@@ -163,3 +163,93 @@ final class PullOutput: DJOutput, @unchecked Sendable {
 
     func stop() { running.value = false; if thread != nil { exited.wait(); thread = nil } }
 }
+
+// MARK: - Live inputs
+
+/// An audio input device (a microphone or a line input).
+struct InputDeviceInfo: Identifiable, Equatable {
+    let id: AudioDeviceID
+    let name: String
+    let channels: Int
+    let rate: Double
+
+    /// Every device with at least one input channel.
+    static func all() -> [InputDeviceInfo] {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr, size > 0 else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr else { return [] }
+        return ids.compactMap { info($0) }
+    }
+
+    static func defaultInput() -> InputDeviceInfo? {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var id = AudioDeviceID(0); var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &id) == noErr, id != 0 else { return nil }
+        return info(id)
+    }
+
+    static func info(_ id: AudioDeviceID) -> InputDeviceInfo? {
+        var cfg = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(id, &cfg, 0, nil, &size) == noErr, size > 0 else { return nil }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(id, &cfg, 0, nil, &size, raw) == noErr else { return nil }
+        let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+        let ch = list.reduce(0) { $0 + Int($1.mNumberChannels) }
+        guard ch > 0 else { return nil }
+        var nameAddr = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var cf: Unmanaged<CFString>?; var nsz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let name = AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nsz, &cf) == noErr ? (cf?.takeRetainedValue() as String?) ?? "Input" : "Input"
+        var rateAddr = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyNominalSampleRate, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var rate = Float64(48_000); var rsz = UInt32(MemoryLayout<Float64>.size)
+        _ = AudioObjectGetPropertyData(id, &rateAddr, 0, nil, &rsz, &rate)
+        return InputDeviceInfo(id: id, name: name, channels: ch, rate: rate > 0 ? rate : 48_000)
+    }
+}
+
+/// Captures an input device into a ring and publishes it as a mixer channel's feed. The capture callback only converts and copies into the ring.
+final class CoreAudioLineInput: DJOutput {
+    let device: InputDeviceInfo
+    private let channel: DJMixerCore.Deck
+    private let mixerRate: Double
+    private var proc: AudioDeviceIOProcID?
+    private let ring: FloatRing
+    private var scratch: UnsafeMutablePointer<Float>?
+
+    init(device: InputDeviceInfo, channel: DJMixerCore.Deck, mixerRate: Double) {
+        self.device = device; self.channel = channel; self.mixerRate = mixerRate
+        ring = FloatRing(frames: Int(device.rate))
+    }
+
+    func start() throws {
+        let maxFrames = 16_384
+        let s = UnsafeMutablePointer<Float>.allocate(capacity: maxFrames * 2); s.initialize(repeating: 0, count: maxFrames * 2); scratch = s
+        let ring = self.ring
+        var procID: AudioDeviceIOProcID?
+        try check(AudioDeviceCreateIOProcIDWithBlock(&procID, device.id, nil) { _, inData, _, _, _ in
+            let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inData))
+            guard let b = abl.first, let data = b.mData else { return }
+            let ch = max(Int(b.mNumberChannels), 1)
+            let frames = min(Int(b.mDataByteSize) / (ch * 4), maxFrames)
+            let p = data.assumingMemoryBound(to: Float.self)
+            for i in 0..<frames {
+                let l = p[i * ch]
+                s[i * 2] = l; s[i * 2 + 1] = ch > 1 ? p[i * ch + 1] : l
+            }
+            ring.write(s, frames: frames)
+        }, "AudioDeviceCreateIOProcID")
+        guard let procID else { throw AureonError.message("could not create the input callback") }
+        proc = procID
+        channel.feed.publish(LineFeed(ring: ring, srcRate: device.rate, dstRate: mixerRate))
+        try check(AudioDeviceStart(device.id, procID), "AudioDeviceStart")
+    }
+
+    func stop() {
+        channel.feed.publish(nil)
+        if let p = proc { AudioDeviceStop(device.id, p); AudioDeviceDestroyIOProcID(device.id, p); proc = nil }
+        scratch?.deallocate(); scratch = nil
+    }
+}
