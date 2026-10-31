@@ -1,7 +1,6 @@
 import Foundation
 import AVFoundation
 import AudioToolbox
-import Synchronization
 
 // The DSP path of the dual-path architecture.
 //

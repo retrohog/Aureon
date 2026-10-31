@@ -178,7 +178,7 @@ struct QuickPanelView: View {
         .glassPopover()
         .foregroundStyle(Brand.ink)
         .onAppear { m.refreshDevices(); panel.cursor = activeIndex; listFocus = true }
-        .onKeyPress(.escape) { m.quickPanel = nil; return .handled }
+        .onKeyPressCompat(.escape) { m.quickPanel = nil; return .handled }
         .animation(Motion.touch, value: panel.message)
     }
 
@@ -199,10 +199,10 @@ struct QuickPanelView: View {
             }
         }
         .frame(height: min(214, CGFloat(max(1, m.devices.count)) * 40))
-        .focusable().focused($listFocus).focusEffectDisabled()
-        .onKeyPress(.upArrow) { panel.cursor = max(0, panel.cursor - 1); return .handled }
-        .onKeyPress(.downArrow) { panel.cursor = min(max(0, m.devices.count - 1), panel.cursor + 1); return .handled }
-        .onKeyPress(.return) { if m.devices.indices.contains(panel.cursor) { panel.choose(m.devices[panel.cursor], on: m) }; return .handled }
+        .focusable().focused($listFocus).focusEffectDisabledCompat()
+        .onKeyPressCompat(.upArrow, whileFocused: listFocus, repeats: true) { panel.cursor = max(0, panel.cursor - 1); return .handled }
+        .onKeyPressCompat(.downArrow, whileFocused: listFocus, repeats: true) { panel.cursor = min(max(0, m.devices.count - 1), panel.cursor + 1); return .handled }
+        .onKeyPressCompat(.return, whileFocused: listFocus) { if m.devices.indices.contains(panel.cursor) { panel.choose(m.devices[panel.cursor], on: m) }; return .handled }
         .accessibilityElement(children: .contain).accessibilityLabel("Output devices")
     }
 

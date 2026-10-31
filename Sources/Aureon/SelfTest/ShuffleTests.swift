@@ -53,17 +53,16 @@ struct ShuffleTests {
         expect(likedAvg < otherAvg - 1.5, "liked songs come earlier on average: \(likedAvg) vs \(otherAvg)")
     }
 
-    func smartShuffleUsesTheTransitionNetwork() {
+    func balancedShuffleFavoursTracksThatMix() {
         func an(_ bpm: Double, _ k: MusicalKey) -> DJTrackAnalysis { var a = DJTrackAnalysis(peaks: [], bpm: bpm, confidence: 0.7, duration: 200); a.key = k; a.keyStrength = 0.7; a.energy = 0.6; return a }
         let c0 = MusicalKey(pitchClass: 0, minor: false), tri = MusicalKey(pitchClass: 6, minor: false)
-        let net = TransitionNet.fresh(); net.pretrain()
         var start = c(0, artist: "S", genre: "X"); start.analysis = an(124, c0)
         var good = c(1, artist: "G", genre: "Y"); good.analysis = an(125, c0)
         var bad = c(2, artist: "B", genre: "Y"); bad.analysis = an(90, tri)
         var wins = 0
         for seed in 1...30 {
             var rng = SplitMix(seed: UInt64(seed))
-            if Shuffler.smart([good, bad], start: start, net: net, using: &rng).dropFirst().first == good.id { wins += 1 }
+            if Shuffler.smart([good, bad], start: start, using: &rng).dropFirst().first == good.id { wins += 1 }
         }
         expect(wins >= 24, "tracks that mix with the current one tend to follow it: \(wins)/30")
     }

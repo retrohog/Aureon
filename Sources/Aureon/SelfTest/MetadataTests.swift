@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// Canned HTTP for the online services. Routes match on a URL substring; a route can return a sequence of statuses.
 final class StubHTTP: HTTPClient, @unchecked Sendable {

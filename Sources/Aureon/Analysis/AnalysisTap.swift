@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// The only thing the audio thread does for the visualisers: copy the frames it just rendered into a lock-free ring.
 /// All FFT, metering and drawing work happens on other threads. If the analysis side falls behind, frames are dropped —

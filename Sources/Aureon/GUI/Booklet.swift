@@ -407,7 +407,7 @@ struct BookletSection: View {
             }
         }
         .onAppear { b.show(forTrack: path) }
-        .onChange(of: path) { _, p in b.show(forTrack: p) }
+        .onChangeCompat(of: path) { _, p in b.show(forTrack: p) }
     }
 
     private var header: some View {

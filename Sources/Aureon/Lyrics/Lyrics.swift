@@ -1,7 +1,7 @@
 import Foundation
 
 // Lyrics as Aureon holds them: lines with the time each one starts, optionally with the time of every word. They come from an .lrc file next to
-// the song, from the file's own tags, from LRCLIB, or from the on-device speech model (see LyricsService). This file is the data and the
+// the song, from the file's own tags, or from LRCLIB (see LyricsService). This file is the data and the
 // LRC reader/writer; it touches no files and no network, so everything here is plain, testable code.
 
 /// One word (or syllable) of a line and the time it starts.
@@ -15,7 +15,7 @@ struct LyricLine: Equatable, Sendable, Identifiable, Codable {
     /// Seconds from the start of the song.
     var time: Double
     var text: String
-    /// Empty unless the source timed single words (enhanced LRC, or the speech model).
+    /// Empty unless the source timed single words (enhanced LRC).
     var words: [LyricWord] = []
 
     /// An empty line marks a pause in the singing: an instrumental passage.
@@ -29,7 +29,7 @@ struct Lyrics: Equatable, Sendable, Codable {
     /// True when the lines carry times; false for lyrics that are only text.
     var synced: Bool
     var origin: Origin
-    /// Where they came from, for the panel ("Song.lrc", "file tags", "LRCLIB", "Whisper base").
+    /// Where they came from, for the panel ("Song.lrc", "file tags", "LRCLIB").
     var source: String
     var title: String? = nil
     var artist: String? = nil

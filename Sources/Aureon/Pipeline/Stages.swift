@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 // MARK: - Memory playback
 

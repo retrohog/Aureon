@@ -3,12 +3,12 @@ import Foundation
 enum ShuffleMode: String, Codable, CaseIterable, Identifiable {
     case off, normal, smart
     var id: String { rawValue }
-    var title: String { switch self { case .off: "Off"; case .normal: "Shuffle"; case .smart: "Smart Shuffle" } }
+    var title: String { switch self { case .off: "Off"; case .normal: "Shuffle"; case .smart: "Balanced Shuffle" } }
     var blurb: String {
         switch self {
         case .off: "Play in order"
         case .normal: "Random order"
-        case .smart: "Mixes it up without back-to-back artists, favours liked songs and tracks that flow into each other"
+        case .smart: "Mixes it up without back-to-back artists, favours liked songs and, when tempo and key are known, tracks that flow into each other"
         }
     }
     var icon: String { self == .smart ? "sparkles" : "shuffle" }
@@ -50,7 +50,7 @@ enum Shuffler {
     }
 
     /// How good `next` would be right after `prev` (and `prev2` before it). Higher is better.
-    static func affinity(prev: ShuffleCandidate?, prev2: ShuffleCandidate?, next c: ShuffleCandidate, now: Double, net: TransitionNet?) -> Double {
+    static func affinity(prev: ShuffleCandidate?, prev2: ShuffleCandidate?, next c: ShuffleCandidate, now: Double) -> Double {
         var s = 0.0
         if let p = prev {
             let same = !c.artist.isEmpty && c.artist == p.artist
@@ -59,7 +59,7 @@ enum Shuffler {
             if let p2 = prev2, !c.artist.isEmpty, c.artist == p2.artist, !same { s -= 0.35 }
             if !Set(c.genres).isDisjoint(with: p.genres) { s += 0.25 }
             if let a = c.year, let b = p.year { s += 0.15 * (1 - min(Double(abs(a - b)), 25) / 25) }
-            if let na = p.analysis, let nb = c.analysis, let f = TransitionFeatures(from: na, to: nb), let net { s += (Double(net.score(f)) - 0.5) * 0.9 }
+            if let na = p.analysis, let nb = c.analysis, let f = TransitionFeatures(from: na, to: nb) { s += (Double(TransitionFeatures.ruleScore(f.v)) - 0.5) * 0.9 }
         }
         if c.liked { s += 0.35 }
         s += 0.12 / Double(1 + c.playCount)                                  // a little love for the songs you have heard least
@@ -69,7 +69,7 @@ enum Shuffler {
 
     /// An order that avoids repeating artists and albums, prefers songs that suit each other and favours liked ones, with enough randomness
     /// that it never plays the same set twice. `start` (the song that is playing) stays first when given.
-    static func smart<R: RandomNumberGenerator>(_ items: [ShuffleCandidate], start: ShuffleCandidate? = nil, now: Double = Date().timeIntervalSince1970, net: TransitionNet? = nil, using rng: inout R) -> [UUID] {
+    static func smart<R: RandomNumberGenerator>(_ items: [ShuffleCandidate], start: ShuffleCandidate? = nil, now: Double = Date().timeIntervalSince1970, using rng: inout R) -> [UUID] {
         var pool = items.filter { $0.id != start?.id }
         var out: [ShuffleCandidate] = start.map { [$0] } ?? []
         out.reserveCapacity(items.count)
@@ -79,7 +79,7 @@ enum Shuffler {
             let indices: [Int] = pool.count <= 120 ? Array(pool.indices) : (0..<120).map { _ in Int.random(in: 0..<pool.count, using: &rng) }
             var best = indices[0], bestScore = -Double.infinity
             for i in indices {
-                let score = affinity(prev: prev, prev2: prev2, next: pool[i], now: now, net: net) + Double.random(in: 0...0.45, using: &rng)
+                let score = affinity(prev: prev, prev2: prev2, next: pool[i], now: now) + Double.random(in: 0...0.45, using: &rng)
                 if score > bestScore { bestScore = score; best = i }
             }
             out.append(pool.remove(at: best))

@@ -16,6 +16,8 @@ enum Brand {
     /// A hairline: the ink at 14 % (18 % on light themes), scaled by the edge setting.
     static var rule: Color { Theme.current.ink.opacity(Look.ruleOpacity(light: Theme.current.isLight)) }
     /// The coachline: the accent as a fine pinstripe (the player bar's edge, the playhead, active marks).
+    /// The outline of a top-bar control (clear on dark themes; see `Theme.controlEdgeRGB`).
+    static var controlEdge: Color { Theme.current.controlEdgeRGB?.color ?? .clear }
     static var coachline: Color { Theme.current.accent.opacity(0.7) }
     /// A warm copper for cautions and altered signal (instead of orange), fitted to read on the page in every theme.
     static var caution: Color { WCAG.fit(RGB(0.86, 0.52, 0.36), against: Theme.current.backdropLimitRGB, minimum: 4.5).color }
@@ -386,7 +388,7 @@ struct RuleToggleStyle: ToggleStyle {
         }
         .buttonStyle(.plain)
         .accessibilityValue(configuration.isOn ? "on" : "off")
-        .accessibilityAddTraits(.isToggle)
+        .accessibilityToggleTrait()
     }
 }
 

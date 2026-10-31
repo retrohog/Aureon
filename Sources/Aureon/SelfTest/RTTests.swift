@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 struct RCUTests {
     final class Payload {

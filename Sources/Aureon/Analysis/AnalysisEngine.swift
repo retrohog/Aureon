@@ -1,6 +1,5 @@
 import Foundation
 import Accelerate
-import Synchronization
 
 struct MeterSnapshot: Equatable {
     var vuL: Float = -30, vuR: Float = -30          // dB relative to 0 VU

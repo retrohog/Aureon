@@ -9,9 +9,9 @@ struct AureonApp: App {
         WindowGroup("Aureon") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: model.djMode ? 1280 : 860, minHeight: 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
+                .frame(minWidth: model.djMode ? model.djMinimum.width : 860, minHeight: model.djMode ? model.djMinimum.height : 540)     // the two decks and the mixer need the extra width; the window grows to it when DJ mode starts
                 .onOpenURL { model.add(urls: [$0], play: true) }
-                .onAppear { AppDelegate.model = model; model.mini.start(); model.restoreSession(); MiniCycleCheck.runIfAsked(model) }
+                .onAppear { AppDelegate.model = model; model.mini.start(); model.restoreSession(); MiniCycleCheck.runIfAsked(model); SoulseekModel.shared.attach(player: model) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1080, height: 700)
@@ -289,16 +289,24 @@ extension DemoData {
     model.add(urls: files.map { URL(fileURLWithPath: $0) })
     if env["AUREON_DEMO_LIB"] != nil, let src = ProcessInfo.processInfo.arguments.dropFirst().last { DemoData.importDemoLibrary(of: src, into: model) }
     if env["AUREON_DEMO"] != nil { DemoData.populate(model) }
-    if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = model.items.first { model.play(first.id) }
+    if env["AUREON_SNAPSHOT_PLAY"] != nil, let first = env["AUREON_PLAY_MATCH"].flatMap({ m in model.items.first { $0.path.contains(m) } }) ?? model.items.first { model.play(first.id) }
+    if let at = env["AUREON_PLAY_AT"].flatMap(Int.init) { DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { MainActor.assumeIsolated { if model.items.indices.contains(at) { model.play(model.items[at].id) } } } }
     // the scrubber asks for its waveform when it appears, which an offscreen snapshot never does: ask up front (the first track runs first)
     for it in model.items.reversed() where !it.isStream { WaveformStore.shared.request(it.path) }
     if env["AUREON_SPEAKERS"] != nil { model.refreshDevices(); for d in model.devices.prefix(3) { model.speakers.add(d) }; model.speakers.setup.enabled = true; if model.speakers.setup.members.count > 1 { model.speakers.setup.members[1].role = .surround } }
     if let q = env["AUREON_QUICK"], let a = [QuickPanelAnchor.rail, .bar, .stage].first(where: { "\($0)" == q }) { model.quickPanel = a }
     if let q = env["AUREON_QUEUE"], !q.isEmpty { model.showQueue = true; if let t = QueueTab(rawValue: q) { model.queueTab = t } }
     if env["AUREON_PALETTE"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { MainActor.assumeIsolated { model.showPalette = true } } }
-    if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true; if env["AUREON_AUTO"] != nil { model.dj.smart.enable() } } } }
+    if env["AUREON_REMIX"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.dj.remix.enabled = true } } }
     if env["AUREON_DSP"] != nil { model.settings.dsp.enabled = true; model.settings.dsp.eq.enabled = true; model.settings.dsp.eq.bands[5].gainDB = 4; model.settings.dsp.eq.bands[1].gainDB = -3 }
     if let q = env["AUREON_SEARCH"] { DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { MainActor.assumeIsolated { model.searchText = q } } }
+    if env["AUREON_DEMO_GENRES"] != nil {
+        SmartQueryModel.shared.preload(tree: TagTreeNode.build([("Jazz", 24), ("Electronic", 41), ("Indie", 18), ("Ambient", 12), ("Classical/Symphonies", 33), ("Classical/Chamber", 9), ("Pop", 27), ("Rock", 36), ("Folk", 8), ("Hip Hop", 15)]))
+        model.search.remember("kind of blue"); model.search.remember("aurora lane"); model.search.remember("ambient")
+    }
+    if let k = env["AUREON_DETAIL"].flatMap(NPDetailKind.init(rawValue:)) { DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { MainActor.assumeIsolated { NPDetailModel.shared.set(k) } } }
+    if env["AUREON_SLSK_FIXTURE"] != nil { SoulseekModel.shared.attach(player: model) }
+    if env["AUREON_SUGGEST"] != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { MainActor.assumeIsolated { model.search.dropdownOpen = true } } }
     // a local fake radio station, so the live Now Playing display can be shown without a network
     if env["AUREON_FAKE_RADIO"] != nil, let aac = RadioTests().aacData(seconds: 6), let srv = try? FakeRadio(audio: aac, mode: .icy(metaint: 4096)) {
         let st = RadioStation(id: "demo", name: "Aurora FM", url: srv.url.absoluteString, favicon: nil, country: "Norway", countryCode: "NO", language: "english", tags: ["ambient"], codec: "AAC", bitrate: 96, votes: 1, homepage: nil)
@@ -311,8 +319,14 @@ extension DemoData {
         } }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) { MainActor.assumeIsolated {
             let songs = model.library.songs
-            if songs.count >= 2 { model.dj.load(model.dj.track(songs[0]), into: model.dj.a); model.dj.load(model.dj.track(songs[3]), into: model.dj.b) }
+            if files.count >= 2 {
+                for (i, f) in files.prefix(2).enumerated() {
+                    let u = URL(fileURLWithPath: f)
+                    model.dj.load(DJTrack(path: f, title: u.deletingPathExtension().lastPathComponent.replacingOccurrences(of: "02 - ", with: ""), artist: u.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent, album: u.deletingLastPathComponent().lastPathComponent), into: i == 0 ? model.dj.a : model.dj.b)
+                }
+            } else if songs.count >= 2 { model.dj.load(model.dj.track(songs[0]), into: model.dj.a); model.dj.load(model.dj.track(songs[3]), into: model.dj.b) }
             model.dj.a.pitch = 0.025; model.dj.b.pitch = -0.012; model.dj.a.low = -8; model.dj.b.high = 3; model.dj.crossfader = -0.25
+            if let p = env["AUREON_PRESET"], let pr = DJLayoutPreset(rawValue: p) { model.dj.preset = pr }
         } }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) { MainActor.assumeIsolated { model.dj.a.play(); model.dj.a.seek(to: 4) } }
     }
@@ -374,7 +388,7 @@ extension DemoData {
                 }
                 .frame(width: w, height: h).preferredColorScheme(model.theme.isLight ? .light : .dark))
             host.frame = NSRect(x: 0, y: 0, width: w, height: h)
-            host.safeAreaRegions = []          // an offscreen window has no title bar to avoid: lay out in exactly the frame asked for
+            if #available(macOS 13.3, *) { host.safeAreaRegions = [] }          // an offscreen window has no title bar to avoid: lay out in exactly the frame asked for
             let win = NSWindow(contentRect: host.frame, styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
             win.contentView = host; win.appearance = NSAppearance(named: model.theme.isLight ? .aqua : .darkAqua)
             host.layoutSubtreeIfNeeded()
@@ -431,7 +445,7 @@ extension DemoData {
                 let timer = Timer.scheduledTimer(withTimeInterval: 0.01, repeats: true) { _ in let now = CFAbsoluteTimeGetCurrent(); worst = max(worst, now - last - 0.01); last = now }
                 func pump(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
                 var report: [String] = []
-                let albums = model.library.albums
+                let albums = model.library.store?.releasePage(AlbumQuery(sort: .added, ascending: false), offset: 0, limit: 5) ?? []
                 report.append("albums: \(albums.count)")
                 for (i, a) in albums.prefix(5).enumerated() {
                     worst = 0; model.library.selectedID = a.id; pump(0.6)

@@ -138,7 +138,7 @@ private struct ScrollAdjustable: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(AnchorView(anchor: anchor))
-            .onChange(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil, view: { [weak anchor] in anchor?.view }, plainWheel: plainWheel) }
+            .onChangeCompat(of: hovering) { _, now in ScrollRouter.shared.hover(id.v, now ? apply : nil, view: { [weak anchor] in anchor?.view }, plainWheel: plainWheel) }
             .onDisappear { ScrollRouter.shared.hover(id.v, nil) }
     }
 }

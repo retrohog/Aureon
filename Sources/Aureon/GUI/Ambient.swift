@@ -24,11 +24,28 @@ struct AmbientBackground: View {
         }
     }
 
+    /// The mesh on macOS 15; below that, a vertical gradient with a soft radial wash from each corner and the centre, drifting the same way.
+    @ViewBuilder private func mesh(_ t: TimeInterval) -> some View {
+        if #available(macOS 15, *) {
+            MeshGradient(width: 3, height: 3, points: points(t), colors: palette.grid.map(\.color), smoothsColors: true)
+        } else {
+            let c = palette.grid.map(\.color), p = points(t)
+            GeometryReader { g in
+                ZStack {
+                    LinearGradient(colors: [c[1], c[4], c[7]], startPoint: .top, endPoint: .bottom)
+                    ForEach([0, 2, 4, 6, 8], id: \.self) { i in
+                        RadialGradient(colors: [c[i], c[i].opacity(0)], center: UnitPoint(x: CGFloat(p[i].x), y: CGFloat(p[i].y)), startRadius: 0, endRadius: max(g.size.width, g.size.height) * 0.6)
+                    }
+                }
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             Brand.canvas
             TimelineView(.animation(minimumInterval: animated ? 1.0 / 24 : 3600, paused: !animated)) { tl in
-                MeshGradient(width: 3, height: 3, points: points(tl.date.timeIntervalSinceReferenceDate), colors: palette.grid.map(\.color), smoothsColors: true)
+                mesh(tl.date.timeIntervalSinceReferenceDate)
             }
             .opacity(intensity)
             if let image {

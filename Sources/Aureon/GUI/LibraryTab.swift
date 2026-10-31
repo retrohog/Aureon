@@ -862,15 +862,16 @@ struct SearchPage: View {
         let r = m.library.searchResults
         PageScaffold(title: "Search", subtitle: m.searchText.isEmpty ? nil : "“\(m.searchText)”") {
             if m.searchText.isEmpty {
-                Text("Search your library for songs, albums, artists, composers and works.").foregroundStyle(Brand.inkSecondary).padding(.top, 24)
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Search your library for songs, albums, artists, composers and works.").foregroundStyle(Brand.inkSecondary).padding(.top, 24)
+                    QueryHelp(insert: { m.searchText = $0 })
+                }
             } else if let r, r.tracks.isEmpty && r.releases.isEmpty && r.works.isEmpty && r.parties.isEmpty {
                 Text("No results").foregroundStyle(Brand.inkSecondary).padding(.top, 24)
-                SemanticMatchesSection().padding(.top, 12)
             } else if let r {
                 VStack(alignment: .leading, spacing: 24) {
                     if !r.releases.isEmpty { section("Albums") { AlbumGrid(albums: r.releases, open: { a in m.tab = .albums; m.library.selectedID = a.id }, minimum: 130) } }
                     if !r.tracks.isEmpty { section("Songs") { SongList(tracks: r.tracks) } }
-                    SemanticMatchesSection(exclude: Set(r.tracks.map(\.path)))
                     if !r.parties.isEmpty {
                         section("Artists & composers") {
                             LazyVStack(spacing: 1) { ForEach(r.parties) { p in RowButton(title: p.name, subtitle: p.kind == "group" ? "Ensemble" : "", count: p.count, symbol: "person") { m.searchText = ""; m.tab = .artists; m.library.selectedID = p.id } .contextMenu { Button("Show Credits") { m.searchText = ""; m.tab = .artists; m.library.openPerson(p.id) } } } }

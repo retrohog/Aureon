@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Performs the Smart Remixer on the deck that is on air: every bar it asks `RemixPolicy` what to do next, and carries the chosen move out on the
+/// Performs the Remix on the deck that is on air: every bar it asks `RemixPolicy` what to do next, and carries the chosen move out on the
 /// next bar line with the deck's filter, effects, EQ and loops. Whatever the user had set on the deck is put back when a move ends.
 @MainActor
 final class RemixController: ObservableObject {
@@ -9,7 +9,6 @@ final class RemixController: ObservableObject {
 
     @Published var enabled = false {
         didSet {
-            if enabled && !IntelligenceGate.shared.isEnabled(.remixer) { enabled = false; if oldValue { end() }; return }   // switched off on the Intelligence page
             if enabled != oldValue { enabled ? begin() : end() }
         }
     }

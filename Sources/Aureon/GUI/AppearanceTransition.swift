@@ -144,7 +144,7 @@ struct AppearanceSwitch: View {
         .background(AnchorReporter { m.switchAnchor = $0 })
         .help(AppearanceSwitching.tooltip(family: m.themeFamily, isLight: light))
         .accessibilityLabel("Appearance").accessibilityValue(light ? "Light" : "Dark").accessibilityHint(AppearanceSwitching.tooltip(family: m.themeFamily, isLight: light))
-        .accessibilityAddTraits(.isToggle)
+        .accessibilityToggleTrait()
     }
 
     private func glyph(_ name: String, lit: Bool) -> some View {
@@ -163,7 +163,7 @@ private struct AnchorReporter: View {
             let f = g.frame(in: .global)
             Color.clear
                 .onAppear { report(CGPoint(x: f.midX, y: f.midY)) }
-                .onChange(of: f.midX) { _, x in report(CGPoint(x: x, y: f.midY)) }
+                .onChangeCompat(of: f.midX) { _, x in report(CGPoint(x: x, y: f.midY)) }
         }
     }
 }

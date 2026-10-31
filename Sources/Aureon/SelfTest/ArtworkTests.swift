@@ -375,9 +375,9 @@ struct InterfaceTests {
         expect(Tab.allCases.filter { $0.section == .listen }.map(\.rawValue) == ["Home", "Now Playing", "Search", "Radio", "Podcasts"], "radio and podcasts sit with Now Playing")
         let order = [Tab.Section.listen, .library, .classical, .discover, .sound, .tools].flatMap { sec in Tab.allCases.filter { $0.section == sec }.map(\.rawValue) }
         expect(order.firstIndex(of: "Deep Dive")! < order.firstIndex(of: "Audio")!, "Deep Dive sits above the Sound section")
-        expect(Tab.allCases.filter { $0.section == .tools }.map(\.rawValue) == ["Rip CD", "Convert", "Cloud", "Intelligence", "ABX Test"], "ripping, converting and the smart controls live under Tools")
+        expect(Tab.allCases.filter { $0.section == .tools }.map(\.rawValue) == ["Rip CD", "Convert", "Cloud", "ABX Test", "Soulseek"], "ripping, converting, the cloud and Soulseek live under Tools")
         expect(Tab.settings.section == .footer && Tab.allCases.filter { $0.section == .footer } == [.settings], "Settings lives at the foot of the sidebar")
-        expect(SettingsSection.allCases.map(\.rawValue) == ["Appearance", "Now Playing", "Mini player", "Pages", "General", "Startup & memory", "MIDI", "Connect", "Cloud", "Intelligence", "System"], "Appearance, Now Playing, Pages, Connect, MIDI and System live in Settings")
+        expect(SettingsSection.allCases.map(\.rawValue) == ["Appearance", "Now Playing", "Mini player", "Pages", "General", "Startup & memory", "MIDI", "Connect", "Cloud", "System"], "Appearance, Now Playing, Pages, Connect, MIDI and System live in Settings")
         expect(Tab.search.libraryCategory == nil && Tab.player.libraryCategory == nil && Tab.audio.libraryCategory == nil)
         expect(Set(Tab.allCases.map(\.icon)).count == Tab.allCases.count, "no two destinations share an icon")
         expect(Set(Tab.allCases.map(\.rawValue)).count == Tab.allCases.count)

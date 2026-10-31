@@ -150,6 +150,6 @@ struct PagedAlbums: View {
         }
         .overlay { if pager.total == 0 && pager.revision > 0 { Text("No albums").foregroundStyle(Brand.inkSecondary).padding(.top, 64) } }
         .onAppear { pager.configure(query) }
-        .onChange(of: query) { _, q in pager.configure(q) }
+        .onChangeCompat(of: query) { _, q in pager.configure(q) }
     }
 }

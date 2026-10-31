@@ -149,7 +149,7 @@ struct LikedPage: View {
         }) {
             if c.likedTracks.isEmpty {
                 EmptyExplainer(icon: "heart", title: "No liked songs yet",
-                               text: "Tap the heart next to any song, in the player or in a list, and it appears here. Liked songs are also favoured by Smart Shuffle.")
+                               text: "Tap the heart next to any song, in the player or in a list, and it appears here. Liked songs are also favoured by Balanced Shuffle.")
             } else { SongList(tracks: c.likedTracks) }
         }
         .onAppear { c.refresh() }
@@ -166,7 +166,6 @@ struct LikedPage: View {
 struct PlaylistsPage: View {
     @EnvironmentObject var m: PlayerModel
     @EnvironmentObject var c: CollectionsModel
-    @StateObject private var describe = Box(false)
 
     var body: some View {
         if let id = c.selected, let p = c.playlists.first(where: { $0.id == id }) { PlaylistDetail(playlist: p) }
@@ -175,7 +174,6 @@ struct PlaylistsPage: View {
 
     private var list: some View {
         PageScaffold(title: "Playlists", subtitle: "\(c.playlists.count)", trailing: {
-            RuleButton(title: "Describe a Playlist", symbol: "text.badge.plus") { describe.v = true }
             RuleButton(title: "New Playlist", symbol: "plus", filled: true) { newPlaylist() }
         }) {
             if c.playlists.isEmpty {
@@ -189,9 +187,6 @@ struct PlaylistsPage: View {
             }
         }
         .onAppear { c.refresh() }
-        .sheet(isPresented: $describe.v) {
-            NaturalPlaylistSheet(ai: IntelligenceCenter.shared, service: IntelligenceCenter.shared.playlists).environmentObject(m).environmentObject(c)
-        }
     }
 
     private func newPlaylist() {

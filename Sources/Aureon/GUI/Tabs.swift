@@ -161,7 +161,7 @@ struct TabSwitcher<Tag: Hashable, Content: View>: View {
                     .zIndex(state.answersClicks(page) ? 1 : 0)
             }
         }
-        .onChange(of: tag) { _, new in change(to: new) }
+        .onChangeCompat(of: tag) { _, new in change(to: new) }
     }
 
     private func change(to new: Tag) {

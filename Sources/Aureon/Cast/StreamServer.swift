@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import Synchronization
 
 /// Fan-out of a live byte stream: every subscriber gets the stream header first and then each frame as it is published.
 final class LiveStreamHub: @unchecked Sendable {

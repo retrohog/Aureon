@@ -10,15 +10,18 @@ import SwiftUI
 //   PODCASTS     shows and episodes
 //   ROOMS        where the sound goes: output devices, speaker groups, cast, multi-room zones, remote control
 //   SOUND        the tools: sound, equaliser, DJ, ripping, converting, ABX
-//   (gear)       settings: look, playback and sound, connected services (and cloud), intelligence, system and diagnostics
+//   (gear)       settings: look, playback and sound, connected services (and cloud), system and diagnostics
 //   NOW PLAYING  the whole window: the song
 
 enum RailDestination: String, CaseIterable, Identifiable {
-    case listen = "Now Playing", home = "Home", library = "Library", playlists = "Playlists", radio = "Radio", podcasts = "Podcasts", rooms = "Rooms", sound = "Sound", settings = "Settings"
+    case listen = "Now Playing", home = "Home", library = "Library", playlists = "Playlists", radio = "Radio", podcasts = "Podcasts", rooms = "Rooms", sound = "Sound", soulseek = "Soulseek", settings = "Settings"
     var id: String { rawValue }
 
     /// The six on the rail, top to bottom. Home and Settings sit in the top bar.
     static let rail: [RailDestination] = [.library, .playlists, .radio, .podcasts, .rooms, .sound]
+
+    /// The rail with Soulseek as its last destination, when the listener turned Soulseek on.
+    static func rail(soulseek: Bool) -> [RailDestination] { soulseek ? rail + [.soulseek] : rail }
 
     /// The pages that belong to the destination.
     var tabs: [Tab] {
@@ -31,7 +34,8 @@ enum RailDestination: String, CaseIterable, Identifiable {
         case .podcasts: [.podcasts]
         case .rooms: [.rooms]
         case .sound: [.audio, .dsp, .rip, .convert, .abx]
-        case .settings: [.settings, .cloud, .intelligence]
+        case .soulseek: [.soulseek]
+        case .settings: [.settings, .cloud]
         }
     }
 
@@ -52,7 +56,7 @@ enum RailDestination: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .listen: "play.circle"; case .home: "house"; case .library: "square.stack"; case .playlists: "music.note.list"
-        case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"; case .rooms: "hifispeaker.2"; case .sound: "slider.vertical.3"; case .settings: "gearshape"
+        case .radio: "dot.radiowaves.left.and.right"; case .podcasts: "mic"; case .rooms: "hifispeaker.2"; case .sound: "slider.vertical.3"; case .soulseek: "arrow.down.circle"; case .settings: "gearshape"
         }
     }
 
@@ -94,8 +98,7 @@ extension PlayerModel {
     /// Goes there. Leaves the DJ console unless that is where it is going.
     func go(_ target: NavTarget) {
         switch target {
-        case .tab(.cloud): go(.settings(.cloud))               // Cloud and Intelligence are sections of Settings
-        case .tab(.intelligence): go(.settings(.intelligence))
+        case .tab(.cloud): go(.settings(.cloud))               // Cloud is a section of Settings
         case .tab(let t): djMode = false; settingsPage = nil; tab = t
         case .dj: djMode = true
         case .settings(let s): djMode = false; settingsPage = nil; settingsSection = s; tab = .settings
@@ -106,7 +109,6 @@ extension PlayerModel {
     func isCurrent(_ target: NavTarget) -> Bool {
         switch target {
         case .tab(.cloud): return !djMode && tab == .settings && settingsSection == .cloud
-        case .tab(.intelligence): return !djMode && tab == .settings && settingsSection == .intelligence
         case .tab(let t): return !djMode && tab == t
         case .dj: return djMode
         case .settings(let s): return !djMode && tab == .settings && settingsSection == s

@@ -32,6 +32,8 @@ struct Place: Equatable {
     var library: String? = nil
     var radio: String? = nil
     var podcast: String? = nil
+    /// What the search field held, for the Search page only: Back and Forward bring the query back with the page, and nothing else does.
+    var search: String? = nil
 }
 
 @MainActor
@@ -51,6 +53,9 @@ final class Navigator: ObservableObject {
         forward.removeAll(); current = p
         publish()
     }
+
+    /// The search page's query changed: it belongs to the page entry that is showing, so it is kept there without making a step of its own.
+    func updateSearch(_ q: String?) { guard !restoring, current.tab == .search, current.search != q else { return }; current.search = q }
 
     func goBack() {
         guard let p = back.popLast() else { return }

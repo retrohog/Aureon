@@ -20,11 +20,10 @@ struct ShuffleButton: View {
 
     var body: some View {
         Button { open.v.toggle() } label: {
-            Image(systemName: m.shuffle.icon).font(Typo.sans(size, .regular))
-                .foregroundStyle(m.shuffle == .off ? (tint ?? Brand.ink) : Brand.accentText)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(m.shuffle != .off ? Brand.accent.opacity(0.2) : Brand.ink.opacity(hover.v ? 0.08 : 0)))
-                .overlay(alignment: .bottom) { if m.shuffle != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: 1) } }
+            Image(systemName: m.shuffle.icon).font(Typo.sans(TransportMetrics.modeGlyph, .heavy))
+                .foregroundStyle(hover.v || m.shuffle != .off ? Brand.accentText : (tint ?? Brand.ink))
+                .frame(width: TransportMetrics.minHit, height: TransportMetrics.minHit)
+                .overlay(alignment: .bottom) { if m.shuffle != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: -5) } }
                 .contentShape(Circle())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
@@ -77,11 +76,11 @@ struct RepeatButton: View {
         Button {
             withAnimation(.snappy(duration: 0.2)) { m.repeatMode = RepeatMode(rawValue: (m.repeatMode.rawValue + 1) % 3) ?? .off }
         } label: {
-            Image(systemName: m.repeatMode == .one ? "repeat.1" : "repeat").font(Typo.sans(size, .regular))
-                .foregroundStyle(m.repeatMode == .off ? AnyShapeStyle(tint ?? Brand.ink) : AnyShapeStyle(Brand.accent))
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(m.repeatMode != .off ? Brand.accent.opacity(0.2) : Brand.ink.opacity(hover.v ? 0.1 : 0)))
-                .overlay(alignment: .bottom) { if m.repeatMode != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: 1) } }
+            Image(systemName: m.repeatMode == .one ? "repeat.1" : "repeat").font(Typo.sans(TransportMetrics.modeGlyph, .heavy))
+                .foregroundStyle(hover.v || m.repeatMode != .off ? Brand.accentText : (tint ?? Brand.ink))
+                .frame(width: TransportMetrics.minHit, height: TransportMetrics.minHit)
+                .overlay(alignment: .bottom) { if m.repeatMode != .off { Circle().fill(Brand.accent).frame(width: 4, height: 4).offset(y: -5) } }
+                .contentShape(Circle())
         }
         .buttonStyle(.plain).onHover { hover.v = $0 }
         .help(m.repeatMode == .off ? "Repeat: off" : (m.repeatMode == .all ? "Repeat the queue" : "Repeat this song"))

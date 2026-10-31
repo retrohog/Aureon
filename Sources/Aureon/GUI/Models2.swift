@@ -26,6 +26,7 @@ final class LibraryModel: ObservableObject {
     @Published var importProgress = ""
     @Published var folders: [String] { didSet { UserDefaults.standard.set(folders, forKey: "aureon.musicFolders") } }
     @Published var searchResults: SearchResults?
+    private var searchTask: Task<Void, Never>?
     private var back: [Detail] = []
     var canGoBack: Bool { !back.isEmpty }
     var onLibraryChanged: (() -> Void)?
@@ -64,7 +65,7 @@ final class LibraryModel: ObservableObject {
 
     init() {
         let snapshot = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil
-        store = try? LibraryStore(url: snapshot ? nil : LibraryStore.defaultURL)       // snapshots use a throw-away in-memory library
+        store = try? LibraryStore(url: (snapshot && ProcessInfo.processInfo.environment["AUREON_REAL_LIB"] == nil) ? nil : LibraryStore.defaultURL)       // snapshots use a throw-away in-memory library
         folders = UserDefaults.standard.stringArray(forKey: "aureon.musicFolders") ?? []
         pager.store = store
         pagerTotal = pager.$total.removeDuplicates().sink { [weak self] _ in self?.objectWillChange.send() }      // the page's "N albums" subtitle
@@ -184,9 +185,16 @@ final class LibraryModel: ObservableObject {
     }
 
 
+    /// Searches as the person types: a short pause after the last key, the work off the main thread, and only the newest search may publish.
     func runSearch(_ q: String) {
+        searchTask?.cancel()
         guard let store, !q.isEmpty else { searchResults = nil; return }
-        Task.detached { let r = store.search(q); await MainActor.run { self.searchResults = r } }
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            let r = await Task.detached(priority: .userInitiated) { store.search(q) }.value
+            if !Task.isCancelled { searchResults = r }
+        }
     }
 
     func tracks(forWork w: WorkDTO) -> [TrackDTO] { store?.tracks(workID: w.id) ?? [] }

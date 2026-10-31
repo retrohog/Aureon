@@ -1,7 +1,6 @@
 import Foundation
 import CoreAudio
 import AudioToolbox
-import Synchronization
 
 // Hardware path diagnostics: verifies exclusive (hog) mode, integer / non-mixable format negotiation, sample-rate
 // switching and real-time callback health on a given output device, typically a USB DAC.
