@@ -39,6 +39,8 @@ enum SlskRows {
     static func build(_ responses: [SlskSearchResponse], filters: SlskFilters, cap: Int = 5000) -> [SlskRow] {
         var rows: [SlskRow] = []
         rows.reserveCapacity(min(cap, 4096))
+        // one row per user and folder, however many answers the user sent, so every row has its own identity
+        var index: [String: Int] = [:]
         for r in responses {
             if filters.freeSlotsOnly && !r.freeSlot { continue }
             var byFolder: [String: [SlskFileResult]] = [:]
@@ -52,6 +54,14 @@ enum SlskRows {
                 byFolder[key, default: []].append(f)
             }
             for k in order {
+                let key = r.user + "|" + k
+                if let i = index[key] {
+                    let known = Set(rows[i].files.map(\.path))
+                    rows[i].files += byFolder[k]!.filter { !known.contains($0.path) }.sorted { $0.path < $1.path }
+                    rows[i].freeSlot = rows[i].freeSlot || r.freeSlot
+                    continue
+                }
+                index[key] = rows.count
                 rows.append(SlskRow(user: r.user, folder: k, files: byFolder[k]!.sorted { $0.path < $1.path }, freeSlot: r.freeSlot, queueLength: Int(r.queueLength), speed: Int(r.speed)))
                 if rows.count >= cap { break }
             }
@@ -87,7 +97,7 @@ enum SlskKeychain {
 final class SoulseekModel: ObservableObject {
     static let shared = SoulseekModel()
     /// Snapshots and tests keep their own throw-away preferences, so a picture never reads or changes the real settings.
-    private let d: UserDefaults = ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil ? (UserDefaults(suiteName: "aureon.snapshot.soulseek") ?? .standard) : .standard
+    private let d: UserDefaults = (ProcessInfo.processInfo.environment["AUREON_SNAPSHOT"] != nil || ProcessInfo.processInfo.arguments.contains("selftest")) ? (UserDefaults(suiteName: "aureon.snapshot.soulseek") ?? .standard) : .standard
 
     // settings (the switch is off until the listener turns it on)
     @Published var enabled: Bool { didSet { d.set(enabled, forKey: "aureon.slsk.enabled"); if !enabled { disconnect() } } }
@@ -105,6 +115,12 @@ final class SoulseekModel: ObservableObject {
     @Published private(set) var rows: [SlskRow] = []
     @Published var filters = SlskFilters() { didSet { rebuildRows() } }
     @Published var query = ""
+    /// The result groups that are open (kept here so a rebuilt list keeps them open, and so a test can open them).
+    @Published var expanded: Set<String> = []
+    /// How many result groups the page draws, and how many files of an open group (more on request): a huge result set never means a huge page.
+    @Published var shownRows = 50
+    @Published var shownFiles: [String: Int] = [:]
+    static let rowStep = 50, fileStep = 25
     @Published var panelOpen = false
     @Published var page: SoulseekPageID = .search
     @Published var browseUser = ""
@@ -142,6 +158,22 @@ final class SoulseekModel: ObservableObject {
     var isConnected: Bool { snapshot.state.isOnline }
     var badge: Int { snapshot.activeCount }
     var hasAttention: Bool { (snapshot.downloads + snapshot.uploads).contains { if case .needsAttention = $0.state { return $0.state != .needsAttention("Cancelled") }; return false } }
+
+    /// A large made-up result set for the performance test: `users` people, each with `folders` folders of `files` songs.
+    func loadSynthetic(users: Int, folders: Int, files: Int) {
+        enabled = true; username = "listener"
+        var s = SlskSnapshot(); s.state = .online("Welcome"); s.listenPort = 2234
+        var responses: [SlskSearchResponse] = []
+        for u in 0..<users {
+            var fs: [SlskFileResult] = []
+            for f in 0..<folders { for i in 0..<files {
+                fs.append(SlskFileResult(path: "Music\\Artist \(u % 40)\\Album \(f)\\\(String(format: "%02d", i)) Track \(i).flac", size: 31_000_000, ext: "flac", bitrate: nil, duration: 200, sampleRate: 44100, bitDepth: 16, vbr: false))
+            } }
+            responses.append(SlskSearchResponse(user: "user_\(u)", token: 1, files: fs, freeSlot: u % 3 == 0, speed: 1_000_000, queueLength: UInt32(u % 9)))
+        }
+        s.results = responses; s.resultCount = users * folders * files
+        snapshot = s; rows = SlskRows.build(responses, filters: SlskFilters()); expanded = []; page = .search
+    }
 
     /// A made-up state for pictures (`AUREON_SLSK_FIXTURE`): invented users and files, never the network.
     func loadFixture() {
@@ -235,7 +267,7 @@ final class SoulseekModel: ObservableObject {
     func search() {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
-        lastResultCount = -1; rows = []
+        lastResultCount = -1; rows = []; expanded = []; shownRows = Self.rowStep; shownFiles = [:]
         client?.search(q)
     }
     func download(_ files: [SlskFileResult], from user: String) {
