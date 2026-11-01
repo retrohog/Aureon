@@ -65,6 +65,10 @@ private final class FakeServer: @unchecked Sendable {
 /// A peer that has files: answers QueueUpload, sends TransferRequest, opens the file link to the client and sends the bytes.
 private final class FakeUploader: @unchecked Sendable {
     enum Mode { case normal, abortAfter(Int), short(Int), hold(Int) }
+    /// How the file link gets to the client: the peer opens it itself, sends its first bytes in separate pieces, or has the server ask the client to open it.
+    enum Link { case direct, splitStart, relayed }
+    let link = SBox<Link>(.direct)
+    let relay = SBox<((UInt16, UInt32) -> Void)?>(nil)
     let loop = SlskLoop()
     var port: UInt16 = 0
     let name: String
@@ -77,6 +81,7 @@ private final class FakeUploader: @unchecked Sendable {
     let gate = DispatchSemaphore(value: 0)
     let clientPort: () -> UInt16
     let denies: SBox<String?> = SBox(nil)
+    let queueOnly = SBox(false)
 
     init(name: String, data: Data, announced: UInt64? = nil, mode: Mode = .normal, clientPort: @escaping () -> UInt16) {
         self.name = name; self.data = data; announcedSize = announced ?? UInt64(data.count); self.mode = SBox(mode); serverPort = SBox(0); self.clientPort = clientPort
@@ -101,6 +106,7 @@ private final class FakeUploader: @unchecked Sendable {
             queued.mutate { $0.append(path) }
             if let why = denies.value { l.send(SlskMessages.uploadDenied(path: path, reason: why)); return }
             l.send(SlskMessages.placeInQueue(path: path, place: 14))
+            if queueOnly.value { return }
             Thread.sleep(forTimeInterval: 0.05)
             l.send(SlskMessages.transferRequest(direction: 1, token: 77, path: path, size: announcedSize))
         } else if f.code == SlskCode.transferResponse, let r = SlskTransferResponse.parse(f), r.allowed {
@@ -109,10 +115,34 @@ private final class FakeUploader: @unchecked Sendable {
     }
 
     private func sendFile(token: UInt32) {
-        guard let f = loop.connect(host: "127.0.0.1", port: clientPort(), label: "F") else { return }
-        let offset = SBox<UInt64?>(nil); var buf = Data()
-        f.onData = { d in buf.append(d); if buf.count >= 8, offset.value == nil { var r = SlskReader(buf); offset.value = r.u64() } }
-        f.onConnect = { f.send(SlskMessages.peerInit(user: self.name, type: "F", token: 0)); var w = SlskWriter(); w.u32(token); f.send(w.data) }
+        let offset = SBox<UInt64?>(nil); let buf = SBox(Data())
+        let linkBox = SBox<SlskLink?>(nil)
+        func onOffsetData(_ d: Data) { buf.mutate { $0.append(d) }; if buf.value.count >= 8, offset.value == nil { var r = SlskReader(buf.value); offset.value = r.u64() } }
+        switch link.value {
+        case .relayed:
+            // the client is asked by the server to connect to us; we answer its PierceFirewall and then start the file link
+            guard let port = loop.listen(port: 0, loopbackOnly: true, onAccept: { l in
+                linkBox.value = l
+                var first = Data(); var pierced = false
+                l.onData = { d in
+                    if !pierced { first.append(d); guard first.count >= 9 else { return }; pierced = true; var w = SlskWriter(); w.u32(token); l.send(w.data); onOffsetData(Data(first.dropFirst(9))); return }
+                    onOffsetData(d)
+                }
+            }) else { return }
+            relay.value?(port, 5150)
+            guard wait(5, { linkBox.value != nil }) else { return }
+        case .direct, .splitStart:
+            guard let f = loop.connect(host: "127.0.0.1", port: clientPort(), label: "F") else { return }
+            linkBox.value = f
+            f.onData = { d in onOffsetData(d) }
+            let split = link.value == .splitStart
+            f.onConnect = {
+                f.send(SlskMessages.peerInit(user: self.name, type: "F", token: 0))
+                if split { Thread.sleep(forTimeInterval: 0.25) }
+                var w = SlskWriter(); w.u32(token); f.send(w.data)
+            }
+        }
+        guard let f = { () -> SlskLink? in _ = wait(5, { linkBox.value != nil }); return linkBox.value }() else { return }
         guard wait(5, { offset.value != nil }), let off = offset.value else { return }
         offsets.mutate { $0.append(off) }
         let body = data.dropFirst(Int(off))
@@ -346,6 +376,26 @@ struct SoulseekTests {
         expect(wait { rig5.client.snapshotNow().downloads.first?.state == .needsAttention("File not shared.") }, "UploadDenied shows its reason as 'needs attention'")
     }
 
+    /// A download must also finish when the peer's first bytes arrive in pieces, and when the server has to ask the client to open the file link.
+    func downloadsFinishWhenTheLinkArrivesInOtherWays() {
+        let file = bytes(400_000)
+        let path = "Share\\Artist\\Album\\01 Song.flac"
+        for (name, link) in [("split first bytes", FakeUploader.Link.splitStart), ("relayed through the server", .relayed)] {
+            let rig = Rig(); defer { rig.close() }
+            expect(rig.online())
+            let up = FakeUploader(name: "alice", data: file, clientPort: { rig.client.listeningPort }); defer { up.stop() }
+            up.link.value = link
+            rig.server.addresses.value["alice"] = ("127.0.0.1", up.port)
+            up.relay.value = { port, token in
+                var w = SlskWriter(); w.string("alice"); w.string("F"); w.u32(0x7f000001); w.u32(UInt32(port)); w.u32(token); w.bool(false)
+                rig.server.links.value.first?.send(SlskFrame(code: SlskCode.connectToPeer, payload: w.data))
+            }
+            rig.client.download(user: "alice", path: path, size: UInt64(file.count))
+            expect(wait(12) { rig.client.snapshotNow().downloads.first?.state == .finished }, "\(name): the download finishes (state \(String(describing: rig.client.snapshotNow().downloads.first?.state)))")
+            expect((try? Data(contentsOf: rig.downloads.appendingPathComponent("Artist/Album/01 Song.flac"))) == file, "\(name): the file is whole")
+        }
+    }
+
     func peerUnreachable() {
         let rig = Rig(); defer { rig.close() }
         expect(rig.online())
@@ -354,16 +404,42 @@ struct SoulseekTests {
         expect(wait(10) { if case .needsAttention(let r) = rig.client.snapshotNow().downloads.first?.state { return r.contains("ghost") } else { return false } }, "an unreachable user ends as 'needs attention' with a reason")
     }
 
-    func downloadsStartThreeAtATime() {
+    /// Songs waiting in another person's queue do not use up the three slots, so a long queue never blocks the rest.
+    func queuedDownloadsDoNotBlockOthers() {
         let rig = Rig(); defer { rig.close() }
         expect(rig.online())
         let file = bytes(1000)
         let up = FakeUploader(name: "alice", data: file, mode: .hold(0), clientPort: { rig.client.listeningPort }); defer { up.stop() }
+        up.queueOnly.value = true                               // it answers QueueUpload with a place in the queue and nothing more
         rig.server.addresses.value["alice"] = ("127.0.0.1", up.port)
-        for i in 0..<5 { rig.client.download(user: "alice", path: "S\\A\\B\\\(i).flac", size: 1000) }
-        expect(wait { rig.client.snapshotNow().downloads.filter { $0.state != .waiting }.count == 3 }, "three downloads start, two wait")
-        Thread.sleep(forTimeInterval: 0.3)
-        expect(rig.client.snapshotNow().downloads.filter { $0.state == .waiting }.count == 2, "the rest wait their turn")
+        for i in 0..<8 { rig.client.download(user: "alice", path: "S\\A\\B\\\(i).flac", size: 1000) }
+        expect(wait { rig.client.snapshotNow().downloads.filter { if case .queued = $0.state { return true } else { return false } }.count == 8 }, "all eight are queued with the other side, none stuck waiting: \(rig.client.snapshotNow().downloads.map(\.state))")
+    }
+
+    /// Cancel all: unfinished downloads go (and their partial files), finished ones stay.
+    func cancelAllRemovesUnfinishedAndKeepsFinished() {
+        let rig = Rig(); defer { rig.close() }
+        expect(rig.online())
+        let file = bytes(300_000)
+        let up = FakeUploader(name: "alice", data: file, clientPort: { rig.client.listeningPort }); defer { up.stop() }
+        rig.server.addresses.value["alice"] = ("127.0.0.1", up.port)
+        rig.client.download(user: "alice", path: "S\\A\\B\\done.flac", size: UInt64(file.count))
+        expect(wait(10) { rig.client.snapshotNow().downloads.first?.state == .finished }, "one download finishes first")
+        let slow = FakeUploader(name: "bob", data: file, mode: .hold(100_000), clientPort: { rig.client.listeningPort }); defer { slow.stop(); slow.gate.signal() }
+        rig.server.addresses.value["bob"] = ("127.0.0.1", slow.port)
+        rig.client.download(user: "bob", path: "S\\C\\D\\slow.flac", size: UInt64(file.count))
+        rig.client.download(user: "bob", path: "S\\C\\D\\later.flac", size: UInt64(file.count))
+        expect(wait { rig.client.snapshotNow().downloads.contains { $0.name == "slow.flac" && $0.done >= 100_000 } }, "a second download is moving")
+        let partsBefore = ((try? FileManager.default.contentsOfDirectory(atPath: rig.incomplete.path)) ?? []).filter { $0.hasSuffix(".part") }.count
+        expect(partsBefore >= 1, "it has a partial file: \(partsBefore)")
+        rig.client.cancelAllDownloads()
+        expect(wait { rig.client.snapshotNow().downloads.count == 1 }, "only the finished download is left: \(rig.client.snapshotNow().downloads.map(\.name))")
+        expect(rig.client.snapshotNow().downloads.first?.state == .finished, "and it is still finished")
+        expect(wait { ((try? FileManager.default.contentsOfDirectory(atPath: rig.incomplete.path)) ?? []).filter { $0.hasSuffix(".part") }.isEmpty }, "the partial files are gone from the incomplete folder")
+        expect((try? Data(contentsOf: rig.downloads.appendingPathComponent("A/B/done.flac"))) == file, "the finished file is untouched")
+        rig.client.cancelAllDownloads()                         // nothing left to cancel: harmless
+        Thread.sleep(forTimeInterval: 0.2)
+        expect(rig.client.snapshotNow().downloads.count == 1, "cancelling again changes nothing")
     }
 
     func uploadsMirrorTheShareList() {
@@ -504,6 +580,6 @@ extension SoulseekTests {
 func soulseekTests() -> [(String, TestFn)] {
     let t = SoulseekTests()
     return [("slsk.wire", t.wireFormat), ("slsk.login", t.loginAndReconnect), ("slsk.noRealNetwork", t.realNetworkIsBlocked), ("slsk.search", t.searchResults),
-            ("slsk.relay", t.searchResultsViaRelayedConnect), ("slsk.crowd", t.manyPeersAnswerAtOnce), ("slsk.download", t.downloadResumeAbortAndSize), ("slsk.unreachable", t.peerUnreachable), ("slsk.slots", t.downloadsStartThreeAtATime),
+            ("slsk.relay", t.searchResultsViaRelayedConnect), ("slsk.crowd", t.manyPeersAnswerAtOnce), ("slsk.download", t.downloadResumeAbortAndSize), ("slsk.downloadLinks", t.downloadsFinishWhenTheLinkArrivesInOtherWays), ("slsk.unreachable", t.peerUnreachable), ("slsk.slots", t.queuedDownloadsDoNotBlockOthers), ("slsk.cancelAll", t.cancelAllRemovesUnfinishedAndKeepsFinished),
             ("slsk.upload", t.uploadsMirrorTheShareList), ("slsk.log", t.protocolLogIsReadable), ("slsk.store", t.storeKeepsQueueAndLists), ("slsk.protection", t.playbackProtectionPausesTransfers), ("slsk.rows", t.rowsGroupFilterAndStayFast), ("slsk.off", t.soulseekIsOffUntilTurnedOn), ("slsk.expand", { MainActor.assumeIsolated { t.expandingResultsStaysResponsive() } })]
 }

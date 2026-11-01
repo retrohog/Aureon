@@ -82,6 +82,8 @@ private struct SlskSearchView: View {
                 Spacer()
                 Text(s.snapshot.searching ? "Searching… \(s.snapshot.resultCount) files" : "\(s.snapshot.resultCount) files · \(s.rows.count) folders").font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
             }
+            if let e = s.lastError { Note(text: e, color: Brand.caution) }
+            else if let n = s.notice { HStack { Note(text: n); Button("Open Transfers") { s.page = .transfers }.buttonStyle(SlskSoft()) } }
             if s.rows.isEmpty {
                 if s.snapshot.searching { Note(text: "Results arrive from other people's computers; they trickle in for about 45 seconds.") }
                 else if s.snapshot.diag.searchesSent > 0 && s.snapshot.resultCount == 0 {
@@ -117,6 +119,8 @@ private struct SlskRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
+                // the title area opens the group; the Download button is outside it, so a click on it is never taken for an open
+                HStack(spacing: 10) {
                 Image(systemName: open ? "chevron.down" : "chevron.right").font(Typo.sans(11)).foregroundStyle(Brand.inkSecondary).frame(width: 14)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.folder.split(separator: "\\").suffix(2).joined(separator: " · ").isEmpty ? row.files.first?.name ?? "" : row.folder.split(separator: "\\").suffix(2).joined(separator: " · ")).font(Typo.sans(14, .medium)).lineLimit(1)
@@ -125,9 +129,10 @@ private struct SlskRowView: View {
                 Spacer(minLength: 8)
                 Badge(text: row.format, color: row.files.first?.isLossless == true ? Brand.accentText : Brand.inkSecondary)
                 Text(row.freeSlot ? "Free slot" : "Queue \(row.queueLength)").font(Typo.sans(12)).foregroundStyle(row.freeSlot ? Brand.accentText : Brand.caution).frame(width: 74, alignment: .trailing)
+                }
+                .contentShape(Rectangle()).onTapGesture { withAnimation(Motion.touch) { if open { s.expanded.remove(row.id) } else { s.expanded.insert(row.id) } } }
                 Button("Download") { s.download(row.files, from: row.user) }.buttonStyle(SlskSoft())
             }
-            .contentShape(Rectangle()).onTapGesture { withAnimation(Motion.touch) { if open { s.expanded.remove(row.id) } else { s.expanded.insert(row.id) } } }
             if open {
                 VStack(spacing: 0) {
                     ForEach(Array(row.files.prefix(s.shownFiles[row.id] ?? SoulseekModel.fileStep).enumerated()), id: \.offset) { _, f in
@@ -164,6 +169,7 @@ private struct SlskTransfersView: View {
                 Button("Pause all") { s.pauseAll(true) }.buttonStyle(SlskPrimary())
                 Button("Resume") { s.pauseAll(false) }.buttonStyle(SlskSoft())
                 Button("Clear finished") { s.clearFinished() }.buttonStyle(SlskSoft())
+                Button("Cancel all") { s.requestCancelAll() }.buttonStyle(SlskSoft()).disabled(s.cancellableCount == 0)
                 Spacer()
                 Text("↓ \(SlskFormat.speed(s.snapshot.downSpeed))   ↑ \(SlskFormat.speed(s.snapshot.upSpeed))").font(Typo.sans(12.5)).foregroundStyle(Brand.inkSecondary).monospacedDigit()
             }
