@@ -126,6 +126,8 @@ final class SoulseekModel: ObservableObject {
     @Published var browseUser = ""
     @Published var log: [SlskLogLine] = []
     @Published var lastError: String?
+    /// A short confirmation shown under the search field ("Added 4 files to Transfers.").
+    @Published var notice: String?
     @Published private(set) var inLibrary: Set<String> = []
 
     private(set) var client: SlskClient?
@@ -271,13 +273,23 @@ final class SoulseekModel: ObservableObject {
         client?.search(q)
     }
     func download(_ files: [SlskFileResult], from user: String) {
+        guard let client, isConnected else { lastError = "Not connected. Sign in on the Connection page first."; notice = nil; return }
+        lastError = nil
+        var added = 0, skipped = 0
         for f in files {
-            if isInLibrary(f) { continue }
-            client?.download(user: user, path: f.path, size: f.size)
+            if isInLibrary(f) { skipped += 1; continue }
+            client.download(user: user, path: f.path, size: f.size); added += 1
         }
+        notice = added == 0 ? "Already in your library." : "Added \(added) file\(added == 1 ? "" : "s") to Transfers" + (skipped > 0 ? " (\(skipped) already in your library)" : "") + "."
     }
     func pauseAll(_ on: Bool) { client?.pauseAll(on) }
     func cancel(_ id: Int) { client?.cancel(id: id) }
+    /// Downloads that could still be cancelled (everything but the finished).
+    var cancellableCount: Int { snapshot.downloads.filter { $0.state != .finished }.count }
+    /// Set when Cancel all was asked and downloads are running: the top bar shows the question.
+    @Published var confirmCancelAll = false
+    func requestCancelAll() { if cancellableCount == 0 { return }; if snapshot.downloads.contains(where: { $0.state.isActive }) { confirmCancelAll = true } else { cancelAllNow() } }
+    func cancelAllNow() { confirmCancelAll = false; client?.cancelAllDownloads() }
     func retry(_ id: Int) { client?.retry(id: id) }
     func clearFinished() { client?.clearFinished() }
     func browse(_ user: String) { browseUser = user; page = .browse; client?.browse(user: user) }

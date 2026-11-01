@@ -21,7 +21,9 @@ public struct SlskConfig {
     public var uploadLimit = 0
     public var retryBase: TimeInterval = 5
     public var reconnectBase: TimeInterval = 2
-    public var maxAttempts = 5
+    public var maxAttempts = 8
+    /// The longest wait between two tries of the same download.
+    public var retryCap: TimeInterval = 120
     public var peerTimeout: TimeInterval = 10
     /// Called with the finished `.part` file before it is moved into place; false refuses it ("not a readable audio file").
     public var verifyFile: (@Sendable (URL) -> Bool)?
@@ -231,6 +233,24 @@ public final class SlskClient: @unchecked Sendable {
         }
     }
     public func retry(id: Int) { q.async { if let d = self.downloads.first(where: { $0.info.id == id }) { d.info.attempts = 0; d.info.state = .waiting; d.retryAt = nil; self.pump() } } }
+    /// Cancels every download that has not finished (waiting, queued, connecting, moving, retrying or failed): the links close, the unfinished files in the
+    /// incomplete folder are deleted and the entries are removed. Finished downloads and uploads are left alone.
+    public func cancelAllDownloads() {
+        q.async {
+            let doomed = self.downloads.filter { $0.info.state != .finished }
+            for d in doomed {
+                d.link?.close(); d.link = nil; d.token = nil
+                for p in self.peers.values where p.dl === d { p.writer?.finish { _ in }; p.writer = nil; p.dl = nil; p.link.close() }
+                self.store.remove(id: d.info.id)
+            }
+            self.downloads.removeAll { $0.info.state != .finished }
+            // the writers close their files first, then the partial files go
+            let parts = doomed.map(\.part)
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.3) { for u in parts { try? FileManager.default.removeItem(at: u) } }
+            self.log.add("·", "Cancelled \(doomed.count) download\(doomed.count == 1 ? "" : "s")")
+            self.dirty = true; self.pump()
+        }
+    }
     public func clearFinished() { q.async { self.downloads.removeAll { $0.info.state == .finished }; self.uploads.removeAll { $0.info.state == .finished }; self.dirty = true } }
 
     public func setShares(_ files: [SlskShareFile]) {
@@ -557,7 +577,8 @@ public final class SlskClient: @unchecked Sendable {
     /// Starts waiting downloads up to the limit.
     private func pump() {
         guard state.isOnline, Date() >= pausedUntil else { dirty = true; return }
-        let running = downloads.filter { $0.info.state.isActive && $0.info.state != .waiting }.count
+        // only transfers that are connecting or moving use a slot: songs waiting in another person's queue, or waiting to try again, do not
+        let running = downloads.filter { $0.info.state == .connecting || $0.info.state == .transferring }.count
         var free = config.maxDownloads - running
         for d in downloads where free > 0 {
             if case .retrying = d.info.state, let at = d.retryAt, Date() < at { continue }
@@ -575,6 +596,7 @@ public final class SlskClient: @unchecked Sendable {
             guard d.info.state == .connecting else { return }
             p.link.send(SlskMessages.queueUpload(d.info.path)); log.add("→", "QueueUpload \(d.info.path)")
             d.info.state = .queued(place: nil); dirty = true
+            pump()                                              // a song waiting in the other side's queue frees its slot for the next one
             q.asyncAfter(deadline: .now() + 3) { if case .queued = d.info.state, p.link.isOpen { p.link.send(SlskMessages.placeInQueueRequest(d.info.path)) } }
         }
     }
@@ -584,7 +606,7 @@ public final class SlskClient: @unchecked Sendable {
         if final || d.info.attempts >= config.maxAttempts { d.info.state = .needsAttention(why) }
         else {
             d.info.state = .retrying(why)
-            let delay = config.retryBase * pow(2, Double(d.info.attempts - 1)); d.retryAt = Date().addingTimeInterval(delay)
+            let delay = min(config.retryCap, config.retryBase * pow(2, Double(d.info.attempts - 1))); d.retryAt = Date().addingTimeInterval(delay)
             q.asyncAfter(deadline: .now() + delay) { if case .retrying = d.info.state { self.pump() } }
         }
         persist(d.info, dest: d.dest); dirty = true; pump()

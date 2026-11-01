@@ -31,17 +31,24 @@ struct DownloadsControl: View {
                 .contextMenu {
                     Button("Pause all") { s.pauseAll(true) }
                     Button("Resume") { s.pauseAll(false) }
+                    Button("Cancel all downloads") { s.requestCancelAll() }.disabled(s.cancellableCount == 0)
                     Button("Open Transfers") { s.openTransfers() }
                     Menu("Speed limit for uploads") {
                         ForEach([0, 256, 1024, 2048, 4096], id: \.self) { kb in Button(kb == 0 ? "No limit" : "\(kb) KB/s") { s.uploadLimitKB = kb } }
                     }
                 }
+                Button { s.requestCancelAll() } label: { Color.clear }
+                    .buttonStyle(.plain).keyboardShortcut(.delete, modifiers: [.option, .command]).frame(width: 0, height: 0).accessibilityHidden(true)
                 Button { s.pauseAll(!s.snapshot.protectionPause && s.snapshot.downloads.allSatisfy { $0.state != .waiting }) } label: { Color.clear }
                     .buttonStyle(.plain).keyboardShortcut("p", modifiers: [.option, .command]).frame(width: 0, height: 0).accessibilityHidden(true)
                 Button { withAnimation(Motion.glide) { s.togglePanel() } } label: { Color.clear }
                     .buttonStyle(.plain).keyboardShortcut("t", modifiers: [.option, .command]).frame(width: 0, height: 0).accessibilityHidden(true)
             }
             .animation(Motion.touch, value: s.snapshot.movingCount > 0)
+            .confirmationDialog("Cancel all downloads?", isPresented: $s.confirmCancelAll, titleVisibility: .visible) {
+                Button("Cancel \(s.cancellableCount) download\(s.cancellableCount == 1 ? "" : "s")", role: .destructive) { s.cancelAllNow() }
+                Button("Keep them", role: .cancel) {}
+            } message: { Text("Finished downloads stay. Unfinished files are deleted.") }
         }
     }
 }
@@ -60,6 +67,7 @@ struct DownloadsPanel: View {
                 Button("Pause all") { s.pauseAll(true) }.buttonStyle(SlskPrimary())
                 Button("Resume") { s.pauseAll(false) }.buttonStyle(SlskSoft())
                 Button("Clear finished") { s.clearFinished() }.buttonStyle(SlskSoft())
+                Button("Cancel all") { s.requestCancelAll() }.buttonStyle(SlskSoft()).disabled(s.cancellableCount == 0)
             }
             if s.snapshot.downloads.isEmpty { Note(text: "No downloads. Choose files on the Soulseek page.") }
             ScrollView {
