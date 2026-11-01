@@ -90,7 +90,13 @@ private struct SlskSearchView: View {
                 else { Note(text: "Search for an artist, album or song. Lossless files are marked with their bit depth and sample rate.") }
             }
             else {
-                ScrollView { LazyVStack(spacing: 6) { ForEach(s.rows) { SlskRowView(row: $0) } } }.frame(minHeight: 320)
+                // the page itself scrolls; only a bounded number of groups is drawn, and the rest comes on request
+                VStack(spacing: 6) {
+                    ForEach(s.rows.prefix(s.shownRows)) { SlskRowView(row: $0) }
+                    if s.rows.count > s.shownRows {
+                        Button("Show \(min(SoulseekModel.rowStep, s.rows.count - s.shownRows)) more of \(s.rows.count - s.shownRows)") { s.shownRows += SoulseekModel.rowStep }.buttonStyle(SlskSoft()).padding(.top, 6)
+                    }
+                }
             }
         }
     }
@@ -106,7 +112,7 @@ private struct SlskSearchView: View {
 private struct SlskRowView: View {
     let row: SlskRow
     @ObservedObject private var s = SoulseekModel.shared
-    @State private var open = false
+    private var open: Bool { s.expanded.contains(row.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -121,10 +127,10 @@ private struct SlskRowView: View {
                 Text(row.freeSlot ? "Free slot" : "Queue \(row.queueLength)").font(Typo.sans(12)).foregroundStyle(row.freeSlot ? Brand.accentText : Brand.caution).frame(width: 74, alignment: .trailing)
                 Button("Download") { s.download(row.files, from: row.user) }.buttonStyle(SlskSoft())
             }
-            .contentShape(Rectangle()).onTapGesture { withAnimation(Motion.touch) { open.toggle() } }
+            .contentShape(Rectangle()).onTapGesture { withAnimation(Motion.touch) { if open { s.expanded.remove(row.id) } else { s.expanded.insert(row.id) } } }
             if open {
                 VStack(spacing: 0) {
-                    ForEach(row.files.prefix(60)) { f in
+                    ForEach(Array(row.files.prefix(s.shownFiles[row.id] ?? SoulseekModel.fileStep).enumerated()), id: \.offset) { _, f in
                         HStack {
                             Text(f.name).font(Typo.sans(13)).lineLimit(1)
                             Spacer()
@@ -132,6 +138,9 @@ private struct SlskRowView: View {
                             Text(SlskFormat.bytes(f.size)).font(Typo.sans(12)).foregroundStyle(Brand.inkSecondary)
                             Button { s.download([f], from: row.user) } label: { Image(systemName: "arrow.down.circle") }.buttonStyle(.plain).disabled(s.isInLibrary(f))
                         }.frame(height: 28)
+                    }
+                    if row.files.count > (s.shownFiles[row.id] ?? SoulseekModel.fileStep) {
+                        Button("Show \(min(SoulseekModel.fileStep, row.files.count - (s.shownFiles[row.id] ?? SoulseekModel.fileStep))) more of \(row.files.count - (s.shownFiles[row.id] ?? SoulseekModel.fileStep))") { s.shownFiles[row.id] = (s.shownFiles[row.id] ?? SoulseekModel.fileStep) + SoulseekModel.fileStep }.buttonStyle(SlskSoft()).padding(.top, 4)
                     }
                     HStack(spacing: 6) {
                         Button("Browse user") { s.browse(row.user) }.buttonStyle(SlskSoft())

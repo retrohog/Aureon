@@ -1,4 +1,6 @@
 import Foundation
+import SwiftUI
+import AppKit
 import SlskCore
 
 // Soulseek, with no internet: a fake server and fake peers on the loopback interface. The client itself refuses any other host while tests run.
@@ -469,9 +471,39 @@ extension SoulseekTests {
     }
 }
 
+extension SoulseekTests {
+    /// Opening result groups on a large result set must not stall the main thread: the page draws a bounded number of rows and files.
+    @MainActor func expandingResultsStaysResponsive() {
+        guard !NSScreen.screens.isEmpty else { return }
+        let m = PlayerModel(); navKeepAlive.append(m)
+        let s = SoulseekModel.shared
+        s.loadSynthetic(users: 400, folders: 3, files: 40)
+        let stage = StageModel(); navKeepAlive.append(stage)
+        m.tab = .soulseek
+        let host = NSHostingView(rootView: AnyView(ContentView(stage: stage).environmentObject(m).frame(width: 1440, height: 900).preferredColorScheme(.dark)))
+        host.frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let win = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        win.contentView = host; win.setFrameOrigin(NSPoint(x: -9000, y: -9000)); win.orderFront(nil)
+        defer { win.orderOut(nil); win.contentView = nil; s.expanded = [] }
+        func settle(_ secs: Double) { let end = Date().addingTimeInterval(secs); while Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.01)); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() } }
+        let t0 = CFAbsoluteTimeGetCurrent(); settle(0.5); let first = CFAbsoluteTimeGetCurrent() - t0
+        var worst = 0.0, last = CFAbsoluteTimeGetCurrent()
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.004, repeats: true) { _ in let now = CFAbsoluteTimeGetCurrent(); worst = max(worst, now - last - 0.004); last = now }
+        defer { timer.invalidate() }
+        let ids = s.rows.prefix(6).map(\.id)
+        let t1 = CFAbsoluteTimeGetCurrent()
+        for id in ids { s.expanded.insert(id); host.layoutSubtreeIfNeeded(); host.displayIfNeeded() }
+        settle(0.6)
+        let expand = CFAbsoluteTimeGetCurrent() - t1
+        FileHandle.standardError.write(Data(String(format: "soulseek page: first draw %.0f ms, opening %d groups %.0f ms, worst main-thread stall %.0f ms (%d rows)\n", first * 1000, ids.count, expand * 1000, worst * 1000, s.rows.count).utf8))
+        expect(worst < 0.25, "opening groups on a large result set never stalls the main thread for long: \(Int(worst * 1000)) ms")
+        expect(expand < 2.5, "opening six groups takes well under a few seconds: \(Int(expand * 1000)) ms")
+    }
+}
+
 func soulseekTests() -> [(String, TestFn)] {
     let t = SoulseekTests()
     return [("slsk.wire", t.wireFormat), ("slsk.login", t.loginAndReconnect), ("slsk.noRealNetwork", t.realNetworkIsBlocked), ("slsk.search", t.searchResults),
             ("slsk.relay", t.searchResultsViaRelayedConnect), ("slsk.crowd", t.manyPeersAnswerAtOnce), ("slsk.download", t.downloadResumeAbortAndSize), ("slsk.unreachable", t.peerUnreachable), ("slsk.slots", t.downloadsStartThreeAtATime),
-            ("slsk.upload", t.uploadsMirrorTheShareList), ("slsk.log", t.protocolLogIsReadable), ("slsk.store", t.storeKeepsQueueAndLists), ("slsk.protection", t.playbackProtectionPausesTransfers), ("slsk.rows", t.rowsGroupFilterAndStayFast), ("slsk.off", t.soulseekIsOffUntilTurnedOn)]
+            ("slsk.upload", t.uploadsMirrorTheShareList), ("slsk.log", t.protocolLogIsReadable), ("slsk.store", t.storeKeepsQueueAndLists), ("slsk.protection", t.playbackProtectionPausesTransfers), ("slsk.rows", t.rowsGroupFilterAndStayFast), ("slsk.off", t.soulseekIsOffUntilTurnedOn), ("slsk.expand", { MainActor.assumeIsolated { t.expandingResultsStaysResponsive() } })]
 }
